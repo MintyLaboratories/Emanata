@@ -13,11 +13,16 @@ import kotlin.math.roundToLong
  * for a page of [ReaderAi.REFERENCE_MP], as [AiModel.pageMs] is, by model id, with the
  * [AiModel.fingerprint] of the files timed, so a model replaced starts from its catalog time again,
  * and the catalog time it had then. A model not learned yet is estimated ([estimate]) from its
- * catalog time scaled as the learned ones ran against theirs, so every model is summed on one basis.
- * Kept in one small [file], written whole; read once, then from memory.
+ * catalog time scaled as the learned ones of its engine ran against theirs ([ratio]), so every
+ * model is summed on one basis; an imported model's own time was measured on this device, so it
+ * stands unscaled and scales no other. Kept in one small [file], written whole; read once, then
+ * from memory.
  */
 class PageTimes(private val file: File) {
     private class Kept(val fingerprint: String, val ms: Double, val catalogMs: Long, val writtenMs: Double)
+
+    /** What runs a model, as its catalog times were measured: ncnn ([CatalogModel]) or GLES shaders ([ShaderModel]). */
+    enum class Engine { NCNN, SHADER }
 
     private var kept: MutableMap<String, Kept>? = null
 
@@ -25,17 +30,44 @@ class PageTimes(private val file: File) {
     @Synchronized
     fun pageMs(m: AiModel): Long? = all()[m.id]?.takeIf { it.fingerprint == m.fingerprint }?.ms?.roundToLong()
 
-    /** [m]'s page time on this device: as learned ([pageMs]), else its catalog time times [ratio]. */
+    /**
+     * [m]'s page time on this device: as learned ([pageMs]), else for an imported model its own
+     * (measured here), else its catalog time times its engine's [ratio].
+     */
     @Synchronized
-    fun estimate(m: AiModel): Long = pageMs(m) ?: (m.pageMs * ratio()).roundToLong()
+    fun estimate(m: AiModel): Long = pageMs(m) ?: engineOf(m)?.let { (m.pageMs * ratio(it)).roundToLong() } ?: m.pageMs
 
-    /** How much longer than their catalog times the models learned here take: the median of their ratios; 1 before any. */
+    /**
+     * How much longer than their catalog times the catalog models of [engine] learned here take:
+     * the median of their ratios; the other engine's when none of [engine] is learned (a device's
+     * speed counts for both); 1 before any.
+     */
     @Synchronized
-    fun ratio(): Double {
-        val ratios = all().values.filter { it.catalogMs > 0 }.map { it.ms / it.catalogMs }.sorted()
-        if (ratios.isEmpty()) return 1.0
-        val mid = ratios.size / 2
-        return if (ratios.size % 2 == 1) ratios[mid] else (ratios[mid - 1] + ratios[mid]) / 2
+    fun ratio(engine: Engine = Engine.NCNN): Double =
+        median(ratios(engine)) ?: median(ratios(Engine.entries.first { it != engine })) ?: 1.0
+
+    private fun ratios(engine: Engine): List<Double> =
+        all().filter { (id, k) -> k.catalogMs > 0 && engineOf(id) == engine }.values.map { it.ms / it.catalogMs }
+
+    private fun median(values: List<Double>): Double? {
+        if (values.isEmpty()) return null
+        val sorted = values.sorted()
+        val mid = sorted.size / 2
+        return if (sorted.size % 2 == 1) sorted[mid] else (sorted[mid - 1] + sorted[mid]) / 2
+    }
+
+    /** The engine of catalog model or shader chain [m]; null for an imported model, timed on this device. */
+    private fun engineOf(m: AiModel): Engine? = when (m) {
+        is CatalogModel -> Engine.NCNN
+        is ShaderModel -> Engine.SHADER
+        is UserModel -> null
+    }
+
+    /** The engine of the catalog model or shader chain [id] names; null for any other (an imported model's, or one gone from the catalog). */
+    private fun engineOf(id: String): Engine? = when {
+        ModelCatalog.byId(id) != null -> Engine.NCNN
+        ShaderCatalog.byId(id) != null -> Engine.SHADER
+        else -> null
     }
 
     /**

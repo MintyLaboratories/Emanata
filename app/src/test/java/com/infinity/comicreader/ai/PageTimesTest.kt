@@ -81,6 +81,36 @@ class PageTimesTest {
     }
 
     @Test
+    fun anImportedModelsOwnTimeStandsUnscaledAndScalesNoOther() {
+        val times = PageTimes(File(tmp.root, "times"))
+        val imported = UserModel("u1", "Mine", AiStep.UPSCALE, 2, 6_000, 100, 1_000, "a".repeat(64), "b".repeat(64))
+        times.keep(upscale, upscale.pageMs * 2)
+        assertEquals("measured here: not scaled again", 6_000L, times.estimate(imported))
+        // Learned three times faster than its own measure: the catalog's ratio stays 2.
+        times.keep(imported, 2_000)
+        assertEquals(2_000L, times.estimate(imported))
+        assertEquals(2.0, times.ratio(), 0.001)
+        assertEquals(descreen.pageMs * 2, times.estimate(descreen))
+    }
+
+    @Test
+    fun shaderChainsAndNcnnModelsScaleByTheirOwnEngine() {
+        val times = PageTimes(File(tmp.root, "times"))
+        val chain = ShaderCatalog.byId("anime4k-a-s")!!
+        val other = ShaderCatalog.byId("anime4k-c-l")!!
+        // One engine learned: the other scales by it, a device's speed counting for both.
+        times.keep(upscale, upscale.pageMs * 2)
+        assertEquals(2.0, times.ratio(PageTimes.Engine.SHADER), 0.001)
+        assertEquals(other.pageMs * 2, times.estimate(other))
+        // Shader chains' catalog times are warm upper bounds: learned at half of theirs, they scale apart.
+        times.keep(chain, chain.pageMs / 2)
+        assertEquals(0.5, times.ratio(PageTimes.Engine.SHADER), 0.001)
+        assertEquals(2.0, times.ratio(PageTimes.Engine.NCNN), 0.001)
+        assertEquals(other.pageMs / 2, times.estimate(other))
+        assertEquals(descreen.pageMs * 2, times.estimate(descreen))
+    }
+
+    @Test
     fun newFilesForgetTheOldTime() {
         val times = PageTimes(File(tmp.root, "times"))
         times.keep(upscale, 4_000)

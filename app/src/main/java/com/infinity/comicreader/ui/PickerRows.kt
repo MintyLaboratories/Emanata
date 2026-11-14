@@ -5,6 +5,7 @@ import com.infinity.comicreader.ai.AiStep
 import com.infinity.comicreader.ai.ModelRatings
 import com.infinity.comicreader.ai.Models
 import com.infinity.comicreader.ai.RatingCategory
+import com.infinity.comicreader.ai.UserModel
 
 /**
  * A row of an AI step's picker ([ModelPicker]): none ([models] empty), one model, or a
@@ -32,8 +33,13 @@ data class PickerRow(val name: String, val models: List<AiModel>, val levelNames
     /** The user's ratings shown at [level] ([ModelRatings.of]); empty when never rated. */
     fun ratings(level: Int): Map<RatingCategory, Int> = ModelRatings.of(rated(level))
 
-    /** Speed in half stars at [level], from its own page time ([ModelRatings.speed]). */
-    fun speed(level: Int, fastestMs: Long = ModelRatings.fastestMs()): Int? = ModelRatings.speed(models[level].pageMs, fastestMs)
+    /**
+     * Speed in half stars at [level], from its own page time ([ModelRatings.speed]); none for an
+     * imported model, whose time was measured on this device, not on the reference tablet the
+     * stars are scaled to.
+     */
+    fun speed(level: Int, fastestMs: Long = ModelRatings.fastestMs()): Int? =
+        models[level].takeIf { it !is UserModel }?.let { ModelRatings.speed(it.pageMs, fastestMs) }
 }
 
 /** The rows of AI steps' pickers: short names, and a family's levels on one row. */

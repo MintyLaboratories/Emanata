@@ -25,6 +25,7 @@ import com.infinity.comicreader.ai.ModelRatings
 import com.infinity.comicreader.ai.Models
 import com.infinity.comicreader.ai.RatingCategory
 import com.infinity.comicreader.ai.ShaderCatalog
+import com.infinity.comicreader.ai.UserModel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -101,6 +102,15 @@ class ModelPickerTest {
         assertEquals(ModelRatings.of(ShaderCatalog.byId("anime4k-a-ul")!!), a.ratings(0))
         assertTrue(denoise.ratings(1).isEmpty())
         assertEquals(ModelRatings.of(Models.byId("waifu2x-upconv7-2x-denoise3")!!), denoise.ratings(3))
+    }
+
+    @Test
+    fun anImportedModelHasNoSpeedStars() {
+        // Its time was measured on this device, not on the reference tablet the stars are scaled to.
+        val mine = UserModel("u1", "Mine", AiStep.UPSCALE, 2, 1_500, 100, 1_000, "a".repeat(64), "b".repeat(64))
+        assertNull(PickerRow("Mine", listOf(mine)).speed(0))
+        val default = ModelCatalog.byId(ModelCatalog.DEFAULT_UPSCALE)!!
+        assertEquals(ModelRatings.speed(default.pageMs), PickerRow("waifu2x", listOf(default)).speed(0))
     }
 
     @Test

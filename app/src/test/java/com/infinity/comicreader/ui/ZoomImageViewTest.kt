@@ -14,8 +14,10 @@ import android.view.View
 import android.widget.FrameLayout
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.reader.Adjustments
+import com.infinity.comicreader.reader.BitmapUtils
 import com.infinity.comicreader.reader.Filters
 import com.infinity.comicreader.reader.Look
+import com.infinity.comicreader.reader.Plan
 import com.infinity.comicreader.reader.Region
 import com.infinity.comicreader.reader.ScaleFilter
 import com.infinity.comicreader.reader.Scaling
@@ -335,9 +337,9 @@ class ZoomImageViewTest {
             return { request.canceled = true }
         }
 
-        fun deliver(): Bitmap {
+        fun deliver(made: (Int, Int) -> Bitmap = { w, h -> Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888) }): Bitmap {
             val r = requests.last()
-            return Bitmap.createBitmap(r.width, r.height, Bitmap.Config.ARGB_8888).also { r.done(it) }
+            return made(r.width, r.height).also { r.done(it) }
         }
     }
 
@@ -588,6 +590,47 @@ class ZoomImageViewTest {
             v.zoomTo(2.5f, 150f, 200f)
             draw(v)
             assertTrue(v.shadedSharp)
+        } finally {
+            ZoomImageView.shaderDialect = { it }
+        }
+    }
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun bitmapsSharpenedOnTheCpuEnlargeWithoutSharpeningAgain() {
+        ZoomImageView.shaderDialect = PageShaderTest.HOST_DIALECT
+        try {
+            val scaling = Scaling(sharpen = 60)
+            val src = Bitmap.createBitmap(IntArray(150 * 180) { (0xFF shl 24) or ((it * 37) and 0xFFFFFF) }, 150, 180, Bitmap.Config.ARGB_8888)
+            /** [plan] of [src] as the reader renders it: resampled, sharpened, then frozen for the GPU. */
+            val rendered = { plan: Plan -> PageAdapter.frozen(BitmapUtils.resample(src, plan, false, scaling)) }
+            val page = rendered(Plan(300, 360, 0.0, 0.0, 150.0, 180.0))
+            assertTrue(BitmapUtils.isSharpened(page))
+            val v = ZoomImageView(ApplicationProvider.getApplicationContext<Application>()).apply {
+                measure(View.MeasureSpec.makeMeasureSpec(300, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(400, View.MeasureSpec.EXACTLY))
+                layout(0, 0, 300, 400)
+                setImageBitmap(page)
+                setFitMode(ZoomImageView.FitMode.SCREEN)
+            }
+            v.zoomScaling = scaling
+            v.zoomTo(1.5f, 150f, 200f)
+            draw(v)
+            assertEquals(ScaleFilter.DEFAULT, v.shadedFilter)
+            assertFalse("the page was sharpened when rendered", v.shadedSharp)
+            val detail = RecordingDetail()
+            v.detailSource = detail
+            v.zoomTo(1.6f, 150f, 200f)
+            pass(160)
+            detail.deliver { w, h -> rendered(Plan(w, h, 10.0, 10.0, w / 4.0, h / 4.0)) }
+            v.zoomTo(1.9f, 150f, 200f)
+            draw(v)
+            assertFalse("nor is a detail rendered sharpened", v.shadedSharp)
+            v.zoomTo(2.2f, 150f, 200f)
+            pass(160)
+            detail.deliver()
+            v.zoomTo(2.6f, 150f, 200f)
+            draw(v)
+            assertTrue("a detail never sharpened is", v.shadedSharp)
         } finally {
             ZoomImageView.shaderDialect = { it }
         }

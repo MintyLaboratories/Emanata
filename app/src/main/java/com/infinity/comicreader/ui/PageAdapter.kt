@@ -22,6 +22,7 @@ import com.infinity.comicreader.ai.AiQueue
 import com.infinity.comicreader.ai.Fallback
 import com.infinity.comicreader.ai.PageEnhancer
 import com.infinity.comicreader.reader.Adjustments
+import com.infinity.comicreader.reader.BitmapUtils
 import com.infinity.comicreader.reader.Box
 import com.infinity.comicreader.reader.Cancellation
 import com.infinity.comicreader.reader.DecodeException
@@ -1725,11 +1726,13 @@ class PageAdapter(
         /**
          * [bitmap] as an immutable bitmap, copied if it is mutable (which it then recycles):
          * the GPU keeps an immutable bitmap's texture between frames, where a mutable one
-         * drawn through a [PageShader] is uploaded again for every frame.
+         * drawn through a [PageShader] is uploaded again for every frame. A sharpened one stays
+         * so ([BitmapUtils.isSharpened]).
          */
         internal fun frozen(bitmap: Bitmap): Bitmap {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || !bitmap.isMutable) return bitmap
             val copy = Traces.section("freeze copy") { bitmap.copy(bitmap.config ?: Bitmap.Config.ARGB_8888, false) } ?: return bitmap
+            BitmapUtils.copied(bitmap, copy)
             bitmap.recycle()
             return copy
         }

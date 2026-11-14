@@ -24,6 +24,7 @@ import android.view.WindowInsets
 import android.view.WindowManager
 import android.widget.OverScroller
 import androidx.appcompat.widget.AppCompatImageView
+import com.infinity.comicreader.reader.BitmapUtils
 import com.infinity.comicreader.reader.Filters
 import com.infinity.comicreader.reader.Look
 import com.infinity.comicreader.reader.Rcas
@@ -827,9 +828,9 @@ class ZoomImageView @JvmOverloads constructor(
         get() = (drawable as? BitmapDrawable)?.isFilterBitmap == false
 
     /**
-     * Whether the page bitmap is sharpened, as [zoomScaling] says, where the GPU enlarges it:
-     * false for a page an AI model made, which is never sharpened. Its detail and bands, plain
-     * renders, always are.
+     * Whether the page bitmap may be sharpened, as [zoomScaling] says: false for a page an AI
+     * model made, which is never sharpened. The GPU sharpens an enlargement only of a bitmap
+     * not sharpened already ([BitmapUtils.isSharpened]); one that is, it enlarges plainly.
      */
     var sharpensPage: Boolean = true
         set(value) {
@@ -885,13 +886,14 @@ class ZoomImageView @JvmOverloads constructor(
     /**
      * The shader in [shaders] for [kernel], with the color stage when [colored], through
      * [zoomScaling]'s filter or, while [moving], [PageShader.moving]'s, sharpening an
-     * enlargement when [sharpened] and [zoomScaling] sharpens: made on first use, or null
-     * where it cannot run, after which the view draws plainly.
+     * enlargement of [bitmap] when [zoomScaling] sharpens, [sharpens] allows and [bitmap] is
+     * not sharpened already ([BitmapUtils.isSharpened]): made on first use, or null where it
+     * cannot run, after which the view draws plainly.
      */
-    private fun shader(shaders: Array<PageShader?>, kernel: PageShader.Kernel, colored: Boolean, sharpened: Boolean = true): PageShader? {
+    private fun shader(shaders: Array<PageShader?>, kernel: PageShader.Kernel, colored: Boolean, bitmap: Bitmap, sharpens: Boolean = true): PageShader? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || shaderFailed) return null
         val filter = if (moving && kernel == PageShader.Kernel.FILTERED) PageShader.moving(zoomScaling.filter) else zoomScaling.filter
-        val sharp = sharpened && kernel == PageShader.Kernel.FILTERED && zoomScaling.sharpen > 0
+        val sharp = sharpens && kernel == PageShader.Kernel.FILTERED && zoomScaling.sharpen > 0 && !BitmapUtils.isSharpened(bitmap)
         if (kernel == PageShader.Kernel.FILTERED) {
             shadedFilter = filter
             shadedSharp = sharp
@@ -964,7 +966,7 @@ class ZoomImageView @JvmOverloads constructor(
     private fun drawPage(canvas: Canvas, hole: RectF?) {
         val kernel = pageKernel
         val colored = this.colored
-        val shader = if (kernel == null) null else shader(pageShaders, kernel, colored, sharpensPage)
+        val shader = if (kernel == null) null else shader(pageShaders, kernel, colored, (drawable as BitmapDrawable).bitmap, sharpensPage)
         val saved = canvas.save()
         canvas.translate(paddingLeft.toFloat(), paddingTop.toFloat())
         if (kernel == null || shader == null) {
@@ -1013,8 +1015,8 @@ class ZoomImageView @JvmOverloads constructor(
         canvas.concat(detailDraw)
         val colored = this.colored
         val shader = when {
-            !oneToOne -> shader(detailShaders, PageShader.Kernel.FILTERED, colored)
-            colored -> shader(detailShaders, PageShader.Kernel.NEAREST, true)
+            !oneToOne -> shader(detailShaders, PageShader.Kernel.FILTERED, colored, tile)
+            colored -> shader(detailShaders, PageShader.Kernel.NEAREST, true, tile)
             else -> null
         }
         if (shader != null) {
@@ -1229,8 +1231,8 @@ class ZoomImageView @JvmOverloads constructor(
             canvas.translate(paddingLeft.toFloat(), paddingTop.toFloat())
             canvas.concat(bandDraw)
             val shader = when {
-                !oneToOne -> shader(bandShaders, PageShader.Kernel.FILTERED, colored)
-                colored -> shader(bandShaders, PageShader.Kernel.NEAREST, true)
+                !oneToOne -> shader(bandShaders, PageShader.Kernel.FILTERED, colored, band)
+                colored -> shader(bandShaders, PageShader.Kernel.NEAREST, true, band)
                 else -> null
             }
             if (shader != null) {

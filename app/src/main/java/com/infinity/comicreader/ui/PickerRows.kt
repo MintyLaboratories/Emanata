@@ -14,6 +14,9 @@ import com.infinity.comicreader.ai.RatingCategory
  * else each level is a strength with ratings of its own.
  */
 data class PickerRow(val name: String, val models: List<AiModel>, val levelNames: List<String> = emptyList(), val sizes: Boolean = false) {
+    /** Names the row across rebuilt pickers: its first model's id; empty for none. */
+    val key: String get() = models.firstOrNull()?.id.orEmpty()
+
     /** True for a family: its levels behind one slider. */
     val family: Boolean get() = models.size > 1
 

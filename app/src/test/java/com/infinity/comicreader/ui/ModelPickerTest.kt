@@ -3,8 +3,10 @@ package com.infinity.comicreader.ui
 import android.app.Application
 import android.app.Dialog
 import android.content.res.Configuration
+import android.os.Looper
 import android.view.ContextThemeWrapper
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
@@ -30,7 +32,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import java.time.Duration
 import kotlin.math.roundToInt
 
 /** AI model pickers: short names, speed, an info button that shows and hides ratings and description, a level slider per family. */
@@ -214,6 +218,87 @@ class ModelPickerTest {
     }
 
     @Test
+    fun keyPressesPickOnceTheSliderRests() {
+        val p = picker(AiStep.UPSCALE, current = ModelCatalog.DEFAULT_UPSCALE)
+        val row = rowOf(p, "Anime4K A (sharp) 2×")
+        // UL to S: four steps, no pick while stepping.
+        press(row, 0)
+        assertTrue(picks.isEmpty())
+        assertEquals("S", row.findViewById<TextView>(R.id.ai_model_level_name).text.toString())
+        rest()
+        assertEquals(listOf<Pair<String?, Boolean>>("anime4k-a-s" to false), picks)
+        rest()
+        assertEquals(1, picks.size)
+        // Closing picks a level still settling, at once and once.
+        press(row, 2)
+        p.flush()
+        assertEquals("anime4k-a-l" to false, picks.last())
+        rest()
+        assertEquals(2, picks.size)
+        // A row tap drops a level still settling.
+        press(row, 3)
+        tap(rowOf(p, "waifu2x 2× (default)"))
+        rest()
+        assertEquals(listOf<Pair<String?, Boolean>>("anime4k-a-s" to false, "anime4k-a-l" to false, ModelCatalog.DEFAULT_UPSCALE to true), picks)
+    }
+
+    @Test
+    fun aDragPicksOnceOnRelease() {
+        val p = picker(AiStep.UPSCALE, current = ModelCatalog.DEFAULT_UPSCALE)
+        val width = 1200
+        p.view.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+        // Shorter than its rows, so the list scrolls and the slider waits for a sideways move before it drags.
+        p.view.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(600, View.MeasureSpec.EXACTLY))
+        p.view.layout(0, 0, width, 600)
+        assertTrue(p.view.canScrollVertically(1))
+        val row = rowOf(p, "Anime4K C (balanced) 2×")
+        val s = slider(row)
+        assertTrue(s.width > 0)
+        fun x(level: Float) = s.trackSidePadding + level / s.valueTo * s.trackWidth
+        val y = s.height / 2f
+        val down = 0L
+        var t = 0L
+        fun send(action: Int, at: Float) {
+            t += 16
+            val e = MotionEvent.obtain(down, t, action, at, y, 0)
+            s.dispatchTouchEvent(e)
+            e.recycle()
+        }
+        send(MotionEvent.ACTION_DOWN, x(4f))
+        for (level in listOf(3.6f, 3f, 2.4f, 2f, 1f, 1.1f)) send(MotionEvent.ACTION_MOVE, x(level))
+        // Moving, it shows each level but picks none.
+        assertEquals(1f, s.value)
+        assertEquals("M", row.findViewById<TextView>(R.id.ai_model_level_name).text.toString())
+        assertTrue(picks.isEmpty())
+        send(MotionEvent.ACTION_UP, x(1f))
+        assertEquals(listOf<Pair<String?, Boolean>>("anime4k-c-m" to false), picks)
+        rest()
+        assertEquals(1, picks.size)
+        // A touch the scrolling list takes over before it drags picks nothing.
+        send(MotionEvent.ACTION_DOWN, x(1f))
+        send(MotionEvent.ACTION_MOVE, x(1f) + 1)
+        send(MotionEvent.ACTION_CANCEL, x(1f) + 1)
+        rest()
+        assertEquals(1f, s.value)
+        assertEquals(1, picks.size)
+    }
+
+    @Test
+    fun openPanelsAndScrollCarryOverToARebuiltPicker() {
+        val p = picker(AiStep.UPSCALE)
+        info(rowOf(p, "Anime4K A (sharp) 2×")).performClick()
+        info(rowOf(p, "CuNNy 2×")).performClick()
+        info(rowOf(p, "CuNNy 2×")).performClick()
+        info(rowOf(p, "OpenComic 2×")).performClick()
+        assertEquals(listOf("opencomic-ai-upscale-2x-compact-v2", "anime4k-a-s"), p.expandedKeys.sortedDescending())
+        val again = ModelPicker.of(context, AiStep.UPSCALE, true, null, p.expandedKeys, 0) { _, _ -> }
+        assertEquals(View.VISIBLE, details(rowOf(again, "Anime4K A (sharp) 2×")).visibility)
+        assertEquals(View.VISIBLE, details(rowOf(again, "OpenComic 2×")).visibility)
+        assertEquals(View.GONE, details(rowOf(again, "CuNNy 2×")).visibility)
+        assertEquals("Hide information about OpenComic 2×", info(rowOf(again, "OpenComic 2×")).contentDescription.toString())
+    }
+
+    @Test
     fun tappingNonePicksNone() {
         val p = picker(AiStep.DESCREEN, current = "opencomic-ai-descreen-hard-compact-v2")
         assertTrue(checked(rowOf(p, "OpenComic v2")))
@@ -260,8 +345,8 @@ class ModelPickerTest {
 
         fun slider(row: View): Slider = row.findViewById(R.id.ai_model_level_slider)
 
-        /** Moves [row]'s level slider to [level] with arrow keys, as a keyboard or switch user would. */
-        fun slide(row: View, level: Int) {
+        /** Moves [row]'s level slider to [level] with arrow keys, as a keyboard or switch user would, without letting it rest. */
+        fun press(row: View, level: Int) {
             val s = slider(row)
             repeat(s.valueTo.roundToInt()) {
                 if (s.value.roundToInt() == level) return
@@ -269,6 +354,16 @@ class ModelPickerTest {
                 s.onKeyDown(key, KeyEvent(KeyEvent.ACTION_DOWN, key))
             }
             assertEquals(level, s.value.roundToInt())
+        }
+
+        /** [press], then lets the slider rest so its level is picked. */
+        fun slide(row: View, level: Int) {
+            press(row, level)
+            rest()
+        }
+
+        fun rest() {
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(ModelPicker.SETTLE_MS))
         }
     }
 }

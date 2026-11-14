@@ -1,6 +1,8 @@
 package com.infinity.comicreader.ui
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -31,14 +33,19 @@ import kotlin.math.roundToInt
  * per choice ([PickerRows]) with a radio button, its short name (marked when it is the
  * default), its speed in stars and an info button, which shows the model's full name and size,
  * its ratings and what it does, and hides them again. A family's row has a level slider. A
- * tap on a row picks it ([onPick], done: the dialog closes); letting go of a slider (or moving
- * it by keyboard or screen reader) picks the family at that level ([onPick], not done: the
- * picker stays open, its radio moved).
+ * tap on a row picks it ([onPick], done: the dialog closes); letting go of a slider picks the
+ * family at that level ([onPick], not done: the picker stays open, its radio moved). A slider
+ * moved by keyboard, switch or screen reader picks once it rests [SETTLE_MS], loses focus, or
+ * the picker closes ([flush]), so stepping across levels picks only the last. [openKeys]: the keys
+ * ([PickerRow.key]) of the rows whose info shows; [startY]: where the list starts, else at the
+ * picked row (both as [expandedKeys] and [scrollY] left them, across a rebuilt dialog).
  */
 class ModelPicker(
     private val context: Context,
     rows: List<PickerRow>,
     current: String?,
+    openKeys: Collection<String> = emptySet(),
+    startY: Int? = null,
     private val onPick: (id: String?, done: Boolean) -> Unit
 ) {
     /** The id picked, null for none. */
@@ -46,6 +53,8 @@ class ModelPicker(
         private set
 
     private val fastest = ModelRatings.fastestMs()
+    private val handler = Handler(Looper.getMainLooper())
+    private var pending: Runnable? = null
     private val list = LinearLayout(context).apply {
         id = R.id.ai_model_list
         orientation = LinearLayout.VERTICAL
@@ -55,18 +64,48 @@ class ModelPicker(
     /** The picker, scrolling. */
     val view: View = NestedScrollView(context).apply { addView(list, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT) }
 
-    private val holders: List<Holder> = rows.map { Holder(it) }
+    private val holders: List<Holder> = rows.map { Holder(it, it.key in openKeys) }
+
+    /** The keys of the rows whose info shows. */
+    val expandedKeys: ArrayList<String> get() = holders.filter { it.expanded }.mapTo(ArrayList()) { it.row.key }
+
+    /** How far the list is scrolled. */
+    val scrollY: Int get() = view.scrollY
 
     init {
         for (h in holders) list.addView(h.item)
-        // The picked row in sight as the picker opens.
-        view.post { holders.firstOrNull { it.chosen }?.let { (view as NestedScrollView).scrollTo(0, (it.item.top - it.item.height).coerceAtLeast(0)) } }
+        // Where it was left, else the picked row in sight as the picker opens.
+        view.post {
+            val y = startY ?: holders.firstOrNull { it.chosen }?.let { (it.item.top - it.item.height).coerceAtLeast(0) } ?: return@post
+            (view as NestedScrollView).scrollTo(0, y)
+        }
     }
 
     private fun pick(id: String?, done: Boolean) {
+        cancelPending()
         picked = id
         for (h in holders) h.bindChecked()
         onPick(id, done)
+    }
+
+    /** Runs [r] once the slider has rested [SETTLE_MS], dropping one still waiting. */
+    private fun settle(r: () -> Unit) {
+        cancelPending()
+        val run = Runnable { pending = null; r() }
+        pending = run
+        handler.postDelayed(run, SETTLE_MS)
+    }
+
+    private fun cancelPending() {
+        pending?.let(handler::removeCallbacks)
+        pending = null
+    }
+
+    /** Picks at once a slider level still waiting to settle; for the picker closing. */
+    fun flush() {
+        val run = pending ?: return
+        cancelPending()
+        run.run()
     }
 
     private fun stars(halves: Int): String = NumberFormat.getInstance().apply { maximumFractionDigits = 1 }.format(halves / 2.0)
@@ -76,7 +115,7 @@ class ModelPicker(
         if (halves == ModelRatings.WORSE) context.getString(R.string.ai_rating_worse_stars, label)
         else context.getString(R.string.ai_rating_stars, label, stars(halves))
 
-    private inner class Holder(val row: PickerRow) {
+    private inner class Holder(val row: PickerRow, open: Boolean) {
         val item: View = LayoutInflater.from(context).inflate(R.layout.item_ai_model, list, false)
         private val main: View = item.findViewById(R.id.ai_model_row)
         private val check: RadioButton = item.findViewById(R.id.ai_model_check)
@@ -94,7 +133,8 @@ class ModelPicker(
 
         /** The level shown: the picked one when picked, else the family's first ([PickerRow.firstLevel]). */
         private var level = row.indexOf(picked).takeIf { it >= 0 } ?: row.firstLevel.coerceAtLeast(0)
-        private var expanded = false
+        var expanded = open && row.models.isNotEmpty()
+            private set
         private var tracking = false
 
         private val model: AiModel? get() = row.models.getOrNull(level)
@@ -105,6 +145,8 @@ class ModelPicker(
             ?.let { context.getString(R.string.ai_model_default, row.name) } ?: row.name
 
         init {
+            // Rows share view ids, so a rebuilt dialog's saved view state would cross between them (a slider getting another's level); the picker restores its own.
+            item.isSaveFromParentEnabled = false
             name.text = title
             main.setOnClickListener { pick(model?.id, true) }
             ViewCompat.setAccessibilityDelegate(main, object : AccessibilityDelegateCompat() {
@@ -134,8 +176,8 @@ class ModelPicker(
                 slider.addOnChangeListener { _, value, fromUser ->
                     level = value.roundToInt()
                     bindLevel()
-                    // Dragging picks on release; keys and screen readers pick at once.
-                    if (fromUser && !tracking) pickLevel()
+                    // Dragging picks on release; keys and screen readers once the slider rests.
+                    if (fromUser && !tracking) settle(::pickLevel)
                 }
                 slider.addOnSliderTouchListener(object : Slider.OnSliderTouchListener {
                     override fun onStartTrackingTouch(slider: Slider) {
@@ -144,9 +186,11 @@ class ModelPicker(
 
                     override fun onStopTrackingTouch(slider: Slider) {
                         tracking = false
+                        cancelPending()
                         pickLevel()
                     }
                 })
+                slider.setOnFocusChangeListener { _, focused -> if (!focused) flush() }
             }
             bindLevel()
             bindChecked()
@@ -243,8 +287,14 @@ class ModelPicker(
     }
 
     companion object {
-        /** The picker of [step]'s models, [current] picked (null: none). */
-        fun of(context: Context, step: AiStep, keepSimple: Boolean, current: String?, onPick: (id: String?, done: Boolean) -> Unit) =
-            ModelPicker(context, PickerRows.of(step, keepSimple, current, context.getString(R.string.ai_none)), current, onPick)
+        /** How long a slider moved by keys or a screen reader rests before its level is picked. */
+        const val SETTLE_MS = 500L
+
+        /** The picker of [step]'s models, [current] picked (null: none); [openKeys] and [startY] as [ModelPicker] takes them. */
+        fun of(
+            context: Context, step: AiStep, keepSimple: Boolean, current: String?,
+            openKeys: Collection<String> = emptySet(), startY: Int? = null,
+            onPick: (id: String?, done: Boolean) -> Unit
+        ) = ModelPicker(context, PickerRows.of(step, keepSimple, current, context.getString(R.string.ai_none)), current, openKeys, startY, onPick)
     }
 }

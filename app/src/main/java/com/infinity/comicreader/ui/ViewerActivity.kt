@@ -3926,7 +3926,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
      * The models [step] can run ([ModelPicker]), the one this book runs checked; slow ones only
      * while Keep it simple is off, or when running; imported ones too
      * ([com.infinity.comicreader.ai.Models.offered]). A row tap picks and closes; a level slider
-     * picks at once and stays open.
+     * picks as it is let go or rests, or as the picker closes, and stays open.
      */
     private fun showAiChoices(step: AiStep) {
         var dialog: AlertDialog? = null
@@ -3938,6 +3938,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
             .setTitle(ModelText.step(this, step))
             .setView(picker.view)
             .setNegativeButton(R.string.close, null)
+            .setOnDismissListener { picker.flush() }
             .showKeepingFullscreen()
     }
 

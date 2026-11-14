@@ -27,6 +27,8 @@ internal class FakeShaders(
         caches += cache
         return make(chain)?.also { opened += it }
     }
+
+    override fun key(chain: ShaderChain): String = GlesShaders.cacheName(listOf("fake"), chain.sources).removeSuffix(".programs")
 }
 
 /** Synthetic shader files: a 2x upscaler of two passes. */
@@ -72,9 +74,35 @@ class ShaderSessionsTest {
     }
 
     @Test
+    fun whatWasMeasuredIsKeptForTheNextOpen() {
+        val dir = File("build/tmp/shader-fit-test").apply { deleteRecursively(); mkdirs() }
+        val runtime = FakeShaders()
+        val first = ShaderSessions.attempt(runtime, { listOf(FakeShaderFiles.UPSCALER) }, 2, cache = dir).session!!
+        assertTrue((first.model as FakeModel).runs.get() > 0)
+        val fit = File(dir, runtime.key(runtime.chains.single()) + ShaderSessions.FIT_SUFFIX)
+        assertEquals(ShaderSessions.Fit(2, first.geometry.context, first.size, 0), ShaderSessions.Fit.read(fit))
+        first.close()
+        val again = ShaderSessions.attempt(runtime, { listOf(FakeShaderFiles.UPSCALER) }, 2, cache = dir).session!!
+        assertEquals("no measuring, no seam check", 0, (again.model as FakeModel).runs.get())
+        assertEquals(first.geometry, again.geometry)
+        assertEquals(first.size, again.size)
+        again.close()
+        // Another scale, a smaller budget, or a file that does not read: measured again.
+        val tight = ShaderSessions.attempt(runtime, { listOf(FakeShaderFiles.UPSCALER) }, 2, memoryBytes = 4L * ShaderChain.parse(listOf(FakeShaderFiles.UPSCALER), 2).plan(256, 256).bytes(8), cache = dir).session!!
+        assertTrue((tight.model as FakeModel).runs.get() > 0)
+        assertTrue(tight.size < first.size)
+        tight.close()
+        fit.writeText("not a fit")
+        val unread = ShaderSessions.attempt(runtime, { listOf(FakeShaderFiles.UPSCALER) }, 2, cache = dir).session!!
+        assertTrue((unread.model as FakeModel).runs.get() > 0)
+        unread.close()
+        dir.deleteRecursively()
+    }
+
+    @Test
     fun compiledPassesGoToTheCacheAskedFor() {
         val runtime = FakeShaders()
-        val dir = File("build/tmp/shader-cache-test")
+        val dir = File("build/tmp/shader-cache-test").apply { deleteRecursively() }
         ShaderSessions.attempt(runtime, { listOf(FakeShaderFiles.UPSCALER) }, 2, cache = dir).session!!.close()
         open(runtime)
         assertEquals(listOf(dir, null), runtime.caches)
@@ -107,6 +135,10 @@ class ShaderSessionsTest {
         assertTrue(!files[1].isFile && !files[2].isFile)
         assertTrue(other.isFile)
         assertTrue("an old partial cache goes, one being written stays", !left.isFile && writing.isFile)
+        val keptFit = File(dir, "0" + ShaderSessions.FIT_SUFFIX).apply { writeText("x") }
+        val goneFit = File(dir, "1" + ShaderSessions.FIT_SUFFIX).apply { writeText("x") }
+        GlesShaders.prune(files[0], now)
+        assertTrue("a fit stays with its cache, and goes with it", keptFit.isFile && !goneFit.isFile)
         dir.deleteRecursively()
     }
 

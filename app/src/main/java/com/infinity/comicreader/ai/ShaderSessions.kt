@@ -5,6 +5,7 @@ import android.os.SystemClock
 import android.util.Log
 import java.io.File
 import java.io.IOException
+import java.util.Locale
 
 /**
  * Opens shader chains ([ShaderModel]) as [Session]s for the tile engine, as [Sessions] opens
@@ -22,6 +23,11 @@ import java.io.IOException
  * pace between them. The session's tile size is the most a tile may be; each page then takes
  * the size up to it that leaves the least work ([pageTile]): a chain computes a pixel alike
  * at any place in a tile of any size, so one size checked for seams vouches for the others.
+ *
+ * What was measured ([Fit]) is kept beside the compiled passes ([FIT_SUFFIX], under the same
+ * key: the same sources on the same GPU, driver and runner), so a chain opened again skips
+ * the measuring and the seam check, as long as the tile size checked is still the one it
+ * would choose.
  */
 internal object ShaderSessions {
     private const val TAG = "AiShaders"
@@ -43,6 +49,25 @@ internal object ShaderSessions {
 
     /** Times the margin is widened for seams before the chain is refused. */
     const val MAX_WIDENINGS = 3
+
+    /** What a chain's [Fit] is kept in, beside its compiled passes: its cache key and this. */
+    const val FIT_SUFFIX = ".fit"
+
+    /**
+     * What opening a chain at [scale] measured: its [context], the tile [size] checked for
+     * seams, and that tile's time ([tileMs]).
+     */
+    internal data class Fit(val scale: Int, val context: Int, val size: Int, val tileMs: Long) {
+        fun write(file: File) = runCatching { file.writeText(String.format(Locale.ROOT, "%d %d %d %d\n", scale, context, size, tileMs)) }
+
+        companion object {
+            /** [file]'s fit; null when missing or unreadable. */
+            fun read(file: File): Fit? = runCatching {
+                val v = file.readText().trim().split(' ').map { it.toInt() }
+                Fit(v[0], v[1], v[2], v[3].toLong()).takeIf { v.size == 4 && it.scale >= 1 && it.context >= 0 && it.size > 0 && it.tileMs >= 0 }
+            }.getOrNull()
+        }
+    }
 
     /**
      * The longest a tile should take, in ms: the GPU's turn between the reader's frames and the
@@ -95,20 +120,37 @@ internal object ShaderSessions {
         }
         val t0 = SystemClock.elapsedRealtime()
         val model = runtime.open(chain, cache) ?: return Opening.refused(ModelRefusal.NOT_LOADED)
+        val fitFile = cache?.let { File(it, runtime.key(chain) + FIT_SUFFIX) }
+        val budget = memoryBytes / TileSizing.GPU_SHARE
         var kept = false
+        fun session(g: Geometry, size: Int, tileMs: Long): Opening {
+            model.trim()
+            val most = capped(size, g, tileMs)
+            val pick = { w: Int, h: Int -> pageTile(w, h, g, most) }
+            return Opening(Session(model, g, most, fp16 = runtime.floatBytes == 8, pick = pick), null).also { kept = true }
+        }
         try {
-            val probed = try {
-                ModelProbe.probeExact(model, canceled, memoryBytes)
-            } catch (e: ModelProbe.Unfit) {
-                Log.w(TAG, "cannot measure: ${e.message}")
-                return Opening.refused(e.reason, e.bytes, memoryBytes)
+            val known = fitFile?.let { Fit.read(it) }?.takeIf { it.scale == scale }
+            if (known != null) {
+                val g = Geometry(scale, 0, known.context)
+                if (sizes(chain, g, runtime.floatBytes, budget, runtime.maxSide, maxTile).firstOrNull() == known.size) {
+                    Log.i(TAG, "${chain.programs.size} passes, $g, ${known.size} px tiles as measured before (${SystemClock.elapsedRealtime() - t0} ms)")
+                    return session(g, known.size, known.tileMs)
+                }
             }
-            var g = probed.geometry
+            var g = known?.let { Geometry(scale, 0, it.context) } ?: run {
+                val probed = try {
+                    ModelProbe.probeExact(model, canceled, memoryBytes)
+                } catch (e: ModelProbe.Unfit) {
+                    Log.w(TAG, "cannot measure: ${e.message}")
+                    return Opening.refused(e.reason, e.bytes, memoryBytes)
+                }
+                probed.geometry
+            }
             if (g.scale != scale || g.trim != 0) {
                 Log.w(TAG, "measured $g, not $scale times")
                 return Opening.refused(ModelRefusal.SHAPE)
             }
-            val budget = memoryBytes / TileSizing.GPU_SHARE
             for (widenings in 0..MAX_WIDENINGS) {
                 val size = sizes(chain, g, runtime.floatBytes, budget, runtime.maxSide, maxTile).firstOrNull()
                 if (size == null) {
@@ -120,13 +162,10 @@ internal object ShaderSessions {
                 val timed = Timed(model, size, clock)
                 val check = ModelProbe.verify(timed, timed, g, size, size, canceled)
                 val tileMs = timed.median()
-                val most = capped(size, g, tileMs)
-                Log.i(TAG, "${chain.programs.size} passes, $size px tiles in $tileMs ms (at most $most), $g: seams ${check.seams} (${SystemClock.elapsedRealtime() - t0} ms in all)")
+                Log.i(TAG, "${chain.programs.size} passes, $size px tiles in $tileMs ms, $g: seams ${check.seams} (${SystemClock.elapsedRealtime() - t0} ms in all)")
                 if (check.seams.max <= SEAM_MAX) {
-                    model.trim()
-                    val geometry = g
-                    val pick = { w: Int, h: Int -> pageTile(w, h, geometry, most) }
-                    return Opening(Session(model, g, most, fp16 = runtime.floatBytes == 8, pick = pick), null).also { kept = true }
+                    fitFile?.let { Fit(scale, g.context, size, tileMs).write(it) }
+                    return session(g, size, tileMs)
                 }
                 g = g.copy(context = g.margin + TilePlan.ALIGN)
             }

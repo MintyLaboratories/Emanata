@@ -22,6 +22,9 @@ internal interface ShaderRuntime {
      * compile. Given a [cache] folder, compiled programs are kept there for the next open.
      */
     fun open(chain: ShaderChain, cache: File? = null): TileModel?
+
+    /** What names [chain] in a cache: the same for the same sources on the same GPU, driver and runner. */
+    fun key(chain: ShaderChain): String
 }
 
 /**
@@ -61,7 +64,7 @@ internal object GlesShaders : ShaderRuntime {
     override fun open(chain: ShaderChain, cache: File?): TileModel? {
         if (!available) return null
         val sources = chain.sources
-        val file = cache?.let { dir -> runCatching { dir.mkdirs(); File(dir, cacheName(info.orEmpty(), sources)) }.getOrNull() }
+        val file = cache?.let { dir -> runCatching { dir.mkdirs(); File(dir, key(chain) + CACHE_SUFFIX) }.getOrNull() }
         val handle = try {
             nOpen(sources.toTypedArray(), chain.programs.map { it.bindings.size }.toIntArray(), file?.path)
         } catch (e: OutOfMemoryError) {
@@ -71,6 +74,8 @@ internal object GlesShaders : ShaderRuntime {
         if (file != null) prune(file)
         return if (handle == 0L) null else Opened(handle, chain)
     }
+
+    override fun key(chain: ShaderChain): String = cacheName(info.orEmpty(), chain.sources).removeSuffix(CACHE_SUFFIX)
 
     /** The cache file name of [sources] compiled by the GPU [info] describes: a hash of both and the runner's version ([ShaderSource.RUNNER]). */
     internal fun cacheName(info: List<String>, sources: List<String>, runner: Int = ShaderSource.RUNNER): String {
@@ -83,15 +88,21 @@ internal object GlesShaders : ShaderRuntime {
     }
 
     /**
-     * Marks [used] as just used and deletes the caches beside it past the [CACHED] most recent,
-     * and the partial ones an end mid-write left ([PART_AGE_MS] old: none is being written).
+     * Marks [used] as just used and deletes the caches beside it past the [CACHED] most recent
+     * with what was measured of them ([ShaderSessions.FIT_SUFFIX]), and the partial ones an end
+     * mid-write left ([PART_AGE_MS] old: none is being written).
      */
     internal fun prune(used: File, now: Long = System.currentTimeMillis()) {
         if (used.isFile) used.setLastModified(now)
         val files = used.parentFile?.listFiles().orEmpty()
-        val all = files.filter { it.name.endsWith(CACHE_SUFFIX) }
-        for (f in all.sortedByDescending { it.lastModified() }.drop(CACHED)) f.delete()
-        for (f in files) if (f.name.endsWith(CACHE_SUFFIX + PART_SUFFIX) && now - f.lastModified() > PART_AGE_MS) f.delete()
+        val (kept, old) = files.filter { it.name.endsWith(CACHE_SUFFIX) }.sortedByDescending { it.lastModified() }.let { it.take(CACHED) to it.drop(CACHED) }
+        for (f in old) f.delete()
+        val keys = kept.map { it.name.removeSuffix(CACHE_SUFFIX) }.toSet()
+        for (f in files) {
+            val stale = f.name.endsWith(CACHE_SUFFIX + PART_SUFFIX) && now - f.lastModified() > PART_AGE_MS
+            val orphan = f.name.endsWith(ShaderSessions.FIT_SUFFIX) && f.name.removeSuffix(ShaderSessions.FIT_SUFFIX) !in keys
+            if (stale || orphan) f.delete()
+        }
     }
 
     private const val CACHE_SUFFIX = ".programs"

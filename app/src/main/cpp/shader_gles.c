@@ -600,10 +600,14 @@ static int upload(chain * c, const uint8_t * px, int stride, int sw, int sh, int
     return glGetError() == GL_NO_ERROR ? 0 : -1;
 }
 
+// Draws the bound program into tex, whose old contents are declared dead first, so tiled GPUs
+// do not load them into tile memory before the draw covers them.
 static void draw_into(const chain * c, GLuint tex, int w, int h)
 {
+    static const GLenum attachment = GL_COLOR_ATTACHMENT0;
     glBindFramebuffer(GL_FRAMEBUFFER, c->fbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
+    glInvalidateFramebuffer(GL_FRAMEBUFFER, 1, &attachment);
     glViewport(0, 0, w, h);
     glDrawArrays(GL_TRIANGLES, 0, 3);
 }

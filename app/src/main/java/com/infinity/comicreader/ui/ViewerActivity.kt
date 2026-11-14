@@ -3915,7 +3915,11 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
             button.visibility = if (shown) View.VISIBLE else View.GONE
             aiLabels[step]?.let { view.findViewById<View>(it).visibility = button.visibility }
         }
-        view.findViewById<AiLoadBar>(R.id.ai_load_bar).pageMs = AiLoad.pageMs(picks.models, aiTimes::estimate)
+        view.findViewById<AiLoadBar>(R.id.ai_load_bar).apply {
+            pageMs = AiLoad.pageMs(picks.models, aiTimes::estimate)
+            // Dimmed while the chain shown does not run, as in Settings.
+            isEnabled = own != null || prefs.aiEnabled
+        }
         view.findViewById<View>(R.id.btn_ai_book).isEnabled = book() != null
         view.findViewById<View>(R.id.sheet_ai_kind_row).visibility = if (own == null) View.VISIBLE else View.GONE
         setGroupEnabled(view.findViewById(R.id.sheet_ai_kind), book() != null || aiKindFolder() != null)
@@ -4011,9 +4015,9 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
 
     /**
      * Runs model [id] (null: none) at [step]: for this book when it has its own picks, else in
-     * the default chain it runs. Picking a model while AI processing is off turns it on with
-     * the models the sheet shows, the other steps' picks kept; leaving no model in either
-     * default chain turns it off. A model not downloaded starts downloading.
+     * the default chain it runs. Picking a model while AI processing is off turns it on for
+     * both default chains, the other steps' picks kept; leaving no model in either default
+     * chain turns it off. A model not downloaded starts downloading.
      */
     private fun pickAi(step: AiStep, id: String?) {
         val own = aiOwn()

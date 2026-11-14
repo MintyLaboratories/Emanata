@@ -819,7 +819,7 @@
     <string name="ai_kind_label">Default chain</string>
     <string name="ai_kind_folder">Same for the whole folder</string>
     <string name="ai_kind_auto_hint">Picked by reading direction: books read right to left use Manga</string>
-    <string name="ai_scope_default_off_hint">AI processing is off in Settings; picking a model here turns it on with the models shown, for every book without its own</string>
+    <string name="ai_scope_default_off_hint">AI processing is off in Settings; picking a model here turns it on for both default chains, for every book without its own</string>
     <string name="fit_screen_short">Screen</string>
     <string name="fit_width_short">Width</string>
     <string name="fit_height_short">Height</string>

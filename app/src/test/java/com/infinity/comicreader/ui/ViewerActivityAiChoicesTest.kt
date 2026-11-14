@@ -241,7 +241,9 @@ class ViewerActivityAiChoicesTest {
         val upscale = ModelCatalog.byId(ModelCatalog.DEFAULT_UPSCALE)!!
         assertEquals(upscale.pageMs, bar.pageMs)
         assertEquals(AiLoadBar.describe(context, upscale.pageMs), bar.contentDescription)
+        assertFalse("dimmed while AI processing is off", bar.isEnabled)
         pickOpenComic(viewer, sheet)
+        assertTrue(bar.isEnabled)
         assertEquals(ModelCatalog.byId("opencomic-ai-upscale-2x-compact-v2")!!.pageMs, bar.pageMs)
         // Manga's chain, still the default one.
         sheet.tap(R.id.btn_ai_manga)
@@ -250,6 +252,7 @@ class ViewerActivityAiChoicesTest {
         Prefs(context).aiEnabled = false
         sheet.tap(R.id.btn_ai_book)
         assertEquals(0L, bar.pageMs)
+        assertTrue("the book's own runs", bar.isEnabled)
     }
 
     @Test

@@ -15,6 +15,7 @@ import com.infinity.comicreader.ai.AiChain
 import com.infinity.comicreader.ai.AiStep
 import com.infinity.comicreader.ai.AiThresholds
 import com.infinity.comicreader.ai.CatalogModel
+import com.infinity.comicreader.ai.ChainKind
 import com.infinity.comicreader.ai.DownloadFailure
 import com.infinity.comicreader.ai.DownloadState
 import com.infinity.comicreader.ai.ModelCatalog
@@ -234,8 +235,8 @@ class SettingsAiTest {
     fun eachStepOffersNoneThenItsCatalogModels() {
         Prefs(context).keepSimple = false
         val fragment = settings()
-        for (step in AiStep.entries) {
-            val pref = fragment.findPreference<ListPreference>(Prefs.aiKey(step))!!
+        for (kind in ChainKind.entries) for (step in AiStep.entries) {
+            val pref = fragment.findPreference<ListPreference>(Prefs.aiKey(step, kind))!!
             val offered = Models.offered(step, keepSimple = false, current = null)
             assertEquals(listOf(Prefs.AI_NONE) + offered.map { it.id }, pref.entryValues.map { it.toString() })
             assertEquals(context.getString(R.string.ai_none), pref.entries[0].toString())
@@ -245,7 +246,7 @@ class SettingsAiTest {
         }
         fragment.findPreference<Preference>(Prefs.KEY_AI)!!.performClick()
         assertTrue(Prefs(context).aiEnabled)
-        for (step in AiStep.entries) assertTrue(fragment.findPreference<ListPreference>(Prefs.aiKey(step))!!.isEnabled)
+        for (kind in ChainKind.entries) for (step in AiStep.entries) assertTrue(fragment.findPreference<ListPreference>(Prefs.aiKey(step, kind))!!.isEnabled)
     }
 
     @Test
@@ -311,15 +312,21 @@ class SettingsAiTest {
         // The advanced steps show while Keep it simple hides their pickers.
         assertTrue(prefs.keepSimple)
         var ai = settings().findPreference<Preference>(Prefs.KEY_AI)!!
-        awaitSummary(ai, ModelText.chain(context, slowest))
-        assertTrue(ai.summary.toString().contains(slowest[0].name))
+        awaitSummary(ai, ModelText.chains(context, mapOf(ChainKind.MANGA to listOf(upscale), ChainKind.OTHER to slowest)))
+        assertTrue(ai.summary.toString().contains("Everything else: " + slowest.joinToString(" → ") { it.name }))
+        assertTrue(ai.summary.toString().contains("Manga: ${upscale.name}"))
         assertTrue(ai.summary.toString().endsWith(context.getString(R.string.ai_chain_slow)))
         prefs.setAiModel(AiStep.ARTIFACTS, null)
         prefs.setAiModel(AiStep.DESCREEN, null)
         prefs.setAiModel(AiStep.UPSCALE, upscale.id)
         ai = settings().findPreference<Preference>(Prefs.KEY_AI)!!
-        awaitSummary(ai, ModelText.chain(context, listOf(upscale)))
+        awaitSummary(ai, ModelText.chains(context, mapOf(ChainKind.MANGA to listOf(upscale), ChainKind.OTHER to listOf(upscale))))
         assertFalse(ai.summary.toString().contains(context.getString(R.string.ai_chain_slow)))
+        // Either chain slow is warned of.
+        for (m in slowest) prefs.setAiModel(m.step, m.id, ChainKind.MANGA)
+        ai = settings().findPreference<Preference>(Prefs.KEY_AI)!!
+        awaitSummary(ai, ModelText.chains(context, mapOf(ChainKind.MANGA to slowest, ChainKind.OTHER to listOf(upscale))))
+        assertTrue(ai.summary.toString().endsWith(context.getString(R.string.ai_chain_slow)))
         ai.performClick()
         awaitSummary(ai, context.getString(R.string.pref_ai_desc))
     }
@@ -332,7 +339,7 @@ class SettingsAiTest {
         assertTrue(prefs.keepSimple)
         val fragment = settings()
         val ai = fragment.findPreference<Preference>(Prefs.KEY_AI)!!
-        val chain = ModelText.chain(context, AiChain.chosen(prefs))
+        val chain = ModelText.chains(context, ChainKind.entries.associateWith { AiChain.chosen(prefs, it) })
         awaitSummary(ai, chain + "\n" + AiSizeText.changed(context, prefs.aiThresholds))
         // With advanced settings shown, the slider says it.
         fragment.findPreference<TwoStatePreference>("pref_keep_simple")!!.performClick()
@@ -355,6 +362,8 @@ class SettingsAiTest {
         prefs.aiEnabled = true
         prefs.setAiModel(AiStep.DESCREEN, ModelCatalog.forStep(AiStep.DESCREEN)[0].id)
         prefs.setAiModel(AiStep.UPSCALE, null)
+        prefs.setAiModel(AiStep.ARTIFACTS, ModelCatalog.forStep(AiStep.ARTIFACTS)[0].id, ChainKind.MANGA)
+        prefs.setAiModel(AiStep.UPSCALE, "opencomic-ai-upscale-2x-compact-v2", ChainKind.MANGA)
         prefs.saverAi = false
         val saved = prefs.exportAll()
         PreferenceManager.getDefaultSharedPreferences(context).edit().clear().commit()
@@ -363,6 +372,52 @@ class SettingsAiTest {
         assertTrue(back.aiEnabled)
         assertEquals(ModelCatalog.forStep(AiStep.DESCREEN)[0].id, back.aiModel(AiStep.DESCREEN))
         assertNull(back.aiModel(AiStep.UPSCALE))
+        assertEquals(ModelCatalog.forStep(AiStep.ARTIFACTS)[0].id, back.aiModel(AiStep.ARTIFACTS, ChainKind.MANGA))
+        assertNull(back.aiModel(AiStep.DESCREEN, ChainKind.MANGA))
+        assertEquals("opencomic-ai-upscale-2x-compact-v2", back.aiModel(AiStep.UPSCALE, ChainKind.MANGA))
         assertFalse(back.saverAi)
+    }
+
+    @Test
+    fun bothDefaultChainsStartWithOnlyTheDefaultUpscaler() {
+        val prefs = Prefs(context)
+        for (kind in ChainKind.entries) {
+            assertNull(prefs.aiModel(AiStep.ARTIFACTS, kind))
+            assertNull(prefs.aiModel(AiStep.DESCREEN, kind))
+            assertEquals(ModelCatalog.DEFAULT_UPSCALE, prefs.aiModel(AiStep.UPSCALE, kind))
+        }
+        // Everything else keeps the keys of the single default it replaces; manga's carry the kind.
+        assertEquals("pref_ai_upscale", Prefs.aiKey(AiStep.UPSCALE))
+        assertEquals("pref_ai_upscale", Prefs.aiKey(AiStep.UPSCALE, ChainKind.OTHER))
+        assertEquals("pref_ai_manga_upscale", Prefs.aiKey(AiStep.UPSCALE, ChainKind.MANGA))
+    }
+
+    @Test
+    fun eachDefaultChainHasAHeaderAndItsOwnPickers() {
+        val fragment = settings()
+        val stored = PreferenceManager.getDefaultSharedPreferences(context)
+        val keys = (0 until fragment.preferenceScreen.preferenceCount).flatMap { i ->
+            val g = fragment.preferenceScreen.getPreference(i) as? androidx.preference.PreferenceGroup ?: return@flatMap emptyList()
+            (0 until g.preferenceCount).map { g.getPreference(it).key }
+        }
+        // Manga first, then everything else, each header above its steps.
+        val order = listOf("ai_chain_manga") + AiStep.entries.map { Prefs.aiKey(it, ChainKind.MANGA) } +
+            "ai_chain_other" + AiStep.entries.map { Prefs.aiKey(it, ChainKind.OTHER) }
+        assertEquals(order, keys.filter { it in order })
+        assertEquals(context.getString(R.string.ai_chain_manga), fragment.findPreference<Preference>("ai_chain_manga")!!.title.toString())
+        assertEquals(context.getString(R.string.ai_chain_other), fragment.findPreference<Preference>("ai_chain_other")!!.title.toString())
+        // A manga pick stores under manga's key only.
+        val manga = fragment.findPreference<ListPreference>(Prefs.aiKey(AiStep.UPSCALE, ChainKind.MANGA))!!
+        assertEquals(ModelCatalog.DEFAULT_UPSCALE, manga.value)
+        assertFalse(stored.contains(Prefs.aiKey(AiStep.UPSCALE, ChainKind.MANGA)))
+        if (manga.callChangeListener("opencomic-ai-upscale-2x-compact-v2")) manga.value = "opencomic-ai-upscale-2x-compact-v2"
+        assertEquals("opencomic-ai-upscale-2x-compact-v2", Prefs(context).aiModel(AiStep.UPSCALE, ChainKind.MANGA))
+        assertEquals(ModelCatalog.DEFAULT_UPSCALE, Prefs(context).aiModel(AiStep.UPSCALE))
+        assertFalse(stored.contains(Prefs.aiKey(AiStep.UPSCALE)))
+        // Picking manga's shown default stores it there.
+        val descreen = fragment.findPreference<ListPreference>(Prefs.aiKey(AiStep.DESCREEN, ChainKind.MANGA))!!
+        if (descreen.callChangeListener(Prefs.AI_NONE)) descreen.value = Prefs.AI_NONE
+        assertEquals(Prefs.AI_NONE, stored.getString(Prefs.aiKey(AiStep.DESCREEN, ChainKind.MANGA), null))
+        assertFalse(stored.contains(Prefs.aiKey(AiStep.DESCREEN)))
     }
 }

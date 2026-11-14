@@ -21,6 +21,7 @@ import com.infinity.comicreader.R
 import com.infinity.comicreader.ai.AiChain
 import com.infinity.comicreader.ai.AiModel
 import com.infinity.comicreader.ai.AiStep
+import com.infinity.comicreader.ai.ChainKind
 import com.infinity.comicreader.ai.Downloads
 import com.infinity.comicreader.ai.FileSet
 import com.infinity.comicreader.ai.ModelDownloads
@@ -527,7 +528,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
     /** AI steps' pickers spaced for their multi-line choices ([AiChoiceDialog]); the rest as usual. */
     @Suppress("DEPRECATION") // setTargetFragment: how a preference dialog finds its preference.
     override fun onDisplayPreferenceDialog(preference: Preference) {
-        val step = AiStep.entries.firstOrNull { Prefs.aiKey(it) == preference.key }
+        val step = ChainKind.entries.firstNotNullOfOrNull { kind -> AiStep.entries.firstOrNull { Prefs.aiKey(it, kind) == preference.key } }
         if (preference !is ListPreference || step == null) {
             super.onDisplayPreferenceDialog(preference)
             return
@@ -536,22 +537,28 @@ class SettingsFragment : PreferenceFragmentCompat() {
         AiChoiceDialog.of(preference.key, step).also { it.setTargetFragment(this, 0) }.show(parentFragmentManager, AiChoiceDialog.TAG)
     }
 
+    /** A default chain's picker of one step, in Settings. */
+    private data class AiPicker(val kind: ChainKind, val step: AiStep, val pref: ListPreference)
+
     /**
-     * Fills each AI step's choices (none, then the catalog's models with their sizes and what
-     * they do, slow ones only while Keep it simple is off or when chosen, then the imported
-     * ones, again as they come and go), starts downloading a catalog model as it is chosen, as
-     * AI processing is turned on, or (when a download was cut short with the app) as Settings
-     * open, and shows the chain run (hidden advanced choices too), each choice's download state
-     * and the space models take, as they change.
+     * Fills each default chain's AI step choices (none, then the catalog's models with their
+     * sizes and what they do, slow ones only while Keep it simple is off or when chosen, then
+     * the imported ones, again as they come and go), starts downloading a catalog model as it
+     * is chosen, as AI processing is turned on, or (when a download was cut short with the app)
+     * as Settings open, and shows the chains run (hidden advanced choices too), each choice's
+     * download state and the space models take, as they change.
      */
     private fun setUpAi(prefs: Prefs) {
         val context = requireContext()
         val store = ModelStore.of(context)
-        val pickers = AiStep.entries.mapNotNull { step -> findPreference<ListPreference>(Prefs.aiKey(step))?.let { step to it } }
+        val pickers = ChainKind.entries.flatMap { kind ->
+            AiStep.entries.mapNotNull { step -> findPreference<ListPreference>(Prefs.aiKey(step, kind))?.let { AiPicker(kind, step, it) } }
+        }
         fun chosen(step: AiStep, value: Any?): AiModel? =
             (value as? String)?.let(Models::byId)?.takeIf { it.step == step }
+        fun allChosen() = ChainKind.entries.flatMap { kind -> AiStep.entries.mapNotNull { chosen(it, prefs.aiModel(it, kind)) } }.distinct()
         fillAi = { keepSimple ->
-            for ((step, pref) in pickers) {
+            for ((_, step, pref) in pickers) {
                 val (entries, values) = ModelText.choices(context, step, keepSimple, pref.value)
                 pref.entries = entries.toTypedArray()
                 pref.entryValues = values.toTypedArray()
@@ -559,16 +566,16 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 if (pref.findIndexOfValue(pref.value) < 0) pref.value = Prefs.AI_NONE
             }
         }
-        for ((step, pref) in pickers) {
+        for ((kind, step, pref) in pickers) {
             // Unchosen, a step shows its default without storing it, so a later default reaches it.
             if (pref.value == null) {
                 pref.isPersistent = false
-                pref.value = prefs.aiModel(step) ?: Prefs.AI_NONE
+                pref.value = prefs.aiModel(step, kind) ?: Prefs.AI_NONE
                 pref.isPersistent = true
             }
             pref.setOnPreferenceChangeListener { _, value ->
                 // Picking the shown default stores it: ListPreference skips an unchanged value.
-                if (value == pref.value) prefs.setAiModel(step, value as String)
+                if (value == pref.value) prefs.setAiModel(step, value as String, kind)
                 if (prefs.aiEnabled) (chosen(step, value) as? FileSet)?.let { ModelDownloads.start(store, it) }
                 refreshAi()
                 true
@@ -577,7 +584,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
         fillAi(prefs.keepSimple)
         val ai = findPreference<Preference>(Prefs.KEY_AI)
         ai?.setOnPreferenceChangeListener { _, value ->
-            if (value == true) for (step in AiStep.entries) (chosen(step, prefs.aiModel(step)) as? FileSet)?.let { ModelDownloads.start(store, it) }
+            if (value == true) for (m in allChosen()) (m as? FileSet)?.let { ModelDownloads.start(store, it) }
             refreshAi()
             true
         }
@@ -598,10 +605,11 @@ class SettingsFragment : PreferenceFragmentCompat() {
             if (!isAdded) return
             // Keep it simple hides the size slider: sizes set away from the defaults show here instead.
             val sizes = if (prefs.keepSimple) AiSizeText.changed(context, prefs.aiThresholds) else null
-            ai?.summary = if (prefs.aiEnabled) listOfNotNull(ModelText.chain(context, AiChain.chosen(prefs)), sizes).joinToString("\n")
+            val chains = ChainKind.entries.associateWith { AiChain.chosen(prefs, it) }
+            ai?.summary = if (prefs.aiEnabled) listOfNotNull(ModelText.chains(context, chains), sizes).joinToString("\n")
             else getString(R.string.pref_ai_desc)
             manager?.summary = getString(R.string.ai_models_summary, installed.size, ModelText.size(context, used))
-            for ((step, pref) in pickers) {
+            for ((_, step, pref) in pickers) {
                 val m = chosen(step, pref.value)
                 val text = ModelText.choice(context, m, m != null && m in installed, m?.let { d.states[it.id] })
                 // A provider, not a summary: ListPreference formats a summary, and "40%" is no format.
@@ -616,7 +624,8 @@ class SettingsFragment : PreferenceFragmentCompat() {
         // A failed download waits to be chosen again; one the app's end cut short goes on, unless on a metered connection.
         lifecycleScope.launch(AppDispatchers.io) {
             val state = ModelDownloads.state.value
-            for (m in AiChain.chosen(prefs)) if (m is FileSet && ModelDownloads.mayStartBySelf(state, m.id)) ModelDownloads.start(store, m, optional = true)
+            val chosen = if (prefs.aiEnabled) allChosen() else emptyList()
+            for (m in chosen) if (m is FileSet && ModelDownloads.mayStartBySelf(state, m.id)) ModelDownloads.start(store, m, optional = true)
         }
     }
 

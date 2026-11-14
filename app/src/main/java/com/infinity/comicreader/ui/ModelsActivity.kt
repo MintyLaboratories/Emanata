@@ -30,6 +30,7 @@ import com.infinity.comicreader.ai.AiChain
 import com.infinity.comicreader.ai.AiModel
 import com.infinity.comicreader.ai.AiStep
 import com.infinity.comicreader.ai.CatalogModel
+import com.infinity.comicreader.ai.ChainKind
 import com.infinity.comicreader.ai.DetectorModel
 import com.infinity.comicreader.ai.DownloadFailure
 import com.infinity.comicreader.ai.DownloadState
@@ -143,14 +144,20 @@ object ModelText {
         else -> context.getString(R.string.ai_model_missing, m.name)
     }
 
+    /** The name of [kind]'s default chain. */
+    fun kind(context: Context, kind: ChainKind): String =
+        context.getString(if (kind == ChainKind.MANGA) R.string.ai_chain_manga else R.string.ai_chain_other)
+
     /**
-     * AI processing's description, then the models [chain] runs, in order, and a warning when
-     * together they would run past a page's time ([AiChain.slow]).
+     * AI processing's description, then the models each default chain of [chains] runs, in
+     * order, and a warning when together one's models would run past a page's time ([AiChain.slow]).
      */
-    fun chain(context: Context, chain: List<AiModel>): String {
-        val names = if (chain.isEmpty()) context.getString(R.string.ai_none) else chain.joinToString(" → ") { it.name }
-        val lines = listOf(context.getString(R.string.pref_ai_desc), context.getString(R.string.ai_chain, names))
-        return (if (AiChain.slow(chain)) lines + context.getString(R.string.ai_chain_slow) else lines).joinToString("\n")
+    fun chains(context: Context, chains: Map<ChainKind, List<AiModel>>): String {
+        val lines = listOf(context.getString(R.string.pref_ai_desc)) + chains.map { (kind, chain) ->
+            val names = if (chain.isEmpty()) context.getString(R.string.ai_none) else chain.joinToString(" → ") { it.name }
+            context.getString(R.string.ai_chain_of, kind(context, kind), names)
+        }
+        return (if (chains.values.any(AiChain::slow)) lines + context.getString(R.string.ai_chain_slow) else lines).joinToString("\n")
     }
 
     /** Who made [m], from [source], its license, where it is from and where it downloads from; then, for a conversion made for the app, what it is. */

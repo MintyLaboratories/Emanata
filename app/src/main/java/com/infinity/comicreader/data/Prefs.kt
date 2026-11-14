@@ -6,6 +6,7 @@ import androidx.appcompat.app.AppCompatDelegate
 import androidx.preference.PreferenceManager
 import com.infinity.comicreader.ai.AiStep
 import com.infinity.comicreader.ai.AiThresholds
+import com.infinity.comicreader.ai.ChainKind
 import com.infinity.comicreader.ai.ModelCatalog
 import com.infinity.comicreader.net.NetRules
 import com.infinity.comicreader.net.NetSkip
@@ -551,15 +552,15 @@ class Prefs(context: Context) {
         set(v) = put(KEY_AI, v)
 
     /**
-     * The id of [step]'s model ([com.infinity.comicreader.ai.Models]); null for none. Only a choice is stored: Upscale
-     * without one runs [ModelCatalog.DEFAULT_UPSCALE], the others none.
+     * The id of [step]'s model ([com.infinity.comicreader.ai.Models]) in [kind]'s default chain; null for none. Only a
+     * choice is stored: Upscale without one runs [ModelCatalog.DEFAULT_UPSCALE], the others none, in either chain.
      */
-    fun aiModel(step: AiStep): String? =
-        sp.getString(aiKey(step), null).let { it ?: if (step == AiStep.UPSCALE) ModelCatalog.DEFAULT_UPSCALE else null }
+    fun aiModel(step: AiStep, kind: ChainKind = ChainKind.OTHER): String? =
+        sp.getString(aiKey(step, kind), null).let { it ?: if (step == AiStep.UPSCALE) ModelCatalog.DEFAULT_UPSCALE else null }
             ?.takeIf { it != AI_NONE && it.isNotEmpty() }
 
-    /** Sets [step]'s model to model id [id], or none for null. */
-    fun setAiModel(step: AiStep, id: String?) = put(aiKey(step), id ?: AI_NONE)
+    /** Sets [step]'s model in [kind]'s default chain to model id [id], or none for null. */
+    fun setAiModel(step: AiStep, id: String?, kind: ChainKind = ChainKind.OTHER) = put(aiKey(step, kind), id ?: AI_NONE)
 
     /** The display sizes at which the chain's models run: the AI setting's two handles, each kept in its range. */
     var aiThresholds: AiThresholds
@@ -794,8 +795,9 @@ class Prefs(context: Context) {
         /** The stored value of a step without a model. */
         const val AI_NONE = "none"
 
-        /** The key of [step]'s model. */
-        fun aiKey(step: AiStep) = "pref_ai_${step.key}"
+        /** The key of [step]'s model in [kind]'s default chain: the manga chain's carry its kind. */
+        fun aiKey(step: AiStep, kind: ChainKind = ChainKind.OTHER) =
+            if (kind == ChainKind.OTHER) "pref_ai_${step.key}" else "pref_ai_${kind.key}_${step.key}"
 
         private val KNOWN_KEYS = setOf(
             KEY_KEEP_SIMPLE, KEY_THEME, KEY_LOCALE, KEY_CHARSET, KEY_FULLSCREEN, KEY_KEEP_ON, KEY_READING_DIR,
@@ -810,7 +812,7 @@ class Prefs(context: Context) {
             KEY_TOOLBAR_BUTTONS, KEY_MORE_ACTIONS, KEY_PAGE_ACTIONS, KEY_FAB_ONE, KEY_FAB_MANY, KEY_HANDED, KEY_SPREADS, KEY_COVER_ALONE, KEY_ROTATE_SPREADS, KEY_JOIN_SPREADS,
             KEY_SAVER_COVERS, KEY_SAVER_READ_AHEAD, KEY_SAVER_SCANS, KEY_SAVER_AI, KEY_COMPACT_IN_PLACE, KEY_SUGGEST_REPACK, KEY_AI,
             KEY_AI_UPSCALE_ABOVE, KEY_AI_CLEANUP_ABOVE, KEY_SIMILAR_SHARES, KEY_METERED_SKIP, KEY_SLOW_SKIP, KEY_METERED_WARN, KEY_METERED_WARN_MB
-        ) + AiStep.entries.map(::aiKey) + TABS.flatMap { tab -> VIEW_FIELDS.map { viewKey(tab, it) } + SORT_FIELDS.map { sortKey(tab, it) } }
+        ) + ChainKind.entries.flatMap { kind -> AiStep.entries.map { aiKey(it, kind) } } + TABS.flatMap { tab -> VIEW_FIELDS.map { viewKey(tab, it) } + SORT_FIELDS.map { sortKey(tab, it) } }
 
         /** The Language setting's values (`locale_values`). */
         internal val LOCALES = listOf("system", "en-US")

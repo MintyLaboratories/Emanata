@@ -109,6 +109,47 @@ class AiChainTest {
     }
 
     @Test
+    fun eachKindRunsItsOwnDefaultChain() {
+        prefs.aiEnabled = true
+        prefs.setAiModel(AiStep.DESCREEN, first(AiStep.DESCREEN).id, ChainKind.MANGA)
+        val upscale = ModelCatalog.byId(ModelCatalog.DEFAULT_UPSCALE)
+        assertEquals(listOf(first(AiStep.DESCREEN), upscale), AiChain.chosen(prefs, ChainKind.MANGA))
+        assertEquals(listOf(upscale), AiChain.chosen(prefs, ChainKind.OTHER))
+        assertEquals("other is the default", AiChain.chosen(prefs, ChainKind.OTHER), AiChain.chosen(prefs))
+        assertEquals(listOf(first(AiStep.DESCREEN), upscale), AiChain.forBook(prefs, null, ChainKind.MANGA))
+        assertEquals("a book's own picks win over its kind", emptyList<CatalogModel>(), AiChain.forBook(prefs, AiPicks.NONE, ChainKind.MANGA))
+        assertEquals(AiPicks.of(prefs, ChainKind.MANGA), AiChain.startingPicks(prefs, ChainKind.MANGA))
+        prefs.aiEnabled = false
+        assertEquals(emptyList<CatalogModel>(), AiChain.chosen(prefs, ChainKind.MANGA))
+        assertEquals(AiPicks.NONE, AiChain.startingPicks(prefs, ChainKind.MANGA))
+    }
+
+    @Test
+    fun noneIsChosenOnlyWhenBothDefaultChainsAreEmpty() {
+        assertFalse(AiChain.noneChosen(prefs))
+        prefs.setAiModel(AiStep.UPSCALE, null)
+        assertFalse("manga still upscales", AiChain.noneChosen(prefs))
+        prefs.setAiModel(AiStep.UPSCALE, null, ChainKind.MANGA)
+        assertTrue(AiChain.noneChosen(prefs))
+        prefs.setAiModel(AiStep.ARTIFACTS, first(AiStep.ARTIFACTS).id, ChainKind.MANGA)
+        assertFalse(AiChain.noneChosen(prefs))
+    }
+
+    @Test
+    fun aBookTakesItsOwnKindThenItsFoldersThenItsDirections() {
+        assertEquals(ChainKind.OTHER, ChainKind.resolve(null, null, rightToLeft = false))
+        assertEquals(ChainKind.MANGA, ChainKind.resolve(null, null, rightToLeft = true))
+        assertEquals(ChainKind.OTHER, ChainKind.resolve(null, ChainKind.OTHER, rightToLeft = true))
+        assertEquals(ChainKind.MANGA, ChainKind.resolve(null, ChainKind.MANGA, rightToLeft = false))
+        assertEquals(ChainKind.OTHER, ChainKind.resolve(ChainKind.OTHER, ChainKind.MANGA, rightToLeft = true))
+        assertEquals(ChainKind.MANGA, ChainKind.resolve(ChainKind.MANGA, ChainKind.OTHER, rightToLeft = false))
+        assertEquals(ChainKind.MANGA, ChainKind.of("manga"))
+        assertEquals(ChainKind.OTHER, ChainKind.of("other"))
+        assertEquals(null, ChainKind.of("comics"))
+        assertEquals(null, ChainKind.of(null))
+    }
+
+    @Test
     fun picksOfAnotherStepOrUnknownRunNone() {
         val picks = AiPicks(mapOf(AiStep.DESCREEN to first(AiStep.UPSCALE).id, AiStep.UPSCALE to "gone"))
         assertEquals(emptyList<CatalogModel>(), picks.models)

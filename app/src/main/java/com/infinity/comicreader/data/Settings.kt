@@ -8,6 +8,7 @@ import android.content.SharedPreferences
 import android.os.PowerManager
 import androidx.core.content.ContextCompat
 import com.infinity.comicreader.ai.AiPicks
+import com.infinity.comicreader.ai.ChainKind
 import com.infinity.comicreader.net.NetPolicy
 import com.infinity.comicreader.net.RemoteChannel
 import com.infinity.comicreader.reader.Adjustments
@@ -112,8 +113,8 @@ data class ReaderSettings(
     val zoomScaling: Scaling = Scaling.DEFAULT,
     val thumbScaling: Scaling = Scaling.DEFAULT,
     val thrift: Thrift = Thrift.NONE,
-    /** The AI models chosen in Settings, while AI processing is on; null while off. */
-    val ai: AiPicks? = null
+    /** The AI models chosen in Settings, by default chain, while AI processing is on; null while off. */
+    val ai: Map<ChainKind, AiPicks>? = null
 ) {
     companion object {
         fun from(p: Prefs, saving: Boolean = false) = ReaderSettings(
@@ -151,7 +152,7 @@ data class ReaderSettings(
             zoomScaling = p.zoomScaling,
             thumbScaling = p.thumbScaling,
             thrift = Thrift.of(saving, p),
-            ai = if (p.aiEnabled) AiPicks.of(p) else null
+            ai = if (p.aiEnabled) ChainKind.entries.associateWith { AiPicks.of(p, it) } else null
         )
     }
 }

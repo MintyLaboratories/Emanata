@@ -354,7 +354,44 @@
             app:key="pref_ai"
             app:summary="@string/pref_ai_desc"
             app:title="@string/pref_ai" />
-        <!-- Entries come from the model catalog; only choices are stored, no defaults (SettingsFragment). -->
+        <!--
+          Two default chains, each a header and a picker per step: a book runs one (ChainKind) unless it has its own.
+          Entries come from the model catalog; only choices are stored, no defaults (SettingsFragment).
+        -->
+        <Preference
+            app:dependency="pref_ai"
+            app:key="ai_chain_manga"
+            app:persistent="false"
+            app:selectable="false"
+            app:summary="@string/ai_chain_manga_desc"
+            app:title="@string/ai_chain_manga" />
+        <ListPreference
+            app:dependency="pref_ai"
+            app:key="pref_ai_manga_artifacts"
+            app:title="@string/pref_ai_artifacts">
+            <extra
+                android:name="advanced"
+                android:value="true" />
+        </ListPreference>
+        <ListPreference
+            app:dependency="pref_ai"
+            app:key="pref_ai_manga_descreen"
+            app:title="@string/pref_ai_descreen">
+            <extra
+                android:name="advanced"
+                android:value="true" />
+        </ListPreference>
+        <ListPreference
+            app:dependency="pref_ai"
+            app:key="pref_ai_manga_upscale"
+            app:title="@string/pref_ai_upscale" />
+        <Preference
+            app:dependency="pref_ai"
+            app:key="ai_chain_other"
+            app:persistent="false"
+            app:selectable="false"
+            app:summary="@string/ai_chain_other_desc"
+            app:title="@string/ai_chain_other" />
         <ListPreference
             app:dependency="pref_ai"
             app:key="pref_ai_artifacts"

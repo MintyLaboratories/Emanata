@@ -22,6 +22,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -31,7 +34,9 @@ import kotlinx.coroutines.withContext
  * Grid of page thumbnails used to jump to a page. Each is made at its view's exact
  * size, cropped and scaled through [scaling] to fill it, and drawn 1:1. Until it is ready the
  * page's preview stands in, stored or quickly decoded ([PageSource.loadPreview]) and
- * cropped the same way, so the exact one replaces it in place. [thumbHeight], when
+ * cropped the same way, so the exact one replaces it in place. Exact thumbnails are made
+ * only once every page bound has its preview, or has none to get; one that fails shows
+ * a placeholder only where nothing shows yet. [thumbHeight], when
  * above 0, replaces the layout's thumbnail height in pixels. [currentPage] is outlined,
  * pages [marked] outlined thicker and checked; [labelOf] numbers each page.
  */
@@ -58,6 +63,9 @@ class ThumbAdapter(
 
     /** Previews are small: more of them at a time, beside the exact thumbnails. */
     private val previewGate = Semaphore(4)
+
+    /** Previews asked for and not yet shown or found missing; exact thumbnails start only while none are. */
+    private val previewsDue = MutableStateFlow(0)
 
     /** Called on the main thread as page [Int] shows its preview (false) or exact thumbnail (true). */
     var onShown: ((Int, Boolean) -> Unit)? = null
@@ -129,11 +137,20 @@ class ThumbAdapter(
             return
         }
         holder.job = scope.launch {
-            // The preview loads beside the exact thumbnail and shows only while that is not in.
+            // The preview shows only while the exact thumbnail is not in.
             var exactIn = false
-            val preview = if (holder.image.drawable == null) launch { showPreview(holder, position) { !exactIn } } else null
+            val preview = if (holder.image.drawable == null) {
+                previewsDue.update { it + 1 }
+                launch { showPreview(holder, position) { !exactIn } }.also { job ->
+                    job.invokeOnCompletion { previewsDue.update { it - 1 } }
+                }
+            } else {
+                null
+            }
             val bitmap = withContext(AppDispatchers.io) {
                 gate.withPermit {
+                    // Every page bound gets its preview before any exact thumbnail is made.
+                    previewsDue.first { it == 0 }
                     try {
                         source.loadPage(position, Target(w, h, Fit.COVER, linear = linear, scaling = scaling))
                     } catch (t: Throwable) {
@@ -142,18 +159,24 @@ class ThumbAdapter(
                     }
                 }
             }
-            exactIn = true
-            preview?.cancel()
             if (bitmap != null) {
+                exactIn = true
+                preview?.cancel()
                 cache.put(position, bitmap)
                 if (holder.page == position) show(holder, bitmap)
-            } else if (holder.page == position) {
-                val res = holder.itemView.resources
-                val name = source.pageName(position) ?: res.getString(R.string.page_number, position + 1)
-                holder.image.scaleType = ImageView.ScaleType.FIT_CENTER
-                holder.image.setImageDrawable(ErrorPageDrawable(res.getString(R.string.error_load), name, ""))
+                return@launch
             }
+            preview?.join()
+            // A failed thumbnail leaves what shows (its preview, or an earlier thumbnail) in place.
+            if (holder.page == position && holder.image.drawable == null) showFailed(holder, position)
         }
+    }
+
+    private fun showFailed(holder: Holder, position: Int) {
+        val res = holder.itemView.resources
+        val name = source.pageName(position) ?: res.getString(R.string.page_number, position + 1)
+        holder.image.scaleType = ImageView.ScaleType.FIT_CENTER
+        holder.image.setImageDrawable(ErrorPageDrawable(res.getString(R.string.error_load), name, ""))
     }
 
     /**

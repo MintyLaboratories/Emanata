@@ -24,6 +24,7 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = Application::class)
@@ -55,19 +56,40 @@ class ThumbAdapterTest {
         override fun close() {}
     }
 
-    /** One page whose preview waits for [preview]; its exact decode is ready at once. */
+    /** Pages whose previews wait for [preview], the last having none; exact decodes are ready at once and counted. */
     private class SlowPreviewSource : PageSource {
         val preview = CountDownLatch(1)
-        val previewDone = CountDownLatch(1)
-        override val pageCount: Int = 1
-        override fun loadPage(index: Int, target: Target): Bitmap =
-            Bitmap.createBitmap(target.width, target.height, Bitmap.Config.ARGB_8888)
-
-        override fun loadPreview(index: Int): Bitmap {
-            preview.await(5, TimeUnit.SECONDS)
-            return Bitmap.createBitmap(2, 3, Bitmap.Config.ARGB_8888).also { previewDone.countDown() }
+        val loads = AtomicInteger()
+        override val pageCount: Int = 3
+        override fun loadPage(index: Int, target: Target): Bitmap {
+            loads.incrementAndGet()
+            return Bitmap.createBitmap(target.width, target.height, Bitmap.Config.ARGB_8888)
         }
 
+        override fun loadPreview(index: Int): Bitmap? {
+            preview.await(5, TimeUnit.SECONDS)
+            return if (index == pageCount - 1) null else Bitmap.createBitmap(2, 3, Bitmap.Config.ARGB_8888)
+        }
+
+        override fun close() {}
+    }
+
+    /** One page with a preview; its exact decodes succeed while [works], else fail. */
+    private class FlakyPageSource : PageSource {
+        @Volatile
+        var works = true
+        val preview: Bitmap = Bitmap.createBitmap(2, 3, Bitmap.Config.ARGB_8888)
+        val failures = AtomicInteger()
+        override val pageCount: Int = 1
+        override fun loadPage(index: Int, target: Target): Bitmap {
+            if (!works) {
+                failures.incrementAndGet()
+                throw java.util.zip.ZipException("invalid distance too far back")
+            }
+            return Bitmap.createBitmap(target.width, target.height, Bitmap.Config.ARGB_8888)
+        }
+
+        override fun loadPreview(index: Int): Bitmap = preview
         override fun close() {}
     }
 
@@ -112,21 +134,53 @@ class ThumbAdapterTest {
     }
 
     @Test
-    fun exactThumbnailDoesNotWaitForPreviewAndStaysWhenItArrives() {
+    fun exactThumbnailsWaitForEveryPreview() {
         val source = SlowPreviewSource()
         val adapter = ThumbAdapter(source, currentPage = 0) {}
         val events = ArrayList<Pair<Int, Boolean>>()
         adapter.onShown = { position, exact -> events += position to exact }
         val list = listShowing(adapter)
-        val image = (list.findViewHolderForAdapterPosition(0) as ThumbAdapter.Holder).image
-        waitFor { image.drawable != null }
-        assertEquals(image.width, (image.drawable as BitmapDrawable).bitmap.width)
-        source.preview.countDown()
-        source.previewDone.await(5, TimeUnit.SECONDS)
-        // Lets a late preview reach the main thread, were it to show.
+        fun image(position: Int) = (list.findViewHolderForAdapterPosition(position) as ThumbAdapter.Holder).image
         waitFor(300) { false }
-        assertEquals(image.width, (image.drawable as BitmapDrawable).bitmap.width)
-        assertEquals(listOf(0 to true), events)
+        assertEquals(0, source.loads.get())
+        source.preview.countDown()
+        waitFor { (0 until source.pageCount).all { (image(it).drawable as? BitmapDrawable)?.bitmap?.width == image(it).width } }
+        assertEquals(source.pageCount, source.loads.get())
+        assertEquals(listOf(0 to false, 1 to false), events.take(2).sortedBy { it.first })
+        assertEquals(setOf(0 to true, 1 to true, 2 to true), events.drop(2).toSet())
+        adapter.release()
+    }
+
+    @Test
+    fun failedThumbnailKeepsItsPreview() {
+        val source = FlakyPageSource().apply { works = false }
+        val adapter = ThumbAdapter(source, currentPage = 0) {}
+        val list = listShowing(adapter)
+        val image = (list.findViewHolderForAdapterPosition(0) as ThumbAdapter.Holder).image
+        waitFor { source.failures.get() > 0 }
+        waitFor(300) { false }
+        assertSame(source.preview, (image.drawable as BitmapDrawable).bitmap)
+        adapter.release()
+    }
+
+    @Test
+    fun failedRedoKeepsTheThumbnailShown() {
+        val source = FlakyPageSource()
+        val adapter = ThumbAdapter(source, currentPage = 0) {}
+        val list = listShowing(adapter)
+        val image = (list.findViewHolderForAdapterPosition(0) as ThumbAdapter.Holder).image
+        waitFor { (image.drawable as? BitmapDrawable)?.bitmap?.width == image.width }
+        val shown = (image.drawable as BitmapDrawable).bitmap
+        source.works = false
+        // A new width asks for the thumbnail again.
+        list.measure(
+            View.MeasureSpec.makeMeasureSpec(300, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(2000, View.MeasureSpec.EXACTLY)
+        )
+        list.layout(0, 0, 300, 2000)
+        waitFor { source.failures.get() > 0 }
+        waitFor(300) { false }
+        assertSame(shown, (image.drawable as BitmapDrawable).bitmap)
         adapter.release()
     }
 

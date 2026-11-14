@@ -88,20 +88,26 @@ internal object GlesShaders : ShaderRuntime {
     }
 
     /**
-     * Marks [used] as just used and deletes the caches beside it past the [CACHED] most recent
-     * with what was measured of them ([ShaderSessions.FIT_SUFFIX]), and the partial ones an end
-     * mid-write left ([PART_AGE_MS] old: none is being written).
+     * Marks [used] and what was measured of it ([ShaderSessions.FIT_SUFFIX]) as just used, and
+     * deletes beside them: caches past the [CACHED] most recent with their measurements,
+     * measurements past the [CACHED] most recent (a measurement outlives a cache the driver
+     * could not write), and the partial caches an end mid-write left ([PART_AGE_MS] old: none
+     * is being written).
      */
     internal fun prune(used: File, now: Long = System.currentTimeMillis()) {
         if (used.isFile) used.setLastModified(now)
-        val files = used.parentFile?.listFiles().orEmpty()
-        val (kept, old) = files.filter { it.name.endsWith(CACHE_SUFFIX) }.sortedByDescending { it.lastModified() }.let { it.take(CACHED) to it.drop(CACHED) }
+        val dir = used.parentFile ?: return
+        File(dir, used.name.removeSuffix(CACHE_SUFFIX) + ShaderSessions.FIT_SUFFIX).takeIf { it.isFile }?.setLastModified(now)
+        val files = dir.listFiles().orEmpty()
+        fun recent(suffix: String) = files.filter { it.name.endsWith(suffix) }.sortedByDescending { it.lastModified() }
+        val old = recent(CACHE_SUFFIX).drop(CACHED)
         for (f in old) f.delete()
-        val keys = kept.map { it.name.removeSuffix(CACHE_SUFFIX) }.toSet()
+        val evicted = old.map { it.name.removeSuffix(CACHE_SUFFIX) }.toSet()
+        recent(ShaderSessions.FIT_SUFFIX).forEachIndexed { i, f ->
+            if (i >= CACHED || f.name.removeSuffix(ShaderSessions.FIT_SUFFIX) in evicted) f.delete()
+        }
         for (f in files) {
-            val stale = f.name.endsWith(CACHE_SUFFIX + PART_SUFFIX) && now - f.lastModified() > PART_AGE_MS
-            val orphan = f.name.endsWith(ShaderSessions.FIT_SUFFIX) && f.name.removeSuffix(ShaderSessions.FIT_SUFFIX) !in keys
-            if (stale || orphan) f.delete()
+            if (f.name.endsWith(CACHE_SUFFIX + PART_SUFFIX) && now - f.lastModified() > PART_AGE_MS) f.delete()
         }
     }
 

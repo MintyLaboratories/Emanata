@@ -135,10 +135,26 @@ class ShaderSessionsTest {
         assertTrue(!files[1].isFile && !files[2].isFile)
         assertTrue(other.isFile)
         assertTrue("an old partial cache goes, one being written stays", !left.isFile && writing.isFile)
-        val keptFit = File(dir, "0" + ShaderSessions.FIT_SUFFIX).apply { writeText("x") }
-        val goneFit = File(dir, "1" + ShaderSessions.FIT_SUFFIX).apply { writeText("x") }
+        val keptFit = File(dir, "0" + ShaderSessions.FIT_SUFFIX).apply { writeText("x"); setLastModified(1_000L) }
+        val evicted = File(dir, "3.programs").apply { writeText("x"); setLastModified(1_000L) }
+        val goneFit = File(dir, "3" + ShaderSessions.FIT_SUFFIX).apply { writeText("x") }
         GlesShaders.prune(files[0], now)
-        assertTrue("a fit stays with its cache, and goes with it", keptFit.isFile && !goneFit.isFile)
+        assertTrue("a fit stays with its cache, and goes with it", keptFit.isFile && !evicted.isFile && !goneFit.isFile)
+        assertEquals("used just now", now / 1000, keptFit.lastModified() / 1000)
+        dir.deleteRecursively()
+    }
+
+    @Test
+    fun aFitOutlivesACacheTheDriverCouldNotWrite() {
+        val dir = File("build/tmp/shader-fit-prune-test").apply { deleteRecursively(); mkdirs() }
+        val now = System.currentTimeMillis()
+        val unwritten = File(dir, "a.programs")
+        val fit = File(dir, "a" + ShaderSessions.FIT_SUFFIX).apply { writeText("x"); setLastModified(1_000L) }
+        val older = (0 until GlesShaders.CACHED).map { i -> File(dir, "o$i" + ShaderSessions.FIT_SUFFIX).apply { writeText("x"); setLastModified(2_000L + i * 1_000L) } }
+        GlesShaders.prune(unwritten, now)
+        assertTrue("no cache beside it, still kept", fit.isFile)
+        assertEquals("only the most recent fits stay", GlesShaders.CACHED, dir.listFiles { f -> f.name.endsWith(ShaderSessions.FIT_SUFFIX) }!!.size)
+        assertTrue("the oldest went", !older[0].isFile && older.last().isFile)
         dir.deleteRecursively()
     }
 

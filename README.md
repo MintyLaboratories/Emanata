@@ -1078,23 +1078,31 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   thresholds, gray pages and processed-page cache. The headers (`HOOK`,
   `BIND`, `SAVE`, `DESC`, `WIDTH`, `HEIGHT`, `COMPONENTS`, `WHEN`, sizes and
   conditions in reverse Polish notation) are read as mpv's manual describes
-  them; stages MAIN and PREKERNEL run in that order, and each pass gets mpv's
-  names for the textures it binds (`HOOKED_tex`, `NAME_pos`, `NAME_pt`,
-  `NAME_texOff`…). Each pass is a fragment shader drawing into an RGBA16F
-  texture (RGBA32F where 16-bit float targets are not renderable; neither,
-  and chains are refused), sampled bilinearly with clamped edges; a texture
-  is reused once no later pass reads it. The OpenGL ES 3 context is the
-  runner's own, at low priority where the driver allows. A chain is measured
-  on the GPU (its passes compute every pixel alike wherever it sits in a
-  tile), checked for seams at its tile size (up to 512 by default, its
-  textures within a quarter of the model memory), and refused when its files
-  use what the runner lacks (compute passes, embedded textures, parameters,
-  other stages) or do not compile. Compiled passes are kept as program
-  binaries in the app's cache (the eight chains used last, each keyed by its
-  sources and the GPU driver), so a chain opened again loads in milliseconds
-  instead of compiling for up to seconds. A GPU run past 10 s, or three failed
-  runs in a row, turn the shader path off for the process: its pages then show
-  without it.
+  them; stages MAIN and PREKERNEL run in that order (MAIN, bound at
+  PREKERNEL, is the MAIN stage's result), each pass keeps the channels its
+  `COMPONENTS` says, and each pass gets mpv's names for the textures it binds
+  (`HOOKED_tex`, `NAME_pos`, `NAME_pt`, `NAME_texOff`…). Each pass is a
+  fragment shader drawing into an RGBA16F texture (RGBA32F where 16-bit
+  float targets are not renderable; neither, and chains are refused),
+  sampled bilinearly with clamped edges; a texture is reused once no later
+  pass reads it. The OpenGL ES 3 context is the runner's own, at low
+  priority where the driver allows; a tile's passes go to the GPU eight at a
+  time. A chain is measured on the GPU: its passes compute every pixel alike
+  wherever it sits in a tile, so its whole reach is found exactly (strips
+  changed past a point, compared bit for bit). It is then checked for seams
+  (at most 1 code) at its largest tile (up to 512 by default, its textures
+  within a quarter of the model memory, smaller when its tiles took over
+  150 ms there); each page then takes the tile size up to that which leaves
+  the least work (a 1000×1500 page at 2× in 416 px tiles rather than 512).
+  Chains are refused when their files use what the runner lacks (compute
+  passes, embedded textures, parameters, other stages) or do not compile.
+  Compiled passes are kept as program binaries in the app's cache (the eight
+  chains used last, each keyed by its sources, the GPU driver and the
+  runner's version), with what was measured, so a chain opened again loads
+  in milliseconds instead of compiling and measuring for up to seconds. A
+  GPU run past 10 s, or three failed runs in a row, turn the shader path off
+  for the process: its pages then show without it. Shader files two chains
+  share download once and are copied between them.
 - Imported models (`ModelImports`, `ModelCheck`, `UserModels`): the picked
   files are told apart by name (else by the `.param`'s first line), copied
   into a staging folder (at most 4 MB and 512 MB), opened as above within the

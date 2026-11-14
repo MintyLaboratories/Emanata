@@ -320,8 +320,8 @@ class Prefs(context: Context) {
     /** How covers are made from their images. */
     val coverStyle: CoverStyle get() = CoverStyle(thumbFit, cropAnchor, linearLight, thumbScaling)
 
-    /** [coverStyle]'s key for the cover of a book marked [rightToLeft] or not, under its text detector ([Thumbs.styleKey]). */
-    fun coverStyleKey(rightToLeft: Boolean): String = Thumbs.styleKey(app, coverStyle, rightToLeft)
+    /** [coverStyle]'s key under the cover text detector ([Thumbs.styleKey]). */
+    fun coverStyleKey(): String = Thumbs.styleKey(app, coverStyle)
 
     /** The library toolbar's buttons, in order. */
     var toolbarButtons: ToolbarButtons

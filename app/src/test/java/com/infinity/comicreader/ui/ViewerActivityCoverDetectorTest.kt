@@ -34,7 +34,7 @@ import org.robolectric.annotation.GraphicsMode
 import java.io.ByteArrayOutputStream
 import java.io.File
 
-/** The reader looks at a cover with the detector the library picks for it, whatever the cover itself told. */
+/** The reader looks at a cover with the library's detector once, whatever the cover itself told. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -45,11 +45,9 @@ class ViewerActivityCoverDetectorTest {
 
     private val context = ApplicationProvider.getApplicationContext<Application>()
     private val detector = Thumbs.detector
-    private val rtlDetector = Thumbs.rtlDetector
 
-    /** Runs of the stand-in for the session's detector and for that of right-to-left books. */
+    /** Runs of the stand-in detector. */
     private var usualRuns = 0
-    private var rtlRuns = 0
 
     @Before
     fun setUp() {
@@ -57,13 +55,11 @@ class ViewerActivityCoverDetectorTest {
         Prefs(context).resumeMode = ResumeMode.NO
         Thumbs.clear(context)
         Thumbs.detector = { titleOnRed("usual") { usualRuns++ } }
-        Thumbs.rtlDetector = { titleOnRed("rtl") { rtlRuns++ } }
     }
 
     @After
     fun dropDetectors() {
         Thumbs.detector = detector
-        Thumbs.rtlDetector = rtlDetector
         Thumbs.clear(context)
     }
 
@@ -111,13 +107,13 @@ class ViewerActivityCoverDetectorTest {
     private fun ViewerActivity.pagerDirection() = findViewById<View>(R.id.viewer_pager).layoutDirection
 
     @Test
-    fun aCoverThatTurnsTheBookRightToLeftIsLookedAtOnceWithTheLibrarysDetector() {
+    fun aCoverThatTurnsTheBookRightToLeftIsLookedAtOnce() {
         val book = book()
         val first = open(book)
         idleUntil { first.pagerDirection() == View.LAYOUT_DIRECTION_RTL }
         assertEquals(View.LAYOUT_DIRECTION_RTL, first.pagerDirection())
         val runs = usualRuns
-        assertTrue("the session's detector looked", runs > 0)
+        assertTrue("the detector looked", runs > 0)
         first.finish()
 
         val second = open(book)
@@ -126,7 +122,6 @@ class ViewerActivityCoverDetectorTest {
         val until = System.currentTimeMillis() + 500
         idleUntil { System.currentTimeMillis() > until }
         assertEquals("not looked at again", runs, usualRuns)
-        assertEquals("never under the right-to-left detector", 0, rtlRuns)
         assertEquals(View.LAYOUT_DIRECTION_RTL, second.pagerDirection())
     }
 }

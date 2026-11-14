@@ -6,7 +6,6 @@ import com.infinity.comicreader.data.BookFacts
 import com.infinity.comicreader.data.BookIds
 import com.infinity.comicreader.data.CoverArt
 import com.infinity.comicreader.data.CoverFront
-import com.infinity.comicreader.data.ReadingDirection
 import com.infinity.comicreader.data.SmartCrop
 import com.infinity.comicreader.util.Formats
 import java.io.File
@@ -18,14 +17,9 @@ object BookDirection {
 
     /**
      * What a book's contents told: [detected]; [complete] is false when its ComicInfo was left
-     * unread for its cost. [withoutCover] is what they told before a cover's verdict was added
-     * to [detected], as the library's facts hold it: what picks the cover's detector.
+     * unread for its cost.
      */
-    data class Contents(
-        val detected: DirectionDetection.Detected?,
-        val complete: Boolean = true,
-        val withoutCover: DirectionDetection.Detected? = detected
-    )
+    data class Contents(val detected: DirectionDetection.Detected?, val complete: Boolean = true)
 
     /**
      * What [source], opened from [file], tells without its cover. A single image stands for
@@ -135,15 +129,6 @@ object BookDirection {
             page.recycle()
         }
     }
-
-    /**
-     * True when a book is marked right to left as the library marks it ([BookEntry.direction]):
-     * by its folder's direction when set ([folderDir]), else by what was [detected] (null while
-     * detection is off), else by the default direction ([defaultDir]). Its cover's text is then
-     * found by PP-OCR ([Thumbs.detectorFor]).
-     */
-    fun markedRightToLeft(folderDir: String?, detected: ReadingDirection?, defaultDir: String): Boolean =
-        (folderDir ?: detected?.key ?: defaultDir) == ReadingDirection.RTL.key
 
     /**
      * What [source]'s cover, its first page, tells of reading direction ([coverFront]): [known]

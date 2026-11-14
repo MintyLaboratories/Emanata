@@ -172,21 +172,11 @@ object Thumbs {
     @Volatile
     internal var detector: (Context) -> CoverTextDetector = { CoverTextDetectors.shared(it).detector() }
 
-    /** Finds text on covers of books marked right to left. Tests stand in their own. */
-    @Volatile
-    internal var rtlDetector: (Context) -> CoverTextDetector = { CoverTextDetectors.shared(it).detector() }
-
-    /** The detector of [entry]'s cover: that of a book marked right to left ([BookEntry.direction]) or not ([detectorFor]). */
-    private fun detectorFor(context: Context, entry: BookEntry): CoverTextDetector = detectorFor(context, entry.direction == ReadingDirection.RTL)
-
-    /** The detector of the cover of a book marked [rightToLeft] or not: [rtlDetector] or [detector]. */
-    fun detectorFor(context: Context, rightToLeft: Boolean): CoverTextDetector = if (rightToLeft) rtlDetector(context) else detector(context)
-
     /** The cover-focus version ([SmartCrop.version]) of the [detector] in use. */
     fun coverVersion(context: Context): String = SmartCrop.version(detector(context).id)
 
-    /** [style]'s part of the key ([CoverStyle.key]) of the cover of a book marked [rightToLeft] or not, under its detector ([detectorFor]). */
-    fun styleKey(context: Context, style: CoverStyle, rightToLeft: Boolean): String = style.key(detectorFor(context, rightToLeft).id)
+    /** [style]'s part of the key ([CoverStyle.key]) of a cover, under the [detector]. */
+    fun styleKey(context: Context, style: CoverStyle): String = style.key(detector(context).id)
 
     /**
      * Where the Smart crop anchor looks in [region] of [entry]'s cover image [src], found once per
@@ -298,8 +288,7 @@ object Thumbs {
         if (found != null) cached(context, found, width, height, style)?.let { return Cover(it, full = true) }
         val entry = found ?: listed
         val page = entry.bookmarkPage
-        // One detector for the key, focus and front, even when the session's pick changes meanwhile.
-        val detector = detectorFor(context, entry)
+        val detector = detector(context)
         // Arrivals before the detector looks: one during its look makes a cover without text again.
         val arrivedBefore = arrivals(context)
         val keys = coverKeys(context, entry, width, height, style, detector)
@@ -401,7 +390,7 @@ object Thumbs {
      * which asks for it), in memory as provisional; once the model is there it is deleted.
      */
     fun cached(context: Context, entry: BookEntry, width: Int, height: Int, style: CoverStyle = CoverStyle()): Bitmap? {
-        val detector = detectorFor(context, entry)
+        val detector = detector(context)
         val keys = coverKeys(context, entry, width, height, style, detector)
         val k = keys.shaped
         fromMemory(context, k)?.let { return it }
@@ -438,7 +427,7 @@ object Thumbs {
      * What a cover is cached by: its file, box size, style ([CoverStyle.key]), the hidden pages
      * that move it ([hiddenTag]), a bookmark's page in the book, and the book's own file name
      * charset, which may reorder its pages ([NameCharset.overrides]); with the detector of its
-     * cover ([detectorFor]) only when that detector looked for its text ([Keys]).
+     * cover ([detector]) only when that detector looked for its text ([Keys]).
      */
     private fun coverKeys(
         context: Context,
@@ -446,7 +435,7 @@ object Thumbs {
         width: Int,
         height: Int,
         style: CoverStyle,
-        detector: CoverTextDetector = detectorFor(context, entry)
+        detector: CoverTextDetector = detector(context)
     ): Keys {
         val page = if (entry.bookmarkPage >= 0) bookPage(context, entry) else -1
         val head = "${key(entry)}|${width}x$height|"

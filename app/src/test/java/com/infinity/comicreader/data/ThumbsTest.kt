@@ -13,7 +13,6 @@ import com.infinity.comicreader.ai.CoverTextDetector
 import com.infinity.comicreader.ai.ScoreMap
 import com.infinity.comicreader.ai.TextDetector
 import com.infinity.comicreader.reader.Avif
-import com.infinity.comicreader.reader.BookDirection
 import com.infinity.comicreader.reader.FakeAvifCodec
 import com.infinity.comicreader.reader.Fixtures
 import com.infinity.comicreader.reader.Wraparound
@@ -133,14 +132,12 @@ class ThumbsTest {
     }
 
     private val detector = Thumbs.detector
-    private val rtlDetector = Thumbs.rtlDetector
     private val arrivals = Thumbs.arrivals
     private val modelInPlace = Thumbs.modelInPlace
 
     @After
     fun dropDetector() {
         Thumbs.detector = detector
-        Thumbs.rtlDetector = rtlDetector
         Thumbs.arrivals = arrivals
         Thumbs.modelInPlace = modelInPlace
     }
@@ -291,28 +288,14 @@ class ThumbsTest {
     }
 
     @Test
-    fun aBookMarkedRightToLeftFindsItsTextWithTheRightToLeftDetector() {
+    fun aBookMarkedRightToLeftFindsItsTextWithTheSameDetector() {
         val smart = CoverStyle(ThumbFit.FILL, CropAnchor.SMART)
-        val usual = textAt(0.85, 0.92, id = "usual")
-        var rtlCalls = 0
-        val rtl = coverText("rtl") { bitmap ->
-            rtlCalls++
-            textMap(bitmap, 0.02, 0.1)
-        }
-        Thumbs.rtlDetector = { rtl }
+        val calls = textAt(0.85, 0.92)
         val left = cover(name = "left.png").copy(direction = ReadingDirection.LTR)
         val right = cover(name = "right.png").copy(direction = ReadingDirection.RTL)
         assertEquals(Color.BLUE, Thumbs.load(context, left, "UTF-8", 120, 60, smart)!!.getPixel(60, 30))
-        assertEquals(Color.RED, Thumbs.load(context, right, "UTF-8", 120, 60, smart)!!.getPixel(60, 30))
-        assertEquals(1, usual[0])
-        assertEquals(1, rtlCalls)
-        // Each detector's focuses are kept side by side.
-        assertTrue(File(context.cacheDir, Thumbs.focusFile(SmartCrop.version("usual"))).isFile)
-        assertTrue(File(context.cacheDir, Thumbs.focusFile(SmartCrop.version("rtl"))).isFile)
-        Thumbs.clear(context)
-        val unmarked = cover(name = "unmarked.png")
-        assertEquals(Color.BLUE, Thumbs.load(context, unmarked, "UTF-8", 120, 60, smart)!!.getPixel(60, 30))
-        assertEquals(1, rtlCalls)
+        assertEquals(Color.BLUE, Thumbs.load(context, right, "UTF-8", 120, 60, smart)!!.getPixel(60, 30))
+        assertEquals(2, calls[0])
     }
 
     @Test
@@ -481,24 +464,11 @@ class ThumbsTest {
     }
 
     @Test
-    fun theReaderPicksTheDetectorOfABooksCoverAsTheLibraryDoes() {
+    fun theStyleKeyIsUnderTheDetector() {
         val usual = coverText("usual") { null }
-        val rtl = coverText("rtl") { null }
         Thumbs.detector = { usual }
-        Thumbs.rtlDetector = { rtl }
-        assertSame(rtl, Thumbs.detectorFor(context, rightToLeft = true))
-        assertSame(usual, Thumbs.detectorFor(context, rightToLeft = false))
-        // The list knows each book's cover by its own detector.
         val style = CoverStyle(ThumbFit.FILL, CropAnchor.SMART)
-        assertEquals(style.key("rtl"), Thumbs.styleKey(context, style, rightToLeft = true))
-        assertEquals(style.key("usual"), Thumbs.styleKey(context, style, rightToLeft = false))
-        // The folder's direction first, then what was detected, then the default.
-        assertTrue(BookDirection.markedRightToLeft("rtl", ReadingDirection.LTR, "ltr"))
-        assertFalse(BookDirection.markedRightToLeft("ltr", ReadingDirection.RTL, "rtl"))
-        assertTrue(BookDirection.markedRightToLeft(null, ReadingDirection.RTL, "ltr"))
-        assertFalse(BookDirection.markedRightToLeft(null, ReadingDirection.TTB, "rtl"))
-        assertTrue(BookDirection.markedRightToLeft(null, null, "rtl"))
-        assertFalse(BookDirection.markedRightToLeft(null, null, "ltr"))
+        assertEquals(style.key("usual"), Thumbs.styleKey(context, style))
     }
 
     @Test

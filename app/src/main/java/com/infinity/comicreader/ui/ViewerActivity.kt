@@ -391,6 +391,12 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
     /** Holds the screen in landscape while a wide page shows whole ("Rotate for spreads"). */
     private val spreadRotation = SpreadRotation()
 
+    /** True from a swipe's first move until the pager comes to rest. */
+    private var swiping = false
+
+    /** True when [updateSpreadRotation] waits for a swipe to come to rest. */
+    private var rotationAfterSwipe = false
+
     /** Tells [spreadRotation] when the sensor knows the way up; made when first needed ([upright]). */
     private var uprightWatch: UprightWatch? = null
 
@@ -610,6 +616,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         pager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
             override fun onPageScrollStateChanged(state: Int) {
                 if (state == ViewPager2.SCROLL_STATE_DRAGGING) {
+                    swiping = true
                     stopAutoScroll()
                     // A swipe lands on a tall page as taps and keys do, back at its bottom: set before it slides in.
                     if (mode == MODE_PAGED) adapter?.swipingFrom(pager.currentItem)
@@ -618,6 +625,10 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
                     adapter?.settled()
                     // Seams held back while the reader was on their pages may show now.
                     pager.post { relayout() }
+                }
+                if (state == ViewPager2.SCROLL_STATE_IDLE) {
+                    swiping = false
+                    if (rotationAfterSwipe) updateSpreadRotation()
                 }
             }
 
@@ -2348,8 +2359,14 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         return if (part.half == Half.WHOLE && a.wide(part.page)) part.page else -1
     }
 
-    /** Turns the screen for the wide page on screen, or back, as [spreadRotation] says. */
+    /**
+     * Turns the screen for the wide page on screen, or back, as [spreadRotation] says; during
+     * a swipe, once the pager comes to rest: resized while it settles, it snaps back to the
+     * page the swipe left.
+     */
     private fun updateSpreadRotation() {
+        rotationAfterSwipe = swiping
+        if (swiping) return
         // With auto-rotate off, the system turns back to the reader's lock whatever the sensor.
         val unsure = spreadRotation.held >= 0 && autoRotate() && upright().unsure()
         spreadRotation.show(widePageShown(), prefs.rotateSpreads, landscape(), screenOrientation(), unsure)?.let { requestedOrientation = it }

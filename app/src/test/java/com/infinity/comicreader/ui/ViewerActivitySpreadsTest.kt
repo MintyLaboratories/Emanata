@@ -245,6 +245,29 @@ class ViewerActivitySpreadsTest {
     }
 
     @Test
+    fun aSwipeToAWidePageTurnsTheScreenOnceItSettles() {
+        val viewer = launch(book(numbered(1, 6), setOf("Tale 001-003")))
+        sizesRead()
+        viewer.next()
+        val pager = viewer.findViewById<ViewPager2>(R.id.viewer_pager)
+        var selected: Pair<Int, Int>? = null
+        pager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
+            override fun onPageSelected(position: Int) {
+                selected = pager.scrollState to viewer.requestedOrientation
+            }
+        })
+        // Negative drags go forward, the other way in right-to-left layouts.
+        val forward = if (pager.layoutDirection == View.LAYOUT_DIRECTION_RTL) 1f else -1f
+        pager.beginFakeDrag()
+        repeat(6) { pager.fakeDragBy(forward * pager.width / 10f) }
+        pager.endFakeDrag()
+        repeat(100) { if (pager.scrollState != ViewPager2.SCROLL_STATE_IDLE) idleFor(20) }
+        assertEquals(ViewPager2.SCROLL_STATE_SETTLING to ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED, selected)
+        assertEquals("3 / 6", viewer.indicator())
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE, viewer.requestedOrientation)
+    }
+
+    @Test
     fun rotateForSpreadsOffLeavesTheScreenAlone() {
         prefs.rotateSpreads = false
         val viewer = launch(book(numbered(1, 6), setOf("Tale 001-003")))

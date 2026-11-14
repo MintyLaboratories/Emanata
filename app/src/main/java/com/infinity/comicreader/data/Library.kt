@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import com.infinity.comicreader.ai.AiPicks
 import com.infinity.comicreader.ai.AiStep
+import com.infinity.comicreader.ai.ChainKind
 import com.infinity.comicreader.reader.Adjustments
 import com.infinity.comicreader.reader.HiddenPages
 import com.infinity.comicreader.reader.NameCharset
@@ -713,6 +714,31 @@ class Library(context: Context) {
         }
     }
 
+    /** The default chain book [id] runs by its own choice ([ChainKind.resolve]); null when it follows its folder's or its direction. */
+    fun chainKind(id: BookId): ChainKind? = ChainKind.of(readObject(KEY_AI_KINDS).optString(id.hex))
+
+    /** Makes [kind] [book]'s own default chain, or lets it follow its folder's or its direction when null. */
+    fun setChainKind(book: BookRef, kind: ChainKind?) {
+        synchronized(LOCK) {
+            val all = readObject(KEY_AI_KINDS)
+            if (kind == null) all.remove(book.id.hex) else all.put(book.id.hex, kind.key)
+            sp.edit().putString(KEY_AI_KINDS, all.toString()).apply()
+            if (kind != null) keep(book)
+        }
+    }
+
+    /** The default chain the books in [folder] run unless they have their own; null when they follow their direction. */
+    fun folderChainKind(folder: String): ChainKind? = ChainKind.of(readObject(KEY_AI_KIND_FOLDERS).optString(folder))
+
+    /** Makes [kind] the default chain of [folder]'s books, or lets them follow their direction when null. */
+    fun setFolderChainKind(folder: String, kind: ChainKind?) {
+        synchronized(LOCK) {
+            val all = readObject(KEY_AI_KIND_FOLDERS)
+            if (kind == null) all.remove(folder) else all.put(folder, kind.key)
+            sp.edit().putString(KEY_AI_KIND_FOLDERS, all.toString()).apply()
+        }
+    }
+
     // ---------------- tall pages ----------------
     /** Whether book [id] reads as a continuous strip, as answered when its tall pages were found; null when never asked. */
     fun tallStrip(id: BookId): Boolean? = readObject(KEY_TALL).let { if (it.has(id.hex)) it.optBoolean(id.hex) else null }
@@ -850,7 +876,7 @@ class Library(context: Context) {
         val hidden = hiddenCounts()
         val settings = readIds(KEY_SHIFTED) + readIds(KEY_IGNORE_SEAMS) + readIds(KEY_NO_REPACK) +
             readObject(KEY_ADJUST).ids() + readObject(KEY_CHARSETS).ids() + readObject(KEY_TALL).ids() + readObject(KEY_BOOK_LAYOUTS).ids() +
-            readObject(KEY_AI).ids() + readObject(KEY_COVERS).ids() + readObject(KEY_SPREAD_PAGES).ids()
+            readObject(KEY_AI).ids() + readObject(KEY_AI_KINDS).ids() + readObject(KEY_COVERS).ids() + readObject(KEY_SPREAD_PAGES).ids()
         val all = favorites + read + history + marks + hidden.keys + settings
         return all.associateWith { id ->
             Kept(
@@ -1281,6 +1307,10 @@ class Library(context: Context) {
         /** A step running no model in [KEY_AI]. */
         private const val AI_NONE = "none"
 
+        /** Books' own default chains ([chainKind]), and folders' ([folderChainKind]): a [ChainKind.key]. */
+        private const val KEY_AI_KINDS = "ai_kinds"
+        private const val KEY_AI_KIND_FOLDERS = "ai_kind_folders"
+
         /** Between the notes of bookmarks joined on one page. */
         private const val NOTE_JOIN = "\n"
 
@@ -1296,21 +1326,24 @@ class Library(context: Context) {
         const val MAX_HISTORY = 200
         private const val MAX_DAYS = 3650
         private val ARRAY_KEYS = listOf(KEY_FAVORITES, KEY_READ, KEY_HISTORY, KEY_BOOKMARKS, KEY_SHIFTED, KEY_IGNORE_SEAMS, KEY_NO_REPACK)
-        private val OBJECT_KEYS = listOf(KEY_SERIES, KEY_STATS, KEY_ADJUST, KEY_HIDDEN, KEY_CHARSETS, KEY_BOOKS, KEY_TALL, KEY_TALL_FOLDERS, KEY_READ_FOLDERS, KEY_BOOK_LAYOUTS, KEY_AI, KEY_COVERS, KEY_SPREAD_PAGES)
+        private val OBJECT_KEYS = listOf(
+            KEY_SERIES, KEY_STATS, KEY_ADJUST, KEY_HIDDEN, KEY_CHARSETS, KEY_BOOKS, KEY_TALL, KEY_TALL_FOLDERS, KEY_READ_FOLDERS, KEY_BOOK_LAYOUTS, KEY_AI,
+            KEY_AI_KINDS, KEY_AI_KIND_FOLDERS, KEY_COVERS, KEY_SPREAD_PAGES
+        )
 
         /** Documents kept by folder path, re-pointed when the app moves a folder. */
-        private val FOLDER_KEYS = listOf(KEY_SERIES, KEY_TALL_FOLDERS, KEY_READ_FOLDERS)
+        private val FOLDER_KEYS = listOf(KEY_SERIES, KEY_TALL_FOLDERS, KEY_READ_FOLDERS, KEY_AI_KIND_FOLDERS)
 
         /** Lists of book IDs. */
         private val ID_LIST_KEYS = listOf(KEY_READ, KEY_SHIFTED, KEY_IGNORE_SEAMS, KEY_NO_REPACK)
 
         /** Documents kept by book ID. */
-        private val BOOK_OBJECT_KEYS = setOf(KEY_ADJUST, KEY_HIDDEN, KEY_CHARSETS, KEY_BOOKS, KEY_TALL, KEY_BOOK_LAYOUTS, KEY_AI, KEY_COVERS, KEY_SPREAD_PAGES)
+        private val BOOK_OBJECT_KEYS = setOf(KEY_ADJUST, KEY_HIDDEN, KEY_CHARSETS, KEY_BOOKS, KEY_TALL, KEY_BOOK_LAYOUTS, KEY_AI, KEY_AI_KINDS, KEY_COVERS, KEY_SPREAD_PAGES)
 
         /** What [kept] reads: every document holding data kept by book, by ID in hex. */
         private val DATA_KEYS = listOf(
             KEY_FAVORITES, KEY_READ, KEY_HISTORY, KEY_BOOKMARKS, KEY_HIDDEN,
-            KEY_SHIFTED, KEY_IGNORE_SEAMS, KEY_NO_REPACK, KEY_ADJUST, KEY_CHARSETS, KEY_TALL, KEY_BOOK_LAYOUTS, KEY_AI, KEY_COVERS, KEY_SPREAD_PAGES
+            KEY_SHIFTED, KEY_IGNORE_SEAMS, KEY_NO_REPACK, KEY_ADJUST, KEY_CHARSETS, KEY_TALL, KEY_BOOK_LAYOUTS, KEY_AI, KEY_AI_KINDS, KEY_COVERS, KEY_SPREAD_PAGES
         )
 
         private val LOCK = Any()

@@ -98,10 +98,10 @@ object SmartCrop {
      * The version of these rules, part of [version]. Raise it with any change to what a focus
      * holds or how a crop follows it.
      */
-    const val RULES = 3
+    const val RULES = 4
 
     /**
-     * The cover-focus version: of these rules ([RULES]) and of the text detector by its
+     * The cover-focus version: of these rules ([RULES]) and of the text detector's model by its
      * [CoverTextDetector.id]. Focuses and Smart covers found under another are found again.
      */
     fun version(detector: String): String = "$RULES-$detector"

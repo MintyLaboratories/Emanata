@@ -46,18 +46,30 @@ enum class ScaleFilter(val key: String, val radius: Int) {
  * source pixels nearest it: the two either side, or those under the output pixel where
  * they are more (shrinking below 0.5×); per axis, after each pass. At 0 % there is no
  * clamp step at all.
+ *
+ * [sharpen] is the strength, in percent, of [Rcas] run over each resampled result; at 0 %
+ * there is no sharpening pass at all.
  */
-data class Scaling(val filter: ScaleFilter = ScaleFilter.DEFAULT, val upRing: Int = 0, val downRing: Int = DEFAULT_DOWN_RING) {
+data class Scaling(
+    val filter: ScaleFilter = ScaleFilter.DEFAULT,
+    val upRing: Int = 0,
+    val downRing: Int = DEFAULT_DOWN_RING,
+    val sharpen: Int = 0
+) {
     init {
         require(upRing in 0..100 && downRing in 0..100) { "Anti-ringing is 0..100 %" }
+        require(sharpen in 0..100) { "Sharpening is 0..100 %" }
     }
 
     /** Anti-ringing strength, 0..1, for an axis [enlarged] or not. */
     fun ring(enlarged: Boolean): Float = (if (enlarged) upRing else downRing) / 100f
 
+    /** This scaling without sharpening: for pages a model already processed. */
+    val unsharpened: Scaling get() = if (sharpen == 0) this else copy(sharpen = 0)
+
     /**
      * Part of a cache key for images that shrink, as covers do: [filter] and [downRing] only, so
-     * a change to [upRing] keeps them. Empty for [DEFAULT]'s, as optional tokens in
+     * a change to [upRing] or [sharpen] keeps them. Empty for [DEFAULT]'s, as optional tokens in
      * [com.infinity.comicreader.data.CoverStyle.key] are when off.
      */
     val shrinkKey: String get() = if (filter == DEFAULT.filter && downRing == DEFAULT.downRing) "" else "${filter.key}r$downRing"

@@ -92,4 +92,18 @@ class ScalingTest {
         assertEquals(0f, Scaling.DEFAULT.ring(enlarged = true))
         assertThrows(IllegalArgumentException::class.java) { Scaling(upRing = 101) }
     }
+
+    @Test
+    fun sharpeningIsOffByDefaultAndPartOfTheKey() {
+        assertEquals(0, Scaling.DEFAULT.sharpen)
+        assertEquals(0, Scaling.PLAIN.sharpen)
+        val sharp = Scaling(sharpen = 40)
+        // A different scaling, so pages keyed by it render again; covers never sharpen.
+        assertTrue(sharp != Scaling.DEFAULT && sharp.hashCode() != Scaling.DEFAULT.hashCode())
+        assertEquals(Scaling.DEFAULT.shrinkKey, sharp.shrinkKey)
+        assertEquals(Scaling.DEFAULT, sharp.unsharpened)
+        assertTrue(Scaling.PLAIN.unsharpened === Scaling.PLAIN)
+        assertThrows(IllegalArgumentException::class.java) { Scaling(sharpen = 101) }
+        assertThrows(IllegalArgumentException::class.java) { Scaling(sharpen = -1) }
+    }
 }

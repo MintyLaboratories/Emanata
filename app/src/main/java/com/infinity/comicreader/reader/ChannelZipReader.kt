@@ -12,13 +12,13 @@ import java.util.zip.CRC32
 /**
  * Reads a zip/cbz archive from a channel it closes (a file on a share, in place):
  * the central directory first, then only the entries asked for; an entry's local
- * header is read only when the entry is. Commons Compress serializes the channel's
- * reads, so entries stream concurrently. Names are read as UTF-8, which never fails, or
+ * header is read only when the entry is, under the channel's lock. Commons Compress
+ * serializes its streams' reads on that lock, so entries stream concurrently. Names are read as UTF-8, which never fails, or
  * as their Unicode Path extra fields give them, and those not given as Unicode again in
  * the charset [charsetName] gives ([NameCharset.resolve]), as [ZipReader] reads them.
  * A [RemoteChannel] hears of each entry's data as it is about to be read whole.
  */
-class ChannelZipReader(channel: SeekableByteChannel, charsetName: String) : ArchiveReader {
+class ChannelZipReader(private val channel: SeekableByteChannel, charsetName: String) : ArchiveReader {
     /** The share's file, told of each entry about to be read whole. */
     private val remote = channel as? RemoteChannel
 
@@ -68,7 +68,10 @@ class ChannelZipReader(channel: SeekableByteChannel, charsetName: String) : Arch
 
     override fun <T> read(entry: ArchiveEntry, block: (InputStream) -> T): T {
         val e = native[entry.index]
-        return zip.getInputStream(e).use { stream ->
+        // Opening a stream reads the entry's local header with a seek and a read of their own,
+        // into a buffer the zip shares across entries: both under the lock its streams take.
+        val opened = synchronized(channel) { zip.getInputStream(e) }
+        return opened.use { stream ->
             // Its data starts after its local header, found as the stream opens.
             remote?.expect(e.dataOffset, e.compressedSize)
             block(stream)

@@ -3923,19 +3923,21 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
     }
 
     /**
-     * The models [step] can run, with what they do, the one this book runs checked; slow ones
-     * only while Keep it simple is off, or when running; imported ones too ([com.infinity.comicreader.ai.Models.offered]).
+     * The models [step] can run ([ModelPicker]), the one this book runs checked; slow ones only
+     * while Keep it simple is off, or when running; imported ones too
+     * ([com.infinity.comicreader.ai.Models.offered]). A row tap picks and closes; a level slider
+     * picks at once and stays open.
      */
     private fun showAiChoices(step: AiStep) {
-        val current = aiShown().id(step)
-        val (entries, ids) = ModelText.choices(this, step, prefs.keepSimple, current)
-        AlertDialog.Builder(this)
+        var dialog: AlertDialog? = null
+        val picker = ModelPicker.of(this, step, prefs.keepSimple, aiShown().id(step)) { id, done ->
+            if (done) dialog?.dismiss()
+            pickAi(step, id)
+        }
+        dialog = AlertDialog.Builder(this)
             .setTitle(ModelText.step(this, step))
-            .setSingleChoiceItems(ModelText.adapter(this, entries), ids.indexOf(current ?: Prefs.AI_NONE).coerceAtLeast(0)) { dialog, which ->
-                dialog.dismiss()
-                pickAi(step, ids[which].takeIf { it != Prefs.AI_NONE })
-            }
-            .setNegativeButton(R.string.cancel, null)
+            .setView(picker.view)
+            .setNegativeButton(R.string.close, null)
             .showKeepingFullscreen()
     }
 

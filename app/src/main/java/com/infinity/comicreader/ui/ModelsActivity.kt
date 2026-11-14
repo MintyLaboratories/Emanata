@@ -5,15 +5,9 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import android.text.SpannableStringBuilder
-import android.text.Spanned
 import android.text.format.Formatter
-import android.text.style.ForegroundColorSpan
-import android.text.style.RelativeSizeSpan
 import android.view.View
-import android.widget.ArrayAdapter
 import android.widget.LinearLayout
-import android.widget.ListAdapter
 import android.widget.RadioGroup
 import android.widget.TextView
 import android.widget.Toast
@@ -27,7 +21,6 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
-import com.google.android.material.color.MaterialColors
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.google.android.material.radiobutton.MaterialRadioButton
 import com.google.android.material.textfield.TextInputEditText
@@ -120,33 +113,15 @@ object ModelText {
         ModelBlurb.ANIME4K_UPSCALE_DENOISE -> R.string.ai_blurb_anime4k_upscale_denoise
     }
 
-    /** A picker's entry for [m]: its name and size, and below, smaller and quieter, its [blurb]. */
-    fun entry(context: Context, m: AiModel): CharSequence {
-        val head = context.getString(R.string.ai_model_entry, m.name, size(context, m.bytes))
-        val more = blurb(context, m)
-        if (more.isEmpty()) return head
-        val out = SpannableStringBuilder(head).append('\n')
-        val start = out.length
-        out.append(more)
-        out.setSpan(RelativeSizeSpan(BLURB_SIZE), start, out.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-        val quiet = MaterialColors.getColor(context, com.google.android.material.R.attr.colorOnSurfaceVariant, 0)
-        if (quiet != 0) out.setSpan(ForegroundColorSpan(quiet), start, out.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-        return out
-    }
-
-    /** A picker's choices for [step]: none, then the models it offers ([Models.offered]), with their ids (none's [Prefs.AI_NONE]). */
+    /**
+     * A picker's choices for [step]: none, then the models it offers ([Models.offered]), every
+     * level of a family, with short names ([PickerRows.shortName]) and their ids (none's [Prefs.AI_NONE]).
+     */
     fun choices(context: Context, step: AiStep, keepSimple: Boolean, current: String?): Pair<List<CharSequence>, List<String>> {
         val models = Models.offered(step, keepSimple, current)
-        return (listOf<CharSequence>(context.getString(R.string.ai_none)) + models.map { entry(context, it) }) to
+        return (listOf<CharSequence>(context.getString(R.string.ai_none)) + models.map { PickerRows.shortName(it) }) to
             (listOf(Prefs.AI_NONE) + models.map { it.id })
     }
-
-    /** A picker's list of [entries], each spaced apart from the next, its description lines kept. */
-    fun adapter(context: Context, entries: List<CharSequence>): ListAdapter =
-        ArrayAdapter(context, R.layout.item_ai_choice, android.R.id.text1, entries)
-
-    /** The size of a [blurb] beside a model's name. */
-    private const val BLURB_SIZE = 0.85f
 
     fun failure(context: Context, f: DownloadFailure): String = context.getString(
         when (f) {

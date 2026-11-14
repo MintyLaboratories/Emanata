@@ -833,11 +833,21 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   (waifu2x UpConv7 2× by default; only a choice is stored, so a step never
   chosen follows a later default). Upscaling also offers Anime4K's GPU
   shaders (modes A, B and C, Upscale, Upscale + Denoise) in every size from
-  S to UL. Each choice says in a few words what its
-  model does; models that take 10 s or more for a 1000×1500 page on the
-  reference tablet are marked slow with their time, and are offered only with
-  Keep it simple off (or once chosen), in Settings, the reader's sheet and
-  Models alike. Artifact removal and descreen are advanced settings;
+  S to UL. A step's picker shows each choice by a short name (without the
+  step's own words, e.g. OpenComic 2×), its speed in stars (five for the
+  fastest model, half a star at 20 s a page, on a log scale of page times on
+  the reference tablet) and an info button that shows, and on a second tap
+  hides, its full name and size, its star ratings by eye (Crisp: makes
+  blurry or artifacted art crisp; Color; Detail; Desharp; Lines; an empty
+  star means it makes that worse; models not compared yet show none) and
+  what it fits best, then its biggest downside. A family takes one row with
+  a level slider: Anime4K's sizes, whose ratings are their largest size's
+  ("up to"), and waifu2x's denoise strengths, each with its own. A tap on a
+  row picks it and closes; letting go of a slider picks that level and
+  keeps the picker open. Models that take 10 s or more for a 1000×1500
+  page on the reference tablet are marked slow with their time, and are
+  offered only with Keep it simple off (or once chosen), in Settings, the
+  reader's sheet and Models alike. Artifact removal and descreen are advanced settings;
   the switch's summary shows the whole chain, hidden steps included, and warns
   when its models together may run past a page's time. A chosen model
   downloads at once, and one cut short with the app resumes as Settings open

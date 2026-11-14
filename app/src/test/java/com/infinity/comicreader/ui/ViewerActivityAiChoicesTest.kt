@@ -11,12 +11,12 @@ import com.infinity.comicreader.R
 import com.infinity.comicreader.ai.AiStep
 import com.infinity.comicreader.ai.ModelCatalog
 import com.infinity.comicreader.ai.ModelStore
-import com.infinity.comicreader.ai.Models
 import com.infinity.comicreader.ai.OfflineDownloads
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ResumeMode
 import com.infinity.comicreader.reader.Fixtures
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -72,37 +72,59 @@ class ViewerActivityAiChoicesTest {
         return viewer
     }
 
-    /** The upscale picker's dialog, opened from the sheet, and its items' text. */
-    private fun upscaleChoices(viewer: ViewerActivity): Pair<AlertDialog, List<String>> {
+    /** The upscale picker's dialog, opened from the sheet, and its rows. */
+    private fun upscaleChoices(viewer: ViewerActivity): Pair<AlertDialog, List<View>> {
         ReaderSheet(viewer).tap(R.id.sheet_ai_upscale)
         val dialog = latestDialogOf(viewer) as AlertDialog
-        val adapter = dialog.listView.adapter
-        return dialog to (0 until adapter.count).map { adapter.getItem(it).toString() }
+        return dialog to ModelPickerTest.rows(dialog)
     }
 
     @Test
-    fun upscalersShowWhatTheyDoAndTheSlowOnesWaitForAdvancedSettings() {
-        val (dialog, items) = upscaleChoices(open())
-        val fast = Models.offered(AiStep.UPSCALE, keepSimple = true, current = null)
-        assertEquals(listOf(context.getString(R.string.ai_none)) + fast.map { ModelText.entry(context, it).toString() }, items)
-        assertTrue(items[1], items[1].endsWith("\nFaithful, fast and reliable clarity improvement; does little for blurry art or jagged lines (default)"))
+    fun upscalersShowShortNamesAndTheSlowOnesWaitForAdvancedSettings() {
+        val (dialog, rows) = upscaleChoices(open())
+        val none = context.getString(R.string.ai_none)
+        assertEquals(PickerRows.of(AiStep.UPSCALE, keepSimple = true, current = null, noneName = none).map { it.name }, rows.map(ModelPickerTest::name).map { it.removeSuffix(" (default)") })
+        assertEquals("waifu2x 2× (default)", ModelPickerTest.name(rows[1]))
         // The default runs, so it is checked.
-        assertEquals(1, dialog.listView.checkedItemPosition)
+        assertTrue(ModelPickerTest.checked(rows[1]))
+        assertEquals(1, rows.count(ModelPickerTest::checked))
         dialog.dismiss()
 
         prefs.keepSimple = false
         val (_, all) = upscaleChoices(open())
-        assertEquals(Models.offered(AiStep.UPSCALE, keepSimple = false, current = null).size + 1, all.size)
-        assertTrue(all.any { it.endsWith("\nSlow (~11 s per page)") })
+        assertEquals(PickerRows.of(AiStep.UPSCALE, keepSimple = false, current = null, noneName = none).size, all.size)
+        assertTrue(all.any { ModelPickerTest.name(it) == "Real-ESRGAN 2×" })
     }
 
     @Test
     fun pickingAModelRunsIt() {
-        val (dialog, _) = upscaleChoices(open())
-        val i = ModelCatalog.offered(AiStep.UPSCALE, true, null).indexOfFirst { it.id == "opencomic-ai-upscale-2x-compact-v2" } + 1
-        dialog.listView.performItemClick(null, i, i.toLong())
+        val (dialog, rows) = upscaleChoices(open())
+        ModelPickerTest.tap(rows.first { ModelPickerTest.name(it) == "OpenComic 2×" })
         idle()
+        assertFalse(dialog.isShowing)
         assertEquals("opencomic-ai-upscale-2x-compact-v2", Prefs(context).aiModel(AiStep.UPSCALE))
         assertTrue(Prefs(context).aiEnabled)
+    }
+
+    @Test
+    fun aLevelPickedOnASliderRunsForThisBookAndStaysPicked() {
+        val viewer = open()
+        // This book's own picks.
+        val sheet = ReaderSheet(viewer).tap(R.id.btn_ai_book)
+        sheet.tap(R.id.sheet_ai_upscale)
+        val dialog = latestDialogOf(viewer) as AlertDialog
+        val family = ModelPickerTest.rows(dialog).first { ModelPickerTest.name(it) == "Anime4K B (clean) 2×" }
+        ModelPickerTest.slide(family, 3)
+        idle()
+        assertTrue(dialog.isShowing)
+        dialog.dismiss()
+        idle()
+        // The book runs it; the default is untouched.
+        assertEquals(ModelCatalog.DEFAULT_UPSCALE, Prefs(context).aiModel(AiStep.UPSCALE))
+        sheet.tap(R.id.sheet_ai_upscale)
+        val again = ModelPickerTest.rows(latestDialogOf(viewer))
+        val shown = again.first { ModelPickerTest.name(it) == "Anime4K B (clean) 2×" }
+        assertEquals(3f, ModelPickerTest.slider(shown).value)
+        assertTrue(ModelPickerTest.checked(shown))
     }
 }

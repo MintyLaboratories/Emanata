@@ -47,4 +47,6 @@
     <item name="view_ring_dy" type="id" />
     <!-- The model manager's card of the cover text detector. -->
     <item name="cover_text_card" type="id" />
+    <!-- An AI model picker's list of rows. -->
+    <item name="ai_model_list" type="id" />
 </resources>

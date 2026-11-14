@@ -3,7 +3,6 @@ package com.infinity.comicreader.ui
 import android.app.Application
 import android.content.Context
 import android.os.Looper
-import android.widget.CheckedTextView
 import androidx.appcompat.app.AlertDialog
 import androidx.preference.ListPreference
 import androidx.preference.Preference
@@ -138,32 +137,61 @@ class SettingsAiTest {
         assertEquals(Prefs.AI_NONE, stored.getString(Prefs.aiKey(AiStep.DESCREEN), null))
     }
 
+    /** The upscale step's picker, opened from its preference. */
+    private fun openUpscalePicker(fragment: PreferenceFragmentCompat): AlertDialog {
+        fragment.findPreference<ListPreference>(Prefs.aiKey(AiStep.UPSCALE))!!.performClick()
+        idle()
+        val shown = fragment.parentFragmentManager.findFragmentByTag(AiChoiceDialog.TAG) as AiChoiceDialog
+        return shown.dialog as AlertDialog
+    }
+
     @Test
-    fun aStepsPickerSpacesItsChoicesAndStoresATap() {
+    fun aStepsPickerShowsItsRowsAndStoresATap() {
         Prefs(context).aiEnabled = true
         val fragment = settings()
         val pref = fragment.findPreference<ListPreference>(Prefs.aiKey(AiStep.UPSCALE))!!
-        pref.performClick()
-        idle()
-        val shown = fragment.parentFragmentManager.findFragmentByTag(AiChoiceDialog.TAG) as AiChoiceDialog
-        val dialog = shown.dialog as AlertDialog
-        val list = dialog.listView
-        assertEquals(pref.entries.size, list.adapter.count)
-        assertEquals(pref.findIndexOfValue(pref.value), list.checkedItemPosition)
-        val row = list.adapter.getView(1, null, list) as CheckedTextView
-        assertEquals(pref.entries[1].toString(), row.text.toString())
-        val padding = context.resources.getDimensionPixelSize(R.dimen.ai_choice_padding)
-        assertTrue(padding > 0)
-        assertEquals(padding, row.paddingTop)
-        assertEquals(padding, row.paddingBottom)
+        val dialog = openUpscalePicker(fragment)
+        val rows = ModelPickerTest.rows(dialog)
+        val expected = PickerRows.of(AiStep.UPSCALE, keepSimple = true, current = pref.value, noneName = context.getString(R.string.ai_none))
+        assertEquals(expected.size, rows.size)
+        assertEquals("waifu2x 2× (default)", ModelPickerTest.name(rows[1]))
+        assertTrue(ModelPickerTest.checked(rows[1]))
         // A tap picks, closes and stores.
-        val other = ModelCatalog.forStep(AiStep.UPSCALE).first { it.id != pref.value && !it.slow }
-        val at = pref.findIndexOfValue(other.id)
-        list.performItemClick(list.adapter.getView(at, null, list), at, list.adapter.getItemId(at))
+        val at = expected.indexOfFirst { it.models.singleOrNull()?.id == "opencomic-ai-upscale-2x-compact-v2" }
+        ModelPickerTest.tap(rows[at])
         idle()
         assertFalse(dialog.isShowing)
-        assertEquals(other.id, pref.value)
-        assertEquals(other.id, PreferenceManager.getDefaultSharedPreferences(context).getString(Prefs.aiKey(AiStep.UPSCALE), null))
+        assertEquals("opencomic-ai-upscale-2x-compact-v2", pref.value)
+        assertEquals("opencomic-ai-upscale-2x-compact-v2", PreferenceManager.getDefaultSharedPreferences(context).getString(Prefs.aiKey(AiStep.UPSCALE), null))
+    }
+
+    @Test
+    fun aLevelPickedOnASliderIsStoredAndShownNextTime() {
+        Prefs(context).aiEnabled = true
+        val fragment = settings()
+        val pref = fragment.findPreference<ListPreference>(Prefs.aiKey(AiStep.UPSCALE))!!
+        var dialog = openUpscalePicker(fragment)
+        val rows = PickerRows.of(AiStep.UPSCALE, keepSimple = true, current = pref.value, noneName = context.getString(R.string.ai_none))
+        val at = rows.indexOfFirst { it.models.firstOrNull()?.id == "anime4k-a-s" }
+        val family = ModelPickerTest.rows(dialog)[at]
+        // Unpicked, the family shows its largest level.
+        assertEquals(4f, ModelPickerTest.slider(family).value)
+        ModelPickerTest.slide(family, 1)
+        idle()
+        // Stored at once, the picker still open.
+        assertTrue(dialog.isShowing)
+        assertEquals("anime4k-a-m", pref.value)
+        assertEquals("anime4k-a-m", PreferenceManager.getDefaultSharedPreferences(context).getString(Prefs.aiKey(AiStep.UPSCALE), null))
+        assertTrue(ModelPickerTest.checked(family))
+        assertFalse(ModelPickerTest.checked(ModelPickerTest.rows(dialog)[1]))
+        dialog.dismiss()
+        idle()
+        // Opened again, the slider is where it was left.
+        dialog = openUpscalePicker(fragment)
+        val again = ModelPickerTest.rows(dialog)[at]
+        assertEquals(1f, ModelPickerTest.slider(again).value)
+        assertTrue(ModelPickerTest.checked(again))
+        assertEquals("anime4k-a-m", Prefs(context).aiModel(AiStep.UPSCALE))
     }
 
     @Test
@@ -175,9 +203,8 @@ class SettingsAiTest {
             val offered = Models.offered(step, keepSimple = false, current = null)
             assertEquals(listOf(Prefs.AI_NONE) + offered.map { it.id }, pref.entryValues.map { it.toString() })
             assertEquals(context.getString(R.string.ai_none), pref.entries[0].toString())
-            assertTrue(pref.entries[1].toString().startsWith(ModelCatalog.forStep(step)[0].name + " · "))
-            // Each with what it does below.
-            for ((i, m) in offered.withIndex()) assertEquals(ModelText.entry(context, m).toString(), pref.entries[i + 1].toString())
+            // Each by its short name.
+            for ((i, m) in offered.withIndex()) assertEquals(PickerRows.shortName(m), pref.entries[i + 1].toString())
             assertFalse("needs AI processing on", pref.isEnabled)
         }
         fragment.findPreference<Preference>(Prefs.KEY_AI)!!.performClick()
@@ -191,14 +218,12 @@ class SettingsAiTest {
         val pref = fragment.findPreference<ListPreference>(Prefs.aiKey(AiStep.UPSCALE))!!
         val simple = pref.entryValues.map { it.toString() }
         assertEquals(listOf(Prefs.AI_NONE) + Models.offered(AiStep.UPSCALE, keepSimple = true, current = null).map { it.id }, simple)
-        assertTrue(pref.entries[1].toString().endsWith("Faithful, fast and reliable clarity improvement; does little for blurry art or jagged lines (default)"))
         val keep = fragment.findPreference<Preference>("pref_keep_simple")!!
         keep.performClick()
         idle()
         assertFalse(Prefs(context).keepSimple)
         assertEquals(listOf(Prefs.AI_NONE) + Models.offered(AiStep.UPSCALE, keepSimple = false, current = null).map { it.id }, pref.entryValues.map { it.toString() })
-        val slow = pref.entries[pref.findIndexOfValue("realesr-animevideov3-x2")].toString()
-        assertTrue(slow, slow.endsWith("\nSlow (~11 s per page)"))
+        assertEquals("Real-ESRGAN 2×", pref.entries[pref.findIndexOfValue("realesr-animevideov3-x2")].toString())
         keep.performClick()
         idle()
         assertEquals(simple, pref.entryValues.map { it.toString() })

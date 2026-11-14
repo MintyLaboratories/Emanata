@@ -1,8 +1,6 @@
 package com.infinity.comicreader.ui
 
 import android.app.Application
-import android.text.Spanned
-import android.text.style.RelativeSizeSpan
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.R
 import com.infinity.comicreader.ai.AiStep
@@ -12,7 +10,6 @@ import com.infinity.comicreader.ai.Models
 import com.infinity.comicreader.ai.ShaderCatalog
 import com.infinity.comicreader.data.Prefs
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -83,26 +80,16 @@ class ModelTextTest {
     }
 
     @Test
-    fun anEntryIsTheNameAndSizeThenItsBlurbSmaller() {
-        val m = ModelCatalog.byId("waifu2x-upconv7-2x-denoise1")!!
-        val entry = ModelText.entry(context, m)
-        val head = context.getString(R.string.ai_model_entry, m.name, ModelText.size(context, m.bytes))
-        assertEquals(head + "\n" + ModelText.blurb(context, m), entry.toString())
-        val spans = (entry as Spanned).getSpans(0, entry.length, RelativeSizeSpan::class.java)
-        assertEquals(1, spans.size)
-        assertEquals(head.length + 1, entry.getSpanStart(spans[0]))
-    }
-
-    @Test
     fun choicesStartWithNoneAndHideSlowModelsWhileKeepingItSimple() {
         val (simple, simpleIds) = ModelText.choices(context, AiStep.UPSCALE, keepSimple = true, current = null)
         assertEquals(context.getString(R.string.ai_none), simple[0].toString())
         assertEquals(Prefs.AI_NONE, simpleIds[0])
         assertEquals(listOf(Prefs.AI_NONE) + Models.offered(AiStep.UPSCALE, true, null).map { it.id }, simpleIds)
-        assertFalse(simple.any { it.contains("Slow (~") })
+        // Short names.
+        assertEquals("waifu2x 2×", simple[1].toString())
         val (all, allIds) = ModelText.choices(context, AiStep.UPSCALE, keepSimple = false, current = null)
         assertEquals(Models.forStep(AiStep.UPSCALE).size + 1, allIds.size)
-        assertTrue(all.any { it.contains("Slow (~11 s per page)") })
+        assertTrue(all.any { it.toString() == "Real-ESRGAN 2×" })
         // A slow model chosen stays listed.
         assertTrue("realesr-animevideov3-x3" in ModelText.choices(context, AiStep.UPSCALE, true, "realesr-animevideov3-x3").second)
     }

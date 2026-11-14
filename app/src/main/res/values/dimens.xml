@@ -53,8 +53,18 @@
     <dimen name="fab_bottom">16dp</dimen>
     <!-- The stack's bottom margin: above the floating button's place (its margin, its 56dp, a gap). -->
     <dimen name="op_stack_bottom">80dp</dimen>
-    <!-- An AI model choice's space above and below, so multi-line choices stand apart. -->
-    <dimen name="ai_choice_padding">14dp</dimen>
     <!-- An AI model choice's start, before its radio button. -->
     <dimen name="ai_choice_start">20dp</dimen>
+    <!-- An AI model picker row's least height, its space above and below, and at its end, after the info button. -->
+    <dimen name="ai_model_row_height">64dp</dimen>
+    <dimen name="ai_model_row_padding">8dp</dimen>
+    <dimen name="ai_model_row_end">8dp</dimen>
+    <!-- The gap between a row's radio button and its name. -->
+    <dimen name="ai_model_name_start">16dp</dimen>
+    <!-- An AI model row's info button: a whole touch target. -->
+    <dimen name="ai_model_info_size">48dp</dimen>
+    <!-- Where a row's slider and details start: under its name. -->
+    <dimen name="ai_model_detail_start">68dp</dimen>
+    <!-- Space above and below each of a model's ratings. -->
+    <dimen name="ai_model_rating_padding">2dp</dimen>
 </resources>

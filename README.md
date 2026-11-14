@@ -938,7 +938,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   the same way (five filtered samples from one window). Thumbnails, covers and
   pages an AI model made are never sharpened, so the strength is not part of a
   processed page's key; it is part of every plain page's, so changing it
-  renders pages again.
+  renders pages again. On a Snapdragon 8 Gen 1 (bench build, thermal status 0)
+  sharpening a synthetic 2160x3840 page took 32 ms (111 ms of CPU) on 4 large
+  cores, 67 ms on one; a 1848x2960 one 20 ms (68 ms of CPU) and 45 ms.
 - The GPU path (`src/main/cpp/resample_gpu.c`) runs on an offscreen context of
   its own, one job at a time. Output rows go in chunks of equal size, two in
   flight (one when a page fits in one chunk) on their own buffers with a fence

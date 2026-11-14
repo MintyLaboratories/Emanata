@@ -13,7 +13,10 @@ import kotlin.math.roundToInt
  * signed values between passes (float textures), a depth-to-space enlargement as Anime4K
  * writes it (`fract(pos * size)` picking a channel), bilinear sampling of a smaller texture,
  * a one-channel texture read past its channel (COMPONENTS), and two PREKERNEL passes, the
- * second binding MAIN (the MAIN stage's result, not the darkened image).
+ * second binding MAIN (the MAIN stage's result, not the darkened image). The one-channel
+ * texture holds a diagonal neighbor's luma, and the last pass reads it linearly at every
+ * pixel, so output at the page's edges shows whether each pass clamps its samples at the
+ * page's edge, as mpv does and [render] (every [Image] clamped) does, or at the tile's.
  */
 internal object ShaderReference {
     val CHAIN = """
@@ -32,7 +35,7 @@ internal object ShaderReference {
         //!SAVE luma
         //!COMPONENTS 1
         vec4 hook() {
-            vec4 c = HOOKED_tex(HOOKED_pos);
+            vec4 c = HOOKED_texOff(vec2(-1.0, 1.0));
             return vec4(dot(c.rgb, vec3(0.299, 0.587, 0.114)), 0.7, 0.7, 0.7);
         }
         //!DESC up
@@ -63,7 +66,7 @@ internal object ShaderReference {
         vec4 hook() {
             vec4 c = HOOKED_tex(HOOKED_pos);
             vec4 l = luma_tex(HOOKED_pos);
-            return vec4(min(c.rgb, vec3(l.x + l.y + 0.25)), 1.0) * 0.8 + MAIN_tex(MAIN_pos) * 0.2;
+            return vec4(min(c.rgb, vec3(l.x + l.y + 0.25)), 1.0) * 0.7 + MAIN_tex(MAIN_pos) * 0.2 + vec4(l.x * 0.1);
         }
     """.trimIndent()
 
@@ -110,7 +113,7 @@ internal object ShaderReference {
         for (y in 0 until h) for (x in 0 until w) {
             for (c in 0..2) edge.set(x, y, c, main.at(x + 1, y, c) - main.at(x, y, c))
             edge.set(x, y, 3, main.at(x, y - 1, 1) - main.at(x, y, 1))
-            luma.set(x, y, 0, 0.299f * main.at(x, y, 0) + 0.587f * main.at(x, y, 1) + 0.114f * main.at(x, y, 2))
+            luma.set(x, y, 0, 0.299f * main.at(x - 1, y + 1, 0) + 0.587f * main.at(x - 1, y + 1, 1) + 0.114f * main.at(x - 1, y + 1, 2))
             // One channel kept: the rest read 0, alpha 1.
             luma.set(x, y, 3, 1f)
         }
@@ -128,11 +131,12 @@ internal object ShaderReference {
         for (y in 0 until oh) for (x in 0 until ow) {
             val u = (x + 0.5f) / ow
             val v = (y + 0.5f) / oh
-            val l = luma.sample(u, v, 0) + luma.sample(u, v, 1) + 0.25f
+            val luminance = luma.sample(u, v, 0)
+            val l = luminance + luma.sample(u, v, 1) + 0.25f
             var rgb = 0
             for (c in 0..2) {
                 val dark = up.at(x, y, c) * 0.9f
-                val value = min(dark, l) * 0.8f + up.at(x, y, c) * 0.2f
+                val value = min(dark, l) * 0.7f + up.at(x, y, c) * 0.2f + luminance * 0.1f
                 rgb = (rgb shl 8) or floor(value.coerceIn(0f, 1f) * 255f + 0.5f).toInt()
             }
             out[y * ow + x] = rgb or (0xFF shl 24)

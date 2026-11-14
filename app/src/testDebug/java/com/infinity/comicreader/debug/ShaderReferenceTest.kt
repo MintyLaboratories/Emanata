@@ -33,9 +33,9 @@ class ShaderReferenceTest {
         val out = ShaderReference.render(page)
         assertEquals(12, out.width)
         assertEquals(10, out.height)
-        // m = 128/255; darkened 0.9 m under the clamp at m + 0.25; 0.8 of it and 0.2 of m: 117.76 codes.
+        // m = 128/255; darkened 0.9 m under the clamp at m + 0.25; 0.7 of it, 0.2 of m and 0.1 of its luma m: 119.04 codes.
         val px = IntArray(120).also { out.getPixels(it, 0, 12, 0, 0, 12, 10) }
-        assertTrue(px.all { it == 0xFF767676.toInt() })
+        assertTrue(px.all { it == 0xFF777777.toInt() })
     }
 
     @Test

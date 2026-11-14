@@ -142,8 +142,11 @@ class ShaderChainTest {
         val stats = chain.programs[0].source
         assertTrue(stats.startsWith("#version 300 es\n"))
         assertTrue(stats.contains("uniform sampler2D emanata_t0;"))
-        assertTrue(stats.contains("#define HOOKED_tex(pos) texture(emanata_t0, pos)"))
-        assertTrue(stats.contains("#define MAIN_texOff(off) texture(emanata_t0, emanata_pos + emanata_p0 * vec2(off))"))
+        assertTrue(stats.contains("#define HOOKED_tex(pos) texture(emanata_t0, emanata_clamp(pos, emanata_p0))"))
+        assertTrue(stats.contains("#define MAIN_texOff(off) texture(emanata_t0, emanata_clamp(emanata_pos + emanata_p0 * vec2(off), emanata_p0))"))
+        assertTrue("samples stay on the page", stats.contains("uniform vec4 emanata_valid;"))
+        assertTrue("between its edge pixels' centers", stats.contains("vec2 lo = emanata_valid.xy + pt * (0.5 + 0.0009765625);"))
+        assertTrue(stats.contains("return clamp(pos, lo, max(emanata_valid.zw - pt * (0.5 - 0.0009765625), lo));"))
         assertTrue(stats.contains("#define MAIN_pt emanata_p0"))
         assertTrue(stats.contains("#define MAIN_size emanata_s0"))
         assertTrue(stats.contains("#define HOOKED_pos emanata_pos"))
@@ -151,7 +154,7 @@ class ShaderChainTest {
         assertTrue("just past the pixel's center", stats.contains("emanata_pos = (gl_FragCoord.xy + vec2(0.0009765625)) / emanata_out;"))
         assertTrue("one channel kept", stats.trimEnd().endsWith("emanata_color = vec4(hook().r, 0.0, 0.0, 1.0);\n}"))
         val up = chain.programs[5].source
-        assertTrue(up.contains("#define d_tex(pos) texture(emanata_t1, pos)"))
+        assertTrue(up.contains("#define d_tex(pos) texture(emanata_t1, emanata_clamp(pos, emanata_p1))"))
         assertTrue(up.contains("uniform vec2 emanata_s1;"))
         assertTrue("no texture past the bound ones", !up.contains("emanata_t2"))
         assertEquals(chain.programs.map { it.source }, chain.sources)

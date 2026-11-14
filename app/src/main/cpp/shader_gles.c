@@ -81,6 +81,7 @@ typedef struct {
     GLint out;
     GLint target;
     GLint input;
+    GLint valid;
     GLint size[MAX_BINDS];
     GLint pt[MAX_BINDS];
 } pass;
@@ -432,6 +433,7 @@ static void locate(pass * p)
     p->out = glGetUniformLocation(p->program, "emanata_out");
     p->target = glGetUniformLocation(p->program, "emanata_target");
     p->input = glGetUniformLocation(p->program, "emanata_input");
+    p->valid = glGetUniformLocation(p->program, "emanata_valid");
     for (int b = 0; b < p->binds; b++) {
         char name[24];
         snprintf(name, sizeof(name), "emanata_t%d", b);
@@ -647,7 +649,8 @@ static int wait_gpu(void)
     return waited == GL_ALREADY_SIGNALED || waited == GL_CONDITION_SATISFIED ? 0 : -1;
 }
 
-// Runs the passes of plan (see ShaderPlan.encode) on input tile (ix, iy, iw, ih) of src; with
+// Runs the passes of plan (see ShaderPlan.encode) on input tile (ix, iy, iw, ih) of src, every
+// pass sampling no further than src's edge (emanata_valid, see ShaderSource in Kotlin); with
 // dst, writes the result's (cx, cy, cw, ch) to dst at (dx, dy), opaque. 0 on success.
 static int run(JNIEnv * env, chain * c, const jint * plan, int plan_len, jobject src, int ix, int iy, int iw, int ih,
                jobject dst, int cx, int cy, int cw, int ch, int dx, int dy)
@@ -705,6 +708,11 @@ static int run(JNIEnv * env, chain * c, const jint * plan, int plan_len, jobject
     const int up = upload(c, spx, (int)si.stride, (int)si.width, (int)si.height, ix, iy, iw, ih);
     AndroidBitmap_unlockPixels(env, src);
     if (up != 0) return -3;
+    // The page's part of the tile, as fractions of it: passes clamp their samples to it.
+    const int vx0 = ix < 0 ? -ix : 0, vy0 = iy < 0 ? -iy : 0;
+    const int vx1 = ix + iw > (int)si.width ? (int)si.width - ix : iw, vy1 = iy + ih > (int)si.height ? (int)si.height - iy : ih;
+    if (vx1 <= vx0 || vy1 <= vy0) return -2;
+    const float valid[4] = { (float)vx0 / (float)iw, (float)vy0 / (float)ih, (float)vx1 / (float)iw, (float)vy1 / (float)ih };
 
     glDisable(GL_BLEND);
     glDisable(GL_DEPTH_TEST);
@@ -727,6 +735,7 @@ static int run(JNIEnv * env, chain * c, const jint * plan, int plan_len, jobject
         glUniform2f(p->out, (float)o->w, (float)o->h);
         glUniform2f(p->target, (float)target_w, (float)target_h);
         glUniform2f(p->input, (float)iw, (float)ih);
+        glUniform4f(p->valid, valid[0], valid[1], valid[2], valid[3]);
         draw_into(c, o->tex, o->w, o->h);
         at += 5 + p->binds;
         if ((s + 1) % FLUSH_EVERY == 0) glFlush();

@@ -217,8 +217,12 @@ class ShaderChain(val passes: List<ShaderPass>, val scale: Int) {
  * its size `emanata_s<i>` and texel size `emanata_p<i>` (uniforms the runner sets), and every
  * alias of it gets mpv's names: `NAME_raw`, `NAME_pos` (the output pixel's place, in
  * coordinates every texture shares: all cover the same image), `NAME_size`, `NAME_pt`,
- * `NAME_tex(pos)` (sampled bilinearly, edges clamped), `NAME_texOff(offset)` (offset in
- * NAME's pixels), `NAME_mul`, `NAME_rot` and `NAME_off`. The place is [BIAS] of a pixel past
+ * `NAME_tex(pos)` (sampled bilinearly), `NAME_texOff(offset)` (offset in NAME's pixels),
+ * `NAME_mul`, `NAME_rot` and `NAME_off`. Samples are clamped to the page's part of the tile
+ * (`emanata_valid`, in the shared coordinates), between the centers of NAME's own edge pixels
+ * there, as mpv clamps every texture at the image's edge: at a page edge each pass reads its
+ * own edge pixels, not its response to the input's pixels repeated past the page, so a tile
+ * there computes what the whole image would. `NAME_raw` is not clamped. The place is [BIAS] of a pixel past
  * the pixel's center: a sample meant for a texel's center lands just past it, where the GPU's
  * coarse filter weights give that texel alone, not a rounding error before it, where they mix
  * in 1/256 of the texel before (sizes not a power of two round so); deep networks amplify
@@ -235,7 +239,7 @@ object ShaderSource {
      * arithmetic between passes), so compiled programs ([GlesShaders.cacheName]) and stored
      * pages ([ShaderModel.fingerprint]) of an earlier runner are not used.
      */
-    const val RUNNER = 2
+    const val RUNNER = 3
 
     /** How far past a pixel's center its place is taken, in pixels: 1/1024, past fp32 rounding, short of a filter weight's 1/256. */
     const val BIAS = "0.0009765625"
@@ -243,8 +247,12 @@ object ShaderSource {
     fun fragment(program: ShaderProgram): String = buildString {
         append("#version 300 es\n")
         append("precision highp float;\nprecision highp int;\nprecision highp sampler2D;\n")
-        append("uniform vec2 emanata_out;\nuniform vec2 emanata_target;\nuniform vec2 emanata_input;\n")
+        append("uniform vec2 emanata_out;\nuniform vec2 emanata_target;\nuniform vec2 emanata_input;\nuniform vec4 emanata_valid;\n")
         append("vec2 emanata_pos;\n")
+        // Between the edge pixels' centers, each BIAS past its center inward as every place is.
+        append("vec2 emanata_clamp(vec2 pos, vec2 pt) {\n")
+        append("  vec2 lo = emanata_valid.xy + pt * (0.5 + ").append(BIAS).append(");\n")
+        append("  return clamp(pos, lo, max(emanata_valid.zw - pt * (0.5 - ").append(BIAS).append("), lo));\n}\n")
         append("#define target_size emanata_target\n#define input_size emanata_input\n#define random 0.0\n#define frame 0\n")
         for ((i, names) in program.aliases.withIndex()) {
             append("uniform sampler2D emanata_t").append(i).append(";\n")
@@ -258,8 +266,8 @@ object ShaderSource {
                 append("#define ").append(n).append("_mul 1.0\n")
                 append("#define ").append(n).append("_rot mat2(1.0, 0.0, 0.0, 1.0)\n")
                 append("#define ").append(n).append("_off vec2(0.0)\n")
-                append("#define ").append(n).append("_tex(pos) texture(emanata_t").append(i).append(", pos)\n")
-                append("#define ").append(n).append("_texOff(off) texture(emanata_t").append(i).append(", emanata_pos + emanata_p").append(i).append(" * vec2(off))\n")
+                append("#define ").append(n).append("_tex(pos) texture(emanata_t").append(i).append(", emanata_clamp(pos, emanata_p").append(i).append("))\n")
+                append("#define ").append(n).append("_texOff(off) texture(emanata_t").append(i).append(", emanata_clamp(emanata_pos + emanata_p").append(i).append(" * vec2(off), emanata_p").append(i).append("))\n")
             }
         }
         append("#line 1\n")

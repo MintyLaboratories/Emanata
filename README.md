@@ -1071,10 +1071,14 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   rounds taken in turn, so speed drifting over minutes hits every size alike;
   each timed run follows an untimed one of its size, as a page's tiles follow
   tiles of their shape) and takes the size whose tiles cost the least per
-  pixel kept, among those whose every tile ended within 150 ms (tiles are
-  where a run stops for a cancel or a page turn) and within the tile memory
-  budget; costs within 5% go to the smaller size. That size then passes the
-  same check and is kept per GPU, precision and model files. A size that
+  pixel kept, among those whose tiles ended within 150 ms at the median and
+  300 ms at worst (tiles are where a run stops for a cancel or a page turn)
+  and within the tile memory budget; costs within 5% go to the smaller size.
+  That size then passes the same check and is kept per GPU, precision and
+  model files. When pages later run fast enough that the next larger size
+  would end its tiles within 150 ms (a choice timed while the device was
+  slow), the sizes are timed again at the next open, three times at most in
+  all. A size that
   fails to run (an allocation past the GPU's memory), at the check or on a
   page, or that the app ended on while trying it first, is remembered as too
   large: the model opens again in smaller tiles. Imported models keep the

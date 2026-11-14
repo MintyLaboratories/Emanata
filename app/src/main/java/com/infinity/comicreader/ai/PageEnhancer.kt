@@ -252,7 +252,11 @@ class ReaderAi internal constructor(
                     AiPages.chain(
                         opened, readable, shownPlan, target.scaling, target.linear, limitsFor(chain, steps), canceled, gate, hold = held,
                         expect = { i, px -> (rateOf(chain[i]) * px / 1e6).toLong() },
-                        onStep = { i, px, stats -> learn(chain[i], px, stats) }, steps = steps
+                        onStep = { i, px, stats ->
+                            learn(chain[i], px, stats)
+                            opened[i].heard(stats)
+                        },
+                        steps = steps
                     )
                 }
                 val out = run.bitmap ?: return when (run.fallback) {

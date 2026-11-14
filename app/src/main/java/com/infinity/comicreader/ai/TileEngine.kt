@@ -78,8 +78,9 @@ class PageScan(val opaque: Boolean, val gray: Boolean)
  * A model ready to run tiles: opened ([model]), measured ([geometry]), with its tile [size],
  * computing in fp16 when [fp16]; with [pick], each page's tile size is its choice for the
  * page's width and height, at most [size] ([sizeFor]); with [tooLarge], its size was chosen
- * past the default by timing ([TileTuning]) and can be given up ([shrink]). Closing it closes
- * the model; a run in progress then falls back.
+ * past the default by timing ([TileTuning]) and can be given up ([shrink]); with [paced], it
+ * hears how its pages ran ([heard]). Closing it closes the model; a run in progress then falls
+ * back.
  */
 internal class Session(
     val model: TileModel,
@@ -87,7 +88,8 @@ internal class Session(
     val size: Int,
     val fp16: Boolean = false,
     private val pick: ((Int, Int) -> Int)? = null,
-    private val tooLarge: (() -> Unit)? = null
+    private val tooLarge: (() -> Unit)? = null,
+    private val paced: ((RunStats) -> Unit)? = null
 ) : AutoCloseable {
     init {
         require(TilePlan.fits(size, geometry)) { "Tile $size too small for margin ${geometry.margin}" }
@@ -102,6 +104,9 @@ internal class Session(
      * is nothing to give up.
      */
     fun shrink(): Boolean = tooLarge?.let { it(); true } ?: false
+
+    /** Hears a page's run ([stats]): with its tile times, a choice of size timed while the device was slow is timed again ([TileTiming.roomFor]). */
+    fun heard(stats: RunStats) = paced?.invoke(stats)
 
     override fun close() = model.close()
 }

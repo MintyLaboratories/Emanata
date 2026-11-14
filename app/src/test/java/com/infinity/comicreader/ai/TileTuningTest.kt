@@ -43,10 +43,23 @@ class TileTuningTest {
     }
 
     @Test
-    fun aSingleSlowTileRulesASizeOut() {
+    fun slowTilesRuleASizeOut() {
         val g = Geometry(2, 0, 8)
-        assertEquals(listOf(192), TileTiming.rank(listOf(timing(192, 37, 37, 37), timing(512, 100, 100, TileTiming.TILE_MS + 1)), g))
-        assertEquals(listOf(512, 192), TileTiming.rank(listOf(timing(192, 37, 37, 37), timing(512, 100, 100, TileTiming.TILE_MS)), g))
+        val bound = TileTiming.TILE_MS
+        val spike = bound * TileTiming.SPIKE
+        assertEquals("median past the bound", listOf(192), TileTiming.rank(listOf(timing(192, 37, 37, 37), timing(512, 100, bound + 1, bound + 1)), g))
+        assertEquals("one tile past the spike", listOf(192), TileTiming.rank(listOf(timing(192, 37, 37, 37), timing(512, 100, 100, spike + 1)), g))
+        assertEquals(listOf(512, 192), TileTiming.rank(listOf(timing(192, 37, 37, 37), timing(512, 100, bound, spike)), g))
+    }
+
+    @Test
+    fun pagesSayWhenTheNextSizeWouldEndInTime() {
+        // 192 px tiles at 60 ms: 256 px about 107 ms, 384 px about 240 ms.
+        val fast = RunStats(6, 70, longArrayOf(300, 60, 60, 61, 59, 60), 640)
+        assertTrue(TileTiming.roomFor(fast, 192, 256))
+        assertFalse(TileTiming.roomFor(fast, 192, 384))
+        assertFalse("too few tiles past the first", TileTiming.roomFor(RunStats(3, 70, longArrayOf(300, 10, 10), 320), 192, 256))
+        assertFalse(TileTiming.roomFor(RunStats(6, 70, longArrayOf(300, 90, 90, 90, 90, 90), 750), 192, 256))
     }
 
     @Test
@@ -147,9 +160,9 @@ class TileTuningTest {
         val dir = tmp.newFolder()
         val choices = TileChoices(dir)
         assertEquals(TileChoice(), choices.get("a"))
-        choices.put("a", TileChoice(384, 511, 0))
+        choices.put("a", TileChoice(384, 511, 0, 2))
         choices.put("b", TileChoice(256))
-        assertEquals(TileChoice(384, 511, 0), TileChoices(dir).get("a"))
+        assertEquals(TileChoice(384, 511, 0, 2), TileChoices(dir).get("a"))
         assertEquals(TileChoice(256), TileChoices(dir).get("b"))
         dir.listFiles()!!.forEach { it.writeText("nonsense") }
         assertEquals(TileChoice(), choices.get("a"))
@@ -186,7 +199,7 @@ class TileTuningTest {
         val s = open(runtime, tuning(dir))
         assertTrue(s.model.onGpu)
         assertEquals(384, s.size)
-        assertEquals(TileChoice(384), kept(dir))
+        assertEquals(TileChoice(384, timings = 1), kept(dir))
         // Opened again: the kept size, checked, not timed again.
         val again = runtime()
         assertEquals(384, open(again, tuning(dir)).size)
@@ -213,7 +226,7 @@ class TileTuningTest {
         val dir = tmp.newFolder()
         val s = open(runtime(gpuMs = { w -> if (w <= 192) 120 else 200 }), tuning(dir))
         assertEquals(192, s.size)
-        assertEquals(TileChoice(192), kept(dir))
+        assertEquals(TileChoice(192, timings = 1), kept(dir))
         assertFalse(s.shrink())
     }
 
@@ -225,7 +238,7 @@ class TileTuningTest {
         assertTrue(s.model.onGpu)
         assertTrue("fp16 kept", s.fp16)
         assertEquals(256, s.size)
-        assertEquals(TileChoice(256, 383, 0), kept(dir))
+        assertEquals(TileChoice(256, 383, 0, 1), kept(dir))
         // Opened again: nothing past the ceiling is tried.
         val again = runtime(gpuModel = { FakeModel(failsAbove = 256) })
         assertEquals(256, open(again, tuning(dir)).size)
@@ -249,7 +262,7 @@ class TileTuningTest {
         val s = open(runtime, tuning(dir))
         assertEquals(256, s.size)
         assertTrue(gpuWidths(runtime).none { it >= 384 })
-        assertEquals(TileChoice(256, 383, 0), kept(dir))
+        assertEquals(TileChoice(256, 383, 0, 1), kept(dir))
     }
 
     @Test
@@ -258,7 +271,7 @@ class TileTuningTest {
         // Wrong output on tiles wider than 256, as a feature map past a GPU buffer gives: seams and the CPU's check catch it.
         val s = open(runtime(gpuModel = { FakeModel(breaksAbove = 256) }), tuning(dir))
         assertEquals(256, s.size)
-        assertEquals(TileChoice(256), kept(dir))
+        assertEquals(TileChoice(256, timings = 1), kept(dir))
     }
 
     @Test
@@ -267,9 +280,30 @@ class TileTuningTest {
         val s = open(runtime(), tuning(dir))
         assertEquals(384, s.size)
         assertTrue(s.shrink())
-        assertEquals(TileChoice(0, 383, 0), kept(dir))
+        assertEquals(TileChoice(0, 383, 0, 1), kept(dir))
         assertEquals("timed again below the ceiling", 256, open(runtime(), tuning(dir)).size)
         assertNull(dir.listFiles()!!.firstOrNull { it.name.endsWith(".tmp") })
+    }
+
+    @Test
+    fun aChoiceTimedWhileSlowIsTimedAgainOncePagesAreFaster() {
+        val dir = tmp.newFolder()
+        // Slow when first opened: 256 px past the bound, so 192 px.
+        val slow = open(runtime(gpuMs = { w -> if (w <= 192) 120 else 200 }), tuning(dir))
+        assertEquals(192, slow.size)
+        // A page at 120 ms a tile leaves no room; one at 42 ms does.
+        slow.heard(RunStats(8, 70, LongArray(8) { 120 }, 1000))
+        assertEquals(TileChoice(192, timings = 1), kept(dir))
+        slow.heard(RunStats(8, 70, LongArray(8) { 42 }, 400))
+        assertEquals(TileChoice(0, timings = 1), kept(dir))
+        assertEquals("timed again, now fast", 384, open(runtime(), tuning(dir)).size)
+        assertEquals(TileChoice(384, timings = 2), kept(dir))
+        // Timed at most three times in all.
+        TileChoices(dir).put("Test GPU|fp16|model-a", TileChoice(192, timings = TileTiming.MAX_TIMINGS))
+        val done = open(runtime(), tuning(dir))
+        assertEquals(192, done.size)
+        done.heard(RunStats(8, 70, LongArray(8) { 42 }, 400))
+        assertEquals(TileChoice(192, timings = TileTiming.MAX_TIMINGS), kept(dir))
     }
 
     @Test
@@ -280,7 +314,7 @@ class TileTuningTest {
             make = { onGpu, _ -> if (onGpu) Clocked(FakeModel(), now, ::lightMs) else FakeModel(onGpu = false) }
         )
         assertEquals(384, open(runtime, tuning(dir)).size)
-        assertEquals(TileChoice(384), TileChoices(dir).get("Test GPU|fp32|model-a"))
+        assertEquals(TileChoice(384, timings = 1), TileChoices(dir).get("Test GPU|fp32|model-a"))
         assertEquals(TileChoice(), kept(dir))
     }
 }

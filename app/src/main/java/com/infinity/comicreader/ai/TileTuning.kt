@@ -23,14 +23,15 @@ internal class TileTuning(val candidates: List<Int>, val choices: TileChoices, v
  * (0: none yet, so the next open times the candidates), the largest size that may run
  * ([ceiling]: a larger one failed to run, or the app ended while running it), and the size
  * being tried ([trying], 0: none), written before a size not yet known to run is tried and
- * cleared after, so a size that ends the app (out of memory) is not tried again.
+ * cleared after, so a size that ends the app (out of memory) is not tried again; [timings]:
+ * the times the sizes were timed.
  */
-internal data class TileChoice(val size: Int = 0, val ceiling: Int = Int.MAX_VALUE, val trying: Int = 0) {
+internal data class TileChoice(val size: Int = 0, val ceiling: Int = Int.MAX_VALUE, val trying: Int = 0, val timings: Int = 0) {
     /** As an open finds it: a size left [trying] ended the app, so the ceiling falls below it and a choice at or past it is dropped. */
-    fun settled(): TileChoice = if (trying <= 0) this else TileChoice(if (size >= trying) 0 else size, minOf(ceiling, trying - 1), 0)
+    fun settled(): TileChoice = if (trying <= 0) this else below(trying)
 
     /** After [failed] did not run: the ceiling below it, a choice at or past it dropped. */
-    fun below(failed: Int): TileChoice = TileChoice(if (size >= failed) 0 else size, minOf(ceiling, failed - 1), 0)
+    fun below(failed: Int): TileChoice = copy(size = if (size >= failed) 0 else size, ceiling = minOf(ceiling, failed - 1), trying = 0)
 }
 
 /**
@@ -42,7 +43,7 @@ internal class TileChoices(private val dir: File) {
     @Synchronized
     fun get(key: String): TileChoice = runCatching {
         val v = fileOf(key).readText().trim().split(' ').map { it.toInt() }
-        TileChoice(v[0], v[1], v[2]).takeIf { v.size == 3 && it.size >= 0 && it.ceiling > 0 && it.trying >= 0 }
+        TileChoice(v[0], v[1], v[2], v[3]).takeIf { v.size == 4 && it.size >= 0 && it.ceiling > 0 && it.trying >= 0 && it.timings >= 0 }
     }.getOrNull() ?: TileChoice()
 
     /** Keeps [choice] under [key]; a failed write is logged and forgotten. */
@@ -52,7 +53,7 @@ internal class TileChoices(private val dir: File) {
         runCatching {
             dir.mkdirs()
             val tmp = File(dir, file.name + ".tmp")
-            tmp.writeText(String.format(Locale.ROOT, "%d %d %d\n", choice.size, choice.ceiling, choice.trying))
+            tmp.writeText(String.format(Locale.ROOT, "%d %d %d %d\n", choice.size, choice.ceiling, choice.trying, choice.timings))
             Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING)
         }.onFailure { Log.w(TAG, "cannot keep tile choice: ${it.message}") }
     }
@@ -87,14 +88,20 @@ internal class TileSlot(private val choices: TileChoices, private val key: Strin
 
     /** Remembers that [size] did not run: smaller tiles from now on. */
     fun failed(size: Int) = save(choice.below(size))
+
+    /** Drops the choice, so the next open times the sizes again. */
+    fun retime() = save(choice.copy(size = 0))
 }
 
 /**
  * Times a model's tile sizes on this device ([time]) and ranks them ([rank]): first the size
- * whose tiles cost the least per pixel kept, among those whose tiles all end within [TILE_MS]
- * (tiles are where a run stops for a cancel, a page turn or the reader's frames) and hold no
- * more working memory than the budget. Sizes are timed in turn, round after round, so a device
- * whose speed drifts over minutes (heat, clocks) treats them alike.
+ * whose tiles cost the least per pixel kept, among those whose tiles end within [TILE_MS] (at
+ * the median; none past [SPIKE] times that: tiles are where a run stops for a cancel, a page
+ * turn or the reader's frames) and hold no more working memory than the budget. Sizes are
+ * timed in turn, round after round, so a device whose speed drifts over minutes (heat, clocks)
+ * treats them alike. A choice timed while the device was slow is timed again once pages show
+ * the next larger size would now end its tiles in time ([roomFor]), at most [MAX_TIMINGS]
+ * times in all.
  */
 internal object TileTiming {
     /**
@@ -111,6 +118,15 @@ internal object TileTiming {
 
     /** A size whose tile would take more than this many times [TILE_MS] at the pace of the size below is not tried. */
     const val SKIP_PAST = 2.0
+
+    /** Times past [TILE_MS] the slowest timed tile of a size may take. */
+    const val SPIKE = 2
+
+    /** The most times a model's sizes are timed on a device. */
+    const val MAX_TIMINGS = 3
+
+    /** Tiles of a page, past its first (the GPU's warm-up), whose pace [roomFor] reads at least. */
+    const val PACED_TILES = 3
 
     /** A size's timed runs ([ms]), whether a run of it [failed], and the most working memory one held ([peakBytes]; 0 where not counted). */
     class Timing(val size: Int, val ms: List<Long>, val failed: Boolean = false, val peakBytes: Long = 0) {
@@ -185,16 +201,30 @@ internal object TileTiming {
     }
 
     /**
-     * Sizes of [timings] to try at [geometry], best first: those that ran, every run within
-     * [TILE_MS] and [budgetBytes], by time per pixel of core; of costs within [TIE] of the least,
-     * the smallest size first. Empty when none qualifies.
+     * Sizes of [timings] to try at [geometry], best first: those that ran within [TILE_MS] (the
+     * median; every run within [SPIKE] times it) and [budgetBytes], by time per pixel of core;
+     * of costs within [TIE] of the least, the smallest size first. Empty when none qualifies.
      */
     fun rank(timings: List<Timing>, geometry: Geometry, budgetBytes: Long = Long.MAX_VALUE): List<Int> {
-        val cost = timings.filter { !it.failed && it.ms.isNotEmpty() && it.worst <= TILE_MS && it.peakBytes <= budgetBytes && TilePlan.fits(it.size, geometry) }
+        val cost = timings.filter {
+            !it.failed && it.ms.isNotEmpty() && it.median <= TILE_MS && it.worst <= TILE_MS * SPIKE && it.peakBytes <= budgetBytes &&
+                TilePlan.fits(it.size, geometry)
+        }
             .associate { t -> TilePlan.core(t.size, geometry).toDouble().let { core -> t.size to t.median / (core * core) } }
         if (cost.isEmpty()) return emptyList()
         val least = cost.values.min()
         val best = cost.filterValues { it <= least * (1 + TIE) }.keys.min()
         return listOf(best) + cost.entries.sortedBy { it.value }.map { it.key }.filter { it != best }
+    }
+
+    /**
+     * True when a page run in [size] tiles ([stats]) says tiles of [next] would end within
+     * [TILE_MS]: its tiles past the first, at least [PACED_TILES], at their median, grown by the
+     * area (an upper bound: part of a tile's time is the same at any size).
+     */
+    fun roomFor(stats: RunStats, size: Int, next: Int): Boolean {
+        val later = stats.tileMs.take(stats.tiles).drop(1).sorted()
+        if (later.size < PACED_TILES) return false
+        return later[later.size / 2] * (next.toDouble() / size) * (next.toDouble() / size) <= TILE_MS
     }
 }

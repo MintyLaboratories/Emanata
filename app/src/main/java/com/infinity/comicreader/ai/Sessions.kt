@@ -387,9 +387,12 @@ internal object Sessions {
                 while (true) {
                     val element = if (half) 2 else 4
                     val usual = TileSizing.candidates(budget, widest, g, maxTile, info.maxBufferBytes, element, measured * element / 4)
+                    // Sizes up to the largest candidate below the ceiling.
+                    val wide = slot?.let { s ->
+                        val cap = max(maxTile, min(candidates.max(), s.choice.ceiling))
+                        TileSizing.candidates(budget, widest, g, cap, info.maxBufferBytes, element, measured * element / 4)
+                    }.orEmpty()
                     val sizes = if (slot == null) usual else {
-                        val cap = max(maxTile, min(candidates.max(), slot.choice.ceiling))
-                        val wide = TileSizing.candidates(budget, widest, g, cap, info.maxBufferBytes, element, measured * element / 4)
                         val chosen = slot.choice.size
                         if (chosen > 0) {
                             (wide.filter { it <= chosen } + usual).distinct()
@@ -429,9 +432,19 @@ internal object Sessions {
                         if (!check.passes && slot != null && size == slot.choice.size) choiceFailed = true
                         if (check.passes) {
                             model.trim()
-                            if (slot != null && (slot.choice.size == 0 || choiceFailed)) slot.save(slot.choice.copy(size = size, trying = 0))
+                            if (slot != null && (slot.choice.size == 0 || choiceFailed)) {
+                                slot.save(slot.choice.copy(size = size, trying = 0, timings = slot.choice.timings + if (timings != null) 1 else 0))
+                            }
                             val tooLarge = if (slot != null && size > maxTile) { { slot.failed(size) } } else null
-                            return Session(model, g, size, half, tooLarge = tooLarge).also { kept = true }
+                            // The next larger candidate that fits: pages fast enough for it have the sizes timed again.
+                            val next = wide.filter { it > size && it in candidates }.minOrNull()
+                            val paced = if (slot != null && next != null && slot.choice.timings < TileTiming.MAX_TIMINGS) { stats: RunStats ->
+                                if (slot.choice.size == size && TileTiming.roomFor(stats, size, next)) {
+                                    Log.i(TAG, "$name: pages say $next px tiles would now take at most ${TileTiming.TILE_MS} ms: timed again at the next open")
+                                    slot.retime()
+                                }
+                            } else null
+                            return Session(model, g, size, half, tooLarge = tooLarge, paced = paced).also { kept = true }
                         }
                         // fp16 rounding past the margin shows at every size.
                         if (half && check.seams.noisy) {

@@ -219,15 +219,14 @@ class ShaderChain(val passes: List<ShaderPass>, val scale: Int) {
  * coordinates every texture shares: all cover the same image), `NAME_size`, `NAME_pt`,
  * `NAME_tex(pos)` (sampled bilinearly, edges clamped), `NAME_texOff(offset)` (offset in
  * NAME's pixels), `NAME_mul`, `NAME_rot` and `NAME_off`. The place is [BIAS] of a pixel past
- * the pixel's center: a sample meant for a texel's center then lands just past it, where
- * filtering gives that texel alone, rather than up to a rounding error before it, where the
- * GPU's coarse filter weights mix in 1/256 of the texel before (as it does for sizes that are
- * not powers of two); deep networks amplify that into differences of many codes between tile
- * sizes. Samples between texels move by too little to change their weights. `target_size` and `input_size` are
- * the target's and the input's sizes, `random` and `frame` 0. The pass's code follows, then a
- * `main` writing `hook()` to the target, the channels past [ShaderProgram.components] as a
- * texture of that many channels reads them (0, alpha 1). The runner draws one triangle
- * covering the target.
+ * the pixel's center: a sample meant for a texel's center lands just past it, where the GPU's
+ * coarse filter weights give that texel alone, not a rounding error before it, where they mix
+ * in 1/256 of the texel before (sizes not a power of two round so); deep networks amplify
+ * that into differences of many codes between tile sizes. Samples between texels move by too
+ * little to change their weights. `target_size` and `input_size` are the target's and the
+ * input's sizes, `random` and `frame` 0. The pass's code follows, then a `main` writing
+ * `hook()` to the target, the channels past [ShaderProgram.components] as a texture of that
+ * many channels reads them (0, alpha 1). The runner draws one triangle covering the target.
  */
 object ShaderSource {
     /**

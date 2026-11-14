@@ -844,8 +844,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   what it fits best, then its biggest downside. A family takes one row with
   a level slider: Anime4K's sizes, whose ratings are their largest size's
   ("up to"), and waifu2x's denoise strengths, each with its own. A tap on a
-  row picks it and closes; letting go of a slider picks that level and
-  keeps the picker open. Models that take 10 s or more for a 1000×1500
+  row picks it and closes; letting go of a slider (or, moved by keyboard or
+  screen reader, letting it rest half a second) picks that level and keeps
+  the picker open. Models that take 10 s or more for a 1000×1500
   page on the reference tablet are marked slow with their time, and are
   offered only with Keep it simple off (or once chosen), in Settings, the
   reader's sheet and Models alike. Artifact removal and descreen are advanced settings;

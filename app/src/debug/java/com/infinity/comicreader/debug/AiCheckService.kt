@@ -124,6 +124,13 @@ import kotlin.math.max
  *   With `off`, the GPU path is then held off while the first chain opens again (`refusal`
  *   RUNTIME: its pages show without it), and back on after.
  *
+ * or, for the shader runner against the CPU: `--es do shaderref [--es sizes 1000x1500,…] [--ez save false]`
+ *
+ * - shaderref: [ShaderReference]'s synthetic chain on synthetic pages, the GPU's output in
+ *   tiles against the same arithmetic on the CPU in fp32 (`psnr`, `maxDiff`): orientation,
+ *   texture offsets, depth-to-space, bilinear sampling, channels and stages as the runner
+ *   should have them. With `save`, both as PNG.
+ *
  * Results go to the log under "AiCheck", one JSON object per line, ending with "done", and
  * to `files/bench/ai.jsonl` in the app's external files (samples beside it).
  */
@@ -175,6 +182,13 @@ class AiCheckService : Service() {
                     }
                     val asked = intent?.getStringExtra("tiles")?.split(',')?.mapNotNull { it.trim().toIntOrNull() }.orEmpty()
                     shaders(ids, pages, asked, reps, timeCool, intent?.getBooleanExtra("save", false) ?: false, intent?.getBooleanExtra("off", false) ?: false)
+                    return@hold
+                }
+                if (what == "shaderref") {
+                    val pages = (intent?.getStringExtra("sizes") ?: "1000x1500").split(',').map { s ->
+                        s.trim().split('x').mapNotNull { it.toIntOrNull() }.also { require(it.size == 2) { "unreadable size $s" } }.let { it[0] to it[1] }
+                    }
+                    shaderReference(pages, intent?.getBooleanExtra("save", false) ?: false)
                     return@hold
                 }
                 if (what == "survey") {
@@ -616,6 +630,47 @@ class AiCheckService : Service() {
             log(line.put("availableAfter", GlesShaders.available))
         }
         log(JSONObject().put("shaded", chains.size).put("state", state()))
+    }
+
+    /**
+     * The GLES runner against the CPU on [ShaderReference]'s chain, per synthetic page size: at
+     * the page's own tile and at 192 px tiles, PSNR and the largest difference (codes).
+     */
+    private fun shaderReference(pages: List<Pair<Int, Int>>, save: Boolean) {
+        val o = ShaderSessions.attempt(GlesShaders, { listOf(ShaderReference.CHAIN) }, 2, ModelMemory.of(this))
+        val s = o.session
+        if (s == null) {
+            log(JSONObject().put("shaderRef", false).put("available", GlesShaders.available).put("refusal", o.refusal?.name ?: JSONObject.NULL))
+            return
+        }
+        s.use {
+            val g = s.geometry
+            log(
+                JSONObject().put("shaderRef", true).put("renderer", GlesShaders.renderer ?: JSONObject.NULL).put("floatBytes", GlesShaders.floatBytes)
+                    .put("context", g.context).put("margin", g.margin).put("tile", s.size)
+            )
+            for ((w, h) in pages) {
+                val page = SyntheticPage.draw(w, h)
+                val t0 = SystemClock.elapsedRealtime()
+                val truth = ShaderReference.render(page)
+                val cpuMs = SystemClock.elapsedRealtime() - t0
+                if (save) save(truth, "shaderref-cpu-${w}x$h.png")
+                for (session in listOf(s, Session(s.model, g, 192)).filter { TilePlan.fits(it.size, g) }) {
+                    val out = TileEngine.run(session, page, UNLIMITED).bitmap
+                    val line = JSONObject().put("shaderRef", "${w}x$h").put("tile", session.sizeFor(w, h)).put("cpuMs", cpuMs)
+                    if (out == null) {
+                        log(line.put("failed", true))
+                        continue
+                    }
+                    val c = ShaderReference.compare(out, truth)
+                    log(line.put("psnr", c.psnr).put("maxDiff", c.maxDiff).put("meanDiff", Stats.round1(c.meanDiff * 100) / 100))
+                    if (save) save(out, "shaderref-gpu-${w}x$h-${session.sizeFor(w, h)}.png")
+                    out.recycle()
+                }
+                truth.recycle()
+                page.recycle()
+            }
+        }
     }
 
     // ------------------------------------------------------------------ gray

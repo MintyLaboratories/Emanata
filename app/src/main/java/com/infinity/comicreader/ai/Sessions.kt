@@ -449,16 +449,34 @@ internal object Sessions {
                         if (check.passes) {
                             model.trim()
                             if (slot != null && (slot.choice.size <= 0 || choiceFailed)) {
-                                slot.save(slot.choice.copy(size = size, trying = 0, timings = slot.choice.timings + if (timings != null) 1 else 0))
+                                val t = timings
+                                slot.save(
+                                    if (t == null) slot.choice.copy(size = size, trying = 0)
+                                    else slot.choice.copy(size = size, trying = 0, timings = slot.choice.timings + 1, tileMs = TileTiming.tileMs(t))
+                                )
                             }
                             val tooLarge = if (slot != null && size > maxTile) { { slot.failed(size) } } else null
-                            // The next larger candidate that fits: pages fast enough for it have the sizes timed again.
+                            // The next larger candidate that fits: pages fast enough for it have the sizes timed again, as do pages too slow in a size past the default.
                             val next = wide.filter { it > size && it in candidates }.minOrNull()
-                            val paced = if (slot != null && next != null && slot.choice.timings < TileTiming.MAX_TIMINGS) { stats: RunStats ->
-                                if (slot.choice.size == size && TileTiming.roomFor(stats, size, next)) {
-                                    Log.i(TAG, "$name: pages say $next px tiles would now take at most ${TileTiming.TILE_MS} ms: timed again at the next open")
-                                    slot.retime()
+                            val paced = if (slot != null && slot.choice.timings < TileTiming.MAX_TIMINGS) {
+                                var slow = 0
+                                val hear: (RunStats) -> Unit = { stats ->
+                                    val c = slot.choice
+                                    if (c.size == size) {
+                                        if (next != null && TileTiming.roomGrew(c, stats, size, next)) {
+                                            Log.i(TAG, "$name: pages say $next px tiles would now take at most ${TileTiming.TILE_MS} ms: timed again at the next open")
+                                            slot.retime()
+                                        } else if (size > maxTile && TileTiming.tooSlow(stats)) {
+                                            if (++slow >= TileTiming.SLOW_PAGES) {
+                                                Log.i(TAG, "$name: $size px tiles took past ${TileTiming.TILE_MS * TileTiming.SPIKE} ms for $slow pages: timed again at the next open")
+                                                slot.retime()
+                                            }
+                                        } else if (TileTiming.pace(stats) != null) {
+                                            slow = 0
+                                        }
+                                    }
                                 }
+                                hear
                             } else null
                             return Session(model, g, size, half, tooLarge = tooLarge, paced = paced).also { kept = true }
                         }

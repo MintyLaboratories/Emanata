@@ -25,9 +25,16 @@ internal class TileTuning(val candidates: List<Int>, val choices: TileChoices, v
  * ([ceiling]: a larger one failed to run, or the app ended while running it), and the size
  * being tried ([trying], 0: none), written before a size not yet known to run is tried and
  * cleared after, so a size that ends the app (out of memory) is not tried again; [timings]:
- * the times the sizes were timed.
+ * the times the sizes were timed; [tileMs]: each size that ran when they were last timed, and
+ * its tiles' time as the stop bound saw it ([TileTiming.tileMs]).
  */
-internal data class TileChoice(val size: Int = 0, val ceiling: Int = Int.MAX_VALUE, val trying: Int = 0, val timings: Int = 0) {
+internal data class TileChoice(
+    val size: Int = 0,
+    val ceiling: Int = Int.MAX_VALUE,
+    val trying: Int = 0,
+    val timings: Int = 0,
+    val tileMs: Map<Int, Long> = emptyMap()
+) {
     /** As an open finds it: a size left [trying] ended the app, so the ceiling falls below it and a choice at or past it is dropped. */
     fun settled(): TileChoice = if (trying <= 0) this else below(trying)
 
@@ -48,8 +55,10 @@ internal class TileChoices(private val dir: File) {
     /** The choice kept under [key]; none learned yet when missing or unreadable. */
     @Synchronized
     fun get(key: String): TileChoice = runCatching {
-        val v = fileOf(key).readText().trim().split(' ').map { it.toInt() }
-        TileChoice(v[0], v[1], v[2], v[3]).takeIf { v.size == 4 && it.size >= TileChoice.NONE && it.ceiling > 0 && it.trying >= 0 && it.timings >= 0 }
+        val parts = fileOf(key).readText().trim().split(' ')
+        val v = parts.take(4).map { it.toInt() }
+        val ms = parts.drop(4).associate { it.substringBefore(':').toInt() to it.substringAfter(':').toLong() }
+        TileChoice(v[0], v[1], v[2], v[3], ms).takeIf { v.size == 4 && it.size >= TileChoice.NONE && it.ceiling > 0 && it.trying >= 0 && it.timings >= 0 }
     }.getOrNull() ?: TileChoice()
 
     /** Keeps [choice] under [key]; a failed write is logged and forgotten. */
@@ -59,7 +68,8 @@ internal class TileChoices(private val dir: File) {
         runCatching {
             dir.mkdirs()
             val tmp = File(dir, file.name + ".tmp")
-            tmp.writeText(String.format(Locale.ROOT, "%d %d %d %d\n", choice.size, choice.ceiling, choice.trying, choice.timings))
+            val ms = choice.tileMs.entries.joinToString("") { (size, ms) -> " $size:$ms" }
+            tmp.writeText(String.format(Locale.ROOT, "%d %d %d %d%s\n", choice.size, choice.ceiling, choice.trying, choice.timings, ms))
             Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING)
         }.onFailure { Log.w(TAG, "cannot keep tile choice: ${it.message}") }
     }
@@ -105,9 +115,10 @@ internal class TileSlot(private val choices: TileChoices, private val key: Strin
  * the median; none past [SPIKE] times that: tiles are where a run stops for a cancel, a page
  * turn or the reader's frames) and hold no more working memory than the budget. Sizes are
  * timed in turn, round after round, so a device whose speed drifts over minutes (heat, clocks)
- * treats them alike. A choice timed while the device was slow is timed again once pages show
- * the next larger size would now end its tiles in time ([roomFor]), at most [MAX_TIMINGS]
- * times in all.
+ * treats them alike. A choice is timed again, at most [MAX_TIMINGS] times in all, once pages
+ * show the next larger size, left out for its tiles' time, would now end them in time
+ * ([roomGrew]: it was timed while the device was slow), or once its own tiles run past the
+ * stop bound for [SLOW_PAGES] pages in a row ([tooSlow]: the device runs slower now).
  */
 internal object TileTiming {
     /**
@@ -136,6 +147,9 @@ internal object TileTiming {
 
     /** Tiles of a page, past its first (the GPU's warm-up), whose pace [roomFor] reads at least. */
     const val PACED_TILES = 3
+
+    /** Pages in a row whose tiles run past [SPIKE] times [TILE_MS] before a size past the default is timed again. */
+    const val SLOW_PAGES = 3
 
     /** A size's timed runs ([ms]), whether a run of it [failed], and the most working memory one held ([peakBytes]; 0 where not counted). */
     class Timing(val size: Int, val ms: List<Long>, val failed: Boolean = false, val peakBytes: Long = 0) {
@@ -261,14 +275,32 @@ internal object TileTiming {
         return listOf(best) + cost.entries.sortedBy { it.value }.map { it.key }.filter { it != best }
     }
 
+    /** What the stop bound saw of each size of [timings] that ran: its median, or [Long.MAX_VALUE] when a tile took past [SPIKE] times [TILE_MS]. */
+    fun tileMs(timings: List<Timing>): Map<Int, Long> =
+        timings.filter { !it.failed && it.ms.isNotEmpty() }.associate { it.size to if (it.worst > TILE_MS * SPIKE) Long.MAX_VALUE else it.median }
+
+    /** A page's tiles past the first ([stats]), at least [PACED_TILES], at their median; null with fewer. */
+    fun pace(stats: RunStats): Long? {
+        val later = stats.tileMs.take(stats.tiles).drop(1).sorted()
+        return if (later.size < PACED_TILES) null else later[later.size / 2]
+    }
+
     /**
      * True when a page run in [size] tiles ([stats]) says tiles of [next] would end within
-     * [TILE_MS]: its tiles past the first, at least [PACED_TILES], at their median, grown by the
-     * area (an upper bound: part of a tile's time is the same at any size).
+     * [TILE_MS]: its [pace] grown by the area (an estimate: per pixel, larger tiles may cost
+     * more or less).
      */
-    fun roomFor(stats: RunStats, size: Int, next: Int): Boolean {
-        val later = stats.tileMs.take(stats.tiles).drop(1).sorted()
-        if (later.size < PACED_TILES) return false
-        return later[later.size / 2] * (next.toDouble() / size) * (next.toDouble() / size) <= TILE_MS
-    }
+    fun roomFor(stats: RunStats, size: Int, next: Int): Boolean =
+        pace(stats)?.let { it * (next.toDouble() / size) * (next.toDouble() / size) <= TILE_MS } == true
+
+    /**
+     * True when pages in [size] tiles ([stats]) call for timing again: [choice] left [next] out
+     * for its tiles' time (past [TILE_MS], or not timed), and pages say it would now end them
+     * in time ([roomFor]). A size that ended them in time and lost on cost or memory stays out.
+     */
+    fun roomGrew(choice: TileChoice, stats: RunStats, size: Int, next: Int): Boolean =
+        (choice.tileMs[next] ?: Long.MAX_VALUE) > TILE_MS && roomFor(stats, size, next)
+
+    /** True when a page's tiles ([stats]) take past [SPIKE] times [TILE_MS] at their [pace]: a cancel waits too long. */
+    fun tooSlow(stats: RunStats): Boolean = pace(stats)?.let { it > TILE_MS * SPIKE } == true
 }

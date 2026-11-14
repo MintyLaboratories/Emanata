@@ -216,9 +216,9 @@ class TileTuningTest {
         val dir = tmp.newFolder()
         val choices = TileChoices(dir)
         assertEquals(TileChoice(), choices.get("a"))
-        choices.put("a", TileChoice(384, 511, 0, 2))
+        choices.put("a", TileChoice(384, 511, 0, 2, mapOf(192 to 42L, 384 to 97L, 512 to Long.MAX_VALUE)))
         choices.put("b", TileChoice(256))
-        assertEquals(TileChoice(384, 511, 0, 2), TileChoices(dir).get("a"))
+        assertEquals(TileChoice(384, 511, 0, 2, mapOf(192 to 42L, 384 to 97L, 512 to Long.MAX_VALUE)), TileChoices(dir).get("a"))
         assertEquals(TileChoice(256), TileChoices(dir).get("b"))
         dir.listFiles()!!.forEach { it.writeText("nonsense") }
         assertEquals(TileChoice(), choices.get("a"))
@@ -246,7 +246,10 @@ class TileTuningTest {
 
     private fun gpuWidths(runtime: FakeRuntime) = (runtime.opened.last() as Clocked).widths
 
-    private fun kept(dir: File) = TileChoices(dir).get("Test GPU|fp16|model-a")
+    /** What is kept for the model in fp16, less its tile times ([TileChoice.tileMs]). */
+    private fun kept(dir: File) = keptTimes(dir).copy(tileMs = emptyMap())
+
+    private fun keptTimes(dir: File) = TileChoices(dir).get("Test GPU|fp16|model-a")
 
     @Test
     fun aTunedModelTakesItsFastestSizeAndKeepsIt() {
@@ -256,6 +259,7 @@ class TileTuningTest {
         assertTrue(s.model.onGpu)
         assertEquals(384, s.size)
         assertEquals(TileChoice(384, timings = 1), kept(dir))
+        assertEquals("the stop bound's view of each size", mapOf(192 to 42L, 256 to 60L, 384 to 97L, 512 to 185L), keptTimes(dir).tileMs)
         // Opened again: the kept size, checked, not timed again.
         val again = runtime()
         assertEquals(384, open(again, tuning(dir)).size)
@@ -407,6 +411,32 @@ class TileTuningTest {
     }
 
     @Test
+    fun aSizeThatLostOnCostIsNotTimedAgainForFastPages() {
+        val dir = tmp.newFolder()
+        // 256 px tiles end in time but cost more per pixel than 192 px ones; 384 px ones end past the spike bound.
+        val s = open(runtime(gpuMs = { w -> if (w <= 192) 42 else if (w <= 256) 100 else 400 }), tuning(dir))
+        assertEquals(192, s.size)
+        repeat(3) { s.heard(RunStats(8, 70, LongArray(8) { 42 }, 400)) }
+        assertEquals(TileChoice(192, timings = 1), kept(dir))
+    }
+
+    @Test
+    fun tilesTooSlowForSeveralPagesAreTimedAgain() {
+        val dir = tmp.newFolder()
+        val s = open(runtime(), tuning(dir))
+        assertEquals(384, s.size)
+        val slow = RunStats(8, 70, LongArray(8) { TileTiming.TILE_MS * TileTiming.SPIKE + 20 }, 3000)
+        val usual = RunStats(8, 70, LongArray(8) { 97 }, 800)
+        // Slow pages not in a row do not count.
+        repeat(TileTiming.SLOW_PAGES - 1) { s.heard(slow) }
+        s.heard(usual)
+        repeat(TileTiming.SLOW_PAGES - 1) { s.heard(slow) }
+        assertEquals(TileChoice(384, timings = 1), kept(dir))
+        s.heard(slow)
+        assertEquals(TileChoice(0, timings = 1), kept(dir))
+    }
+
+    @Test
     fun eachPrecisionKeepsItsOwnChoice() {
         val dir = tmp.newFolder()
         val runtime = FakeRuntime(
@@ -414,7 +444,7 @@ class TileTuningTest {
             make = { onGpu, _ -> if (onGpu) Clocked(FakeModel(), now, ::lightMs) else FakeModel(onGpu = false) }
         )
         assertEquals(384, open(runtime, tuning(dir)).size)
-        assertEquals(TileChoice(384, timings = 1), TileChoices(dir).get("Test GPU|fp32|model-a"))
+        assertEquals(TileChoice(384, timings = 1), TileChoices(dir).get("Test GPU|fp32|model-a").copy(tileMs = emptyMap()))
         assertEquals(TileChoice(), kept(dir))
     }
 }

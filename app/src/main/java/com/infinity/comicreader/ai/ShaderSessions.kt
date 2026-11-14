@@ -6,6 +6,7 @@ import android.util.Log
 import java.io.File
 import java.io.IOException
 import java.util.Locale
+import java.util.concurrent.CancellationException
 
 /**
  * Opens shader chains ([ShaderModel]) as [Session]s for the tile engine, as [Sessions] opens
@@ -27,7 +28,9 @@ import java.util.Locale
  * What was measured ([Fit]) is kept beside the compiled passes ([FIT_SUFFIX], under the same
  * key: the same sources on the same GPU, driver and runner), so a chain opened again skips
  * the measuring and the seam check, as long as the tile size checked is still the one it
- * would choose.
+ * would choose. A tile time kept past [TILE_MS] is timed again ([RETIMES] tiles) on every
+ * open, so a first measure taken hot, under battery saver or with the driver's first-draw
+ * costs does not keep tiles small for good.
  */
 internal object ShaderSessions {
     private const val TAG = "AiShaders"
@@ -83,6 +86,9 @@ internal object ShaderSessions {
      */
     const val SEAM_MAX = 1
 
+    /** Tiles run to time a kept fit again; their median counts, so one slow first draw does not. */
+    const val RETIMES = 3
+
     /**
      * The chain of [texts] (shader files in order, read when opening) enlarging [scale] times,
      * opened through [runtime]; tiles at most [maxTile] unless the margins call for more, their
@@ -134,8 +140,10 @@ internal object ShaderSessions {
             if (known != null) {
                 val g = Geometry(scale, 0, known.context)
                 if (sizes(chain, g, runtime.floatBytes, budget, runtime.maxSide, maxTile).firstOrNull() == known.size) {
-                    Log.i(TAG, "${chain.programs.size} passes, $g, ${known.size} px tiles as measured before (${SystemClock.elapsedRealtime() - t0} ms)")
-                    return session(g, known.size, known.tileMs)
+                    val tileMs = if (known.tileMs <= TILE_MS) known.tileMs
+                    else retime(model, known.size, scale, clock, canceled)?.also { ms -> fitFile?.let { known.copy(tileMs = ms).write(it) } } ?: known.tileMs
+                    Log.i(TAG, "${chain.programs.size} passes, $g, ${known.size} px tiles in $tileMs ms as measured before (${SystemClock.elapsedRealtime() - t0} ms)")
+                    return session(g, known.size, tileMs)
                 }
             }
             var g = known?.let { Geometry(scale, 0, it.context) } ?: run {
@@ -186,6 +194,28 @@ internal object ShaderSessions {
         val m = geometry.margin
         val core = maxOf((side - 2 * m) / TilePlan.ALIGN * TilePlan.ALIGN, TilePlan.MIN_CORE)
         return minOf(core + 2 * m, size)
+    }
+
+    /**
+     * The median time of [RETIMES] runs of [model] (enlarging [scale] times) on a [size] x [size]
+     * tile of noise, read back whole as a page's tiles are; null when a run fails. Throws
+     * [CancellationException] once [canceled], checked before every run.
+     */
+    private fun retime(model: TileModel, size: Int, scale: Int, clock: () -> Long, canceled: () -> Boolean): Long? {
+        val src = ModelProbe.content(size, size, ModelProbe.Pattern.NOISE)
+        val out = size * scale
+        val dst = Bitmap.createBitmap(out, out, Bitmap.Config.ARGB_8888)
+        try {
+            val timed = Timed(model, size, clock)
+            repeat(RETIMES) {
+                if (canceled()) throw CancellationException("AI work canceled while timing")
+                timed.run(src, Box(0, 0, size, size), dst, Box(0, 0, out, out), 0, 0) ?: return null
+            }
+            return timed.median()
+        } finally {
+            dst.recycle()
+            src.recycle()
+        }
     }
 
     /** [model], timing each run on a [size] x [size] input by [clock]. */

@@ -339,7 +339,7 @@ object ModelProbe {
     private fun content(size: Int, pattern: Pattern): Bitmap = content(size, size, pattern)
 
     /** An opaque [w] x [h] bitmap of [pattern]. */
-    private fun content(w: Int, h: Int, pattern: Pattern): Bitmap {
+    internal fun content(w: Int, h: Int, pattern: Pattern): Bitmap {
         val r = Random(w * 7 + (h - w) * 13 + pattern.ordinal)
         val px = when (pattern) {
             Pattern.NOISE -> IntArray(w * h) { r.nextInt(1 shl 24) }

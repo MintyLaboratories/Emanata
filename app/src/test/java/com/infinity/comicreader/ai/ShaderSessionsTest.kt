@@ -252,6 +252,29 @@ class ShaderSessionsTest {
     }
 
     @Test
+    fun aKeptTimeThatCappedTilesIsTimedAgainOnOpen() {
+        val dir = File("build/tmp/shader-retime-test").apply { deleteRecursively(); mkdirs() }
+        var now = 0L
+        var perRun = 400L
+        val runtime = FakeShaders(make = { FakeModel(scale = 2, onRun = { now += perRun }) })
+        fun open() = ShaderSessions.attempt(runtime, { listOf(FakeShaderFiles.UPSCALER) }, 2, cache = dir, clock = { now }).session!!
+        val hot = open()
+        assertTrue("${hot.size}", hot.size < ShaderSessions.DEFAULT_MAX)
+        hot.close()
+        perRun = 10
+        val cool = open()
+        assertEquals("timed again, not measured", ShaderSessions.RETIMES, (cool.model as FakeModel).runs.get())
+        assertEquals("full size again", ShaderSessions.DEFAULT_MAX, cool.size)
+        cool.close()
+        val fit = File(dir, runtime.key(runtime.chains.first()) + ShaderSessions.FIT_SUFFIX)
+        assertEquals(10L, ShaderSessions.Fit.read(fit)!!.tileMs)
+        val again = open()
+        assertEquals("a time within the limit is kept as it is", 0, (again.model as FakeModel).runs.get())
+        again.close()
+        dir.deleteRecursively()
+    }
+
+    @Test
     fun tooLittleMemoryIsRefused() {
         val runtime = FakeShaders(make = { FakeModel(scale = 2) })
         val o = open(runtime, memory = 4L * 1024)

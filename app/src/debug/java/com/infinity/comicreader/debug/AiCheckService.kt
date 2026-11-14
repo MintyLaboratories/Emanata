@@ -41,8 +41,12 @@ import com.infinity.comicreader.ai.Session
 import com.infinity.comicreader.ai.Sessions
 import com.infinity.comicreader.ai.ShaderCatalog
 import com.infinity.comicreader.ai.ShaderSessions
+import com.infinity.comicreader.ai.TileChoices
 import com.infinity.comicreader.ai.TileEngine
 import com.infinity.comicreader.ai.TilePlan
+import com.infinity.comicreader.ai.TileSizing
+import com.infinity.comicreader.ai.TileTiming
+import com.infinity.comicreader.ai.TileTuning
 import com.infinity.comicreader.reader.BitmapUtils
 import com.infinity.comicreader.reader.Calibrator
 import com.infinity.comicreader.reader.NativeResampler
@@ -64,7 +68,7 @@ import kotlin.math.max
  * `adb shell am start-foreground-service -n <package>/com.infinity.comicreader.debug.AiCheckService
  *  --es model <path to .param, its .bin beside it> [--es do check|time|limits|sustain|all] [--es engines gpu,cpu]
  *  [--es tiles 128,192,256,384, or auto for the size it chose] [--es size 1000x1500] [--es small 300x420] [--ei reps 3] [--ei cooldown 10] [--ef cool <headroom>] [--ez fp16 true]
- *  [--ei threads 4] [--ei seconds 300]`
+ *  [--ei threads 4] [--ei seconds 300] [--ez tune false]`
  *
  * or, for every model in a folder: `--es do survey --es dir <folder, searched for .param files> [--es size 1000x1500]
  *  [--ei cap 120] [--ef cool 0.85] [--ez fp16 true] [--ei threads 4]`
@@ -78,9 +82,12 @@ import kotlin.math.max
  *  | --es model <.param>] [--es engines gpu,cpu] [--es size 1000x1500] [--ef cool <headroom>] [--ez fp16 true] [--ei threads 4]`
  *
  * - open: per engine, the time to open, measure and check the model, its geometry, tile size
- *   and precision (the checks themselves go to the log under "AiSessions").
- * - check: tiled output at each size against one tile covering the whole of a `small` page on
- *   the CPU in fp32 (seams, plus fp16 rounding on the GPU), and the GPU's against the CPU's.
+ *   and precision (the checks themselves go to the log under "AiSessions"). With `tune`, GPU
+ *   tiles are chosen as the reader chooses a catalog model's: timed among
+ *   [TileSizing.CANDIDATES] ([TileTiming]), from a store cleared first (`tuned`: the choice kept).
+ * - check: tiled output at each size, the chosen one included, against one tile covering the
+ *   whole of a `small` page on the CPU in fp32 (seams, plus fp16 rounding on the GPU), and the
+ *   GPU's against the CPU's.
  * - time: per engine and tile size, `reps` pages of `size` after one warm-up: time per tile
  *   and per page, peak resident and graphics memory, thermal status and headroom. Given
  *   `cool`, first waits for the thermal headroom to fall below it, up to [COOL_TIME_MAX_S].
@@ -158,6 +165,7 @@ class AiCheckService : Service() {
         val cap = intent?.getIntExtra("cap", 120)?.coerceIn(5, 3600) ?: 120
         val cool = intent?.getFloatExtra("cool", COOL_HEADROOM)?.coerceIn(0.1f, 1f) ?: COOL_HEADROOM
         val timeCool = if (intent?.hasExtra("cool") == true) cool else null
+        val tune = intent?.getBooleanExtra("tune", false) ?: false
         thread(name = "ai-check") { Calibrator.hold {
             try {
                 out.parentFile?.mkdirs()
@@ -214,7 +222,8 @@ class AiCheckService : Service() {
                 )
                 for (gpu in engines) {
                     val t0 = SystemClock.elapsedRealtime()
-                    val session = Sessions.open(LibNcnn, files, threads, gpu = gpu, fp16 = fp16)
+                    val tuning = if (tune && gpu) tuningFor(param) else null
+                    val session = Sessions.open(LibNcnn, files, threads, gpu = gpu, fp16 = fp16, tuning = tuning)
                     val openMs = SystemClock.elapsedRealtime() - t0
                     if (session == null) {
                         log(JSONObject().put("open", if (gpu) "gpu" else "cpu").put("failed", true))
@@ -225,6 +234,7 @@ class AiCheckService : Service() {
                         log(
                             JSONObject().put("open", if (gpu) "gpu" else "cpu").put("onGpu", s.model.onGpu).put("ms", openMs)
                                 .put("scale", g.scale).put("trim", g.trim).put("context", g.context).put("margin", g.margin).put("tile", s.size).put("fp16", s.fp16)
+                                .put("tuned", tuning?.let { t -> keptChoice(t, s.fp16) } ?: JSONObject.NULL)
                         )
                         if (what == "check" || what == "all") seams(s, files, threads, small[0], small[1])
                         if (what == "time" || what == "all") time(s, tiles.ifEmpty { listOf(s.size) }, size[0], size[1], reps, cooldown, timeCool)
@@ -246,6 +256,18 @@ class AiCheckService : Service() {
 
     private val out: File get() = File(getExternalFilesDir(null), "bench/ai.jsonl")
 
+    /** Tile tuning for the model of [param] as the reader tunes a catalog model's, from a store cleared first, so it times afresh. */
+    private fun tuningFor(param: File): TileTuning {
+        val dir = File(out.parentFile, "tile-choices").apply { deleteRecursively() }
+        return TileTuning(TileSizing.CANDIDATES, TileChoices(dir), param.name)
+    }
+
+    /** What [tuning] keeps for the GPU in fp16 or fp32 ([fp16]): the size chosen and the largest that may run. */
+    private fun keptChoice(tuning: TileTuning, fp16: Boolean): JSONObject {
+        val c = tuning.choices.get("${LibNcnn.gpu()?.name}|${if (fp16) "fp16" else "fp32"}|${tuning.key}")
+        return JSONObject().put("size", c.size).put("ceiling", if (c.ceiling == Int.MAX_VALUE) JSONObject.NULL else c.ceiling)
+    }
+
     // ------------------------------------------------------------------ check
 
     /**
@@ -258,7 +280,7 @@ class AiCheckService : Service() {
             val whole = Session(cpu.model, cpu.geometry, max(page.width, page.height) + 2 * cpu.geometry.margin)
             TileEngine.run(whole, page, UNLIMITED).bitmap?.let { b -> pixels(b).also { b.recycle() } }
         } ?: return log(JSONObject().put("seams", "reference failed"))
-        for (size in listOf(64, 96, 128, 192, 256).filter { TilePlan.fits(it, s.geometry) }) {
+        for (size in (listOf(64, 96, 128, 192, 256) + s.size).distinct().filter { TilePlan.fits(it, s.geometry) }) {
             val got = TileEngine.run(Session(s.model, s.geometry, size), page).bitmap ?: continue
             val d = diff(ref, pixels(got))
             got.recycle()

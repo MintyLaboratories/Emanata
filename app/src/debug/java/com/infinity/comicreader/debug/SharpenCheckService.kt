@@ -14,6 +14,7 @@ import android.os.PowerManager
 import android.os.Process
 import android.os.SystemClock
 import android.util.Log
+import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import com.infinity.comicreader.R
@@ -22,7 +23,9 @@ import com.infinity.comicreader.reader.LibPixels
 import com.infinity.comicreader.reader.NativeResampler
 import com.infinity.comicreader.reader.PixelEngine
 import com.infinity.comicreader.reader.Rcas
+import com.infinity.comicreader.reader.ScaleFilter
 import com.infinity.comicreader.reader.SyntheticPage
+import com.infinity.comicreader.ui.PageShader
 import org.json.JSONObject
 import java.io.File
 import java.nio.ByteBuffer
@@ -36,12 +39,15 @@ import kotlin.random.Random
  * against its Kotlin model ([Rcas]) and times it on synthetic pages. Only the shell may start it:
  *
  * `adb shell am start-foreground-service -n <package>/com.infinity.comicreader.debug.SharpenCheckService
- *  [--es do check|time|all] [--ei reps 10] [--ei strength 50]`
+ *  [--es do check|shader|time|all] [--ei reps 10] [--ei strength 50]`
  *
  * - check: noise images (translucent pixels and flat rows among them) of many shapes, at
  *   strengths 0, 35 and 100 %, without and with strips past their edges, on 1 and 4 workers:
  *   the largest channel difference from the model (0 means bit-identical), and a CRC-32 of
  *   every result (`digest`).
+ * - shader (API 33+): the GPU zoom shader ([PageShader]) built with sharpening for every filter,
+ *   with and without anti-ringing and the color stage; a build the platform's compiler refuses
+ *   is reported with its error.
  * - time: a 2160 x 3840 page (4K, upright) and a 1848 x 2960 one (the reference tablet's
  *   screen), each sharpened `reps` times after 2 warm-up rounds on the workers pages use
  *   (one per large core, pinned) and on one: median wall and process CPU ms per page, the
@@ -65,6 +71,7 @@ class SharpenCheckService : Service() {
                     out.parentFile?.mkdirs()
                     log(JSONObject().put("loaded", LibPixels.loaded).put("threads", NativeResampler.threads).put("conditions", conditions()))
                     if (what == "check" || what == "all") check()
+                    if ((what == "shader" || what == "all") && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) shaders()
                     if (what == "time" || what == "all") time(reps, strength)
                 } catch (t: Throwable) {
                     log(JSONObject().put("failed", "${t.javaClass.simpleName}: ${t.message}"))
@@ -162,6 +169,16 @@ class SharpenCheckService : Service() {
         var worst = 0
         for (s in 0..24 step 8) worst = maxOf(worst, kotlin.math.abs(((a shr s) and 0xFF) - ((b shr s) and 0xFF)))
         return worst
+    }
+
+    // ------------------------------------------------------------------ shader
+
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    private fun shaders() {
+        for (filter in ScaleFilter.entries) for (antiRing in listOf(false, true)) for (colored in listOf(false, true)) {
+            val error = runCatching { PageShader(PageShader.Kernel.FILTERED, colored, filter, antiRing, sharpen = true) }.exceptionOrNull()
+            log(JSONObject().put("shader", filter.key).put("antiRing", antiRing).put("colored", colored).put("built", error == null).put("error", error?.message))
+        }
     }
 
     // ------------------------------------------------------------------ time

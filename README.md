@@ -1493,6 +1493,7 @@ app shows each license and NOTICE text under Settings → About (files in
 | Rust standard library; crates addr2line, gimli, libc, miniz_oxide, rustc-demangle (in jxl-coder) | MIT or Apache-2.0 |
 | Rust crates novtb, pic-scale, pxfm (in jxl-coder) | BSD-3-Clause or Apache-2.0 |
 | LLVM libc++abi, libunwind (in jxl-coder); libc++, libc++abi, OpenMP runtime (in the ncnn library) | Apache-2.0 with LLVM Exceptions |
+| [AMD FidelityFX Super Resolution 1](https://github.com/GPUOpen-Effects/FidelityFX-FSR): its RCAS sharpening pass, written anew from AMD's reference | MIT |
 | [ZXing](https://github.com/zxing/zxing) (`core`) | Apache-2.0 |
 | [SMBJ](https://github.com/hierynomus/smbj), ASN-One | Apache-2.0 |
 | [Bouncy Castle](https://www.bouncycastle.org/) (`bcprov`) | MIT (Bouncy Castle Licence) |

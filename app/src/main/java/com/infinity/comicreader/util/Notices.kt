@@ -170,6 +170,12 @@ object Notices {
                 "MIT and Apache 2.0 licenses; its generated parser under GPL 3.0 with the Bison exception, which lets " +
                 "it be used under any terms; its preprocessor also under an NVIDIA license. All in the same text."
         ),
+        Notice(
+            "AMD FidelityFX Super Resolution 1", MIT, "https://github.com/GPUOpen-Effects/FidelityFX-FSR",
+            listOf("fidelityfx-fsr.txt"),
+            note = "Its RCAS sharpening pass, written anew from AMD's reference, sharpens pages after scaling when " +
+                "\"Sharpen after scaling\" is on."
+        ),
         Notice("ZXing", APACHE_2, "https://github.com/zxing/zxing", APACHE, listOf("com.google.zxing:core")),
         Notice(
             "SMBJ and ASN-One", APACHE_2, "https://github.com/hierynomus/smbj", APACHE, listOf("com.hierynomus:*")

@@ -828,10 +828,16 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   read marks stay. Also clear history, clear bookmarks, reset
   all settings; every Clear or Reset asks first. Resetting settings keeps
   per-book adjustments and reading progress.
-- **AI processing** (off by default): a model
-  per step, or none, for artifact removal, then descreening, then upscaling
-  (waifu2x UpConv7 2× by default; only a choice is stored, so a step never
-  chosen follows a later default). Upscaling also offers Anime4K's GPU
+- **AI processing** (off by default): two default chains, **Manga**
+  (black-and-white pages with dot patterns) and **Everything else** (color,
+  and black-and-white without dots), each a model per step, or none, for
+  artifact removal, then descreening, then upscaling (waifu2x UpConv7 2× by
+  default in both; only a choice is stored, so a step never chosen follows a
+  later default). Under each chain's name a load estimate bar sums its
+  models' page times (this device's as the reader measured them, else the
+  reference tablet's) on a scale to 30 s: green below 10 s, yellow to 20 s,
+  red past it, with no unit or numbers; TalkBack reads it as light, moderate
+  or heavy. Upscaling also offers Anime4K's GPU
   shaders (modes A, B and C, Upscale, Upscale + Denoise) in every size from
   S to UL. A step's picker shows each choice by a short name (without the
   step's own words, e.g. OpenComic 2×), its speed in stars (five up to 1 s
@@ -850,8 +856,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   page on the reference tablet are marked slow with their time, and are
   offered only with Keep it simple off (or once chosen), in Settings, the
   reader's sheet and Models alike. Artifact removal and descreen are advanced settings;
-  the switch's summary shows the whole chain, hidden steps included, and warns
-  when its models together may run past a page's time. A chosen model
+  the switch's summary shows both chains, hidden steps included, and warns
+  when one's models together may run past a page's time. A chosen model
   downloads at once, and one cut short with the app resumes as Settings open
   (Models shows each with its size, license and progress, and deletes them;
   models an update drops are deleted at the next start). **Import a model…**
@@ -872,10 +878,15 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   processed version takes its place at the same size when ready: the page
   read first, then the next screen's, one at a time; turning pages faster
   than they are processed, the work skips ahead to pages it can finish in
-  time. Each book can run its own models (Reader settings → AI processing →
-  **This book**), kept with its other data; **Default** follows Settings, and
-  a change there changes the default. Processed pages are kept on disk (up to
-  1 GB and a tenth of the free space, cleared by Clear cache).
+  time. A book read right to left runs the Manga chain, others Everything
+  else, unless Reader settings → AI processing → **Default chain** picks one
+  for its whole folder (**Same for the whole folder**, on by default) or for
+  the book alone; both kept with the library's data. Each book can also run
+  its own models (**This book**), kept with its other data; **Default**
+  follows Settings, and a change there changes that default chain. The sheet
+  shows the load estimate of the chain the book runs. Processed pages are
+  kept on disk (up to 1 GB and a tenth of the free space, cleared by Clear
+  cache).
 - **Models by page size** (Settings → AI processing, advanced): one slider
   with two handles on the size a page is shown at, as a share of its side
   after the 8 MP reduction. Upscaling models run on pages shown above the

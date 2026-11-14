@@ -2,8 +2,6 @@ package com.infinity.comicreader.util
 
 import com.infinity.comicreader.ai.ModelCatalog
 import com.infinity.comicreader.ai.ModelSource
-import com.infinity.comicreader.ai.ShaderCatalog
-import com.infinity.comicreader.ai.ShaderModel
 
 /**
  * A third-party component shipped in the app and the license it is used under.
@@ -217,9 +215,9 @@ object Notices {
             )
         }
 
-    /** [s]'s models by name, a shader family once with its levels. */
+    /** [s]'s models by name, a family with levels once, with their names. */
     private fun modelNames(s: ModelSource): String = s.models.map { m ->
-        if (m is ShaderModel) "${m.familyName} (${ShaderCatalog.family(m.family).joinToString("/") { it.levelName }})" else m.name
+        m.level?.let { "${it.familyName} (${it.names.joinToString("/")})" } ?: m.name
     }.distinct().joinToString()
 
     /** Every license and NOTICE file the notices and the AI models refer to. */

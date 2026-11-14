@@ -2,32 +2,27 @@ package com.infinity.comicreader.ai
 
 /**
  * A model made of mpv hook shaders, run on the GPU ([ShaderSessions]): [files], run in order
- * as one chain, [scale] times larger out than in, at [step], from [source]. It is level
- * [level] of [family], named [familyName] ([ShaderCatalog.LEVELS]: the same network in sizes
- * from lightest to heaviest). [pageMs]: its time for a synthetic 1000 x 1500 page on the
- * reference tablet's GPU, at its own scale, started cool.
+ * as one chain, [scale] times larger out than in, at [step], from [source], at [level] of its
+ * family ([ShaderCatalog.LEVELS]: the same network in sizes from lightest to heaviest).
+ * [pageMs]: its time for a synthetic 1000 x 1500 page on the reference tablet's GPU, at its
+ * own scale.
  */
 data class ShaderModel(
     override val id: String,
-    val familyName: String,
     override val step: AiStep,
     override val scale: Int,
     val source: ModelSource,
     override val files: List<ModelFile>,
-    val family: String,
-    val level: Int,
+    override val level: ModelLevel,
     override val pageMs: Long = 0,
     val blurb: ModelBlurb? = null
 ) : AiModel, FileSet {
     /** The family's name and the level's. */
-    override val name: String get() = "$familyName, $levelName"
+    override val name: String get() = "${level.familyName}, ${level.name}"
 
     override val bytes: Long get() = files.sumOf { it.bytes }
 
     override val fingerprint: String get() = files.joinToString(":") { it.sha256.take(16) }
-
-    /** The [level]'s name, as Anime4K names its sizes. */
-    val levelName: String get() = ShaderCatalog.LEVELS[level]
 }
 
 /**
@@ -97,7 +92,10 @@ object ShaderCatalog {
     /** Every chain, family by family, each from its lightest level to its heaviest. */
     val all: List<ShaderModel> = FAMILIES.flatMap { f ->
         LEVELS.indices.map { l ->
-            ShaderModel("${f.id}-${LEVELS[l].lowercase()}", f.name, AiStep.UPSCALE, 2, ModelSource.ANIME4K, f.files(l), f.id, l, pageMs = f.pageMs[l])
+            ShaderModel(
+                "${f.id}-${LEVELS[l].lowercase()}", AiStep.UPSCALE, 2, ModelSource.ANIME4K, f.files(l),
+                ModelLevel(f.id, f.name, l, LEVELS), pageMs = f.pageMs[l]
+            )
         }
     }
 
@@ -107,6 +105,5 @@ object ShaderCatalog {
     fun forStep(step: AiStep): List<ShaderModel> = all.filter { it.step == step }
 
     /** The levels of [family], lightest first. */
-    fun family(family: String): List<ShaderModel> = all.filter { it.family == family }
-
+    fun family(family: String): List<ShaderModel> = all.filter { it.level.family == family }
 }

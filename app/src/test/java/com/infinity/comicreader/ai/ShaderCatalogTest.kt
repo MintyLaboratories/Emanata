@@ -13,14 +13,16 @@ class ShaderCatalogTest {
     @Test
     fun everyFamilyComesInEveryLevel() {
         assertEquals(listOf("S", "M", "L", "VL", "UL"), ShaderCatalog.LEVELS)
-        val families = ShaderCatalog.all.map { it.family }.distinct()
+        val families = ShaderCatalog.all.map { it.level.family }.distinct()
         assertEquals(listOf("anime4k-a", "anime4k-b", "anime4k-c", "anime4k-upscale", "anime4k-upscale-denoise"), families)
         for (f in families) {
             val levels = ShaderCatalog.family(f)
-            assertEquals(f, (0..4).toList(), levels.map { it.level })
-            assertEquals(f, levels.map { "$f-${it.levelName.lowercase()}" }, levels.map { it.id })
-            assertTrue(f, levels.all { it.name == "${it.familyName}, ${it.levelName}" })
+            assertEquals(f, (0..4).toList(), levels.map { it.level.index })
+            assertEquals(f, levels.map { "$f-${it.level.name.lowercase()}" }, levels.map { it.id })
+            assertTrue(f, levels.all { it.name == "${it.level.familyName}, ${it.level.name}" && it.level.names == ShaderCatalog.LEVELS })
+            assertEquals("the AiModel view", levels.map { it.level }, levels.map { (it as AiModel).level })
         }
+        assertTrue("ncnn models come in one size", ModelCatalog.all.all { it.level == null })
     }
 
     @Test
@@ -93,7 +95,7 @@ class ShaderCatalogTest {
     @Test
     fun everyChainTakesAPageWithinTheBudget() {
         for (m in ShaderCatalog.all) assertTrue("${m.id}: ${m.pageMs} ms", m.pageMs in 1..ModelCatalog.MAX_PAGE_MS)
-        for (f in ShaderCatalog.all.map { it.family }.distinct()) {
+        for (f in ShaderCatalog.all.map { it.level.family }.distinct()) {
             val times = ShaderCatalog.family(f).map { it.pageMs }
             assertEquals("$f: heavier levels take longer", times.sorted(), times)
         }

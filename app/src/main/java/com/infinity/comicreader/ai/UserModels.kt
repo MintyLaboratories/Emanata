@@ -30,6 +30,22 @@ sealed interface AiModel {
 
     /** [pageMs] in whole seconds. */
     val pageSeconds: Long get() = (pageMs + 500) / 1000
+
+    /** Its place among the sizes of one network ([ModelLevel]); null for a model that comes in one size. */
+    val level: ModelLevel? get() = null
+}
+
+/**
+ * A model's place in a family: the same network in sizes, lightest first ([names]), this one
+ * at [index]. The family is [family] (an id shared by its levels), shown as [familyName].
+ */
+data class ModelLevel(val family: String, val familyName: String, val index: Int, val names: List<String>) {
+    init {
+        require(index in names.indices) { "Level $index of ${names.size}" }
+    }
+
+    /** The level's own name, as the family names its sizes. */
+    val name: String get() = names[index]
 }
 
 /**

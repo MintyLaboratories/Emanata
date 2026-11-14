@@ -4,10 +4,11 @@ import kotlin.math.roundToInt
 
 /**
  * A pass of a chain as the GPU runs it: [pass] at [stage], reading one texture per entry of
- * [bindings] (binding i is texture unit i), each also known by its [aliases]; its fragment
- * shader is [source] ([ShaderSource]).
+ * [bindings] (binding i is texture unit i), each also known by its [aliases], storing the
+ * first [components] channels of its result (the rest read 0, alpha 1, as from a texture of
+ * that many channels); its fragment shader is [source] ([ShaderSource]).
  */
-class ShaderProgram(val pass: ShaderPass, val stage: String) {
+class ShaderProgram(val pass: ShaderPass, val stage: String, val components: Int = pass.components ?: 4) {
     /** The names bound, one texture each: a pass's BINDs less those naming the same image twice. */
     val bindings: List<String>
 
@@ -90,15 +91,38 @@ class ShaderPlan(val input: Dims, val target: Dims, val slots: List<Dims>, val s
 /**
  * Shader files run in order as one model ([ShaderModel]): their [passes] form [programs], every
  * pass hooking MAIN in file order, then every pass hooking PREKERNEL, as mpv runs them. The
- * target size WHEN and WIDTH read as OUTPUT is the input [scale] times larger.
+ * PREKERNEL stage starts from MAIN's result; binding MAIN there reads that result, whatever
+ * PREKERNEL passes did since. The target size WHEN and WIDTH read as OUTPUT is the input
+ * [scale] times larger. Throws [ShaderException] for a pass saving into another stage's image.
  */
 class ShaderChain(val passes: List<ShaderPass>, val scale: Int) {
     init {
         require(scale >= 1) { "Scale $scale" }
     }
 
-    val programs: List<ShaderProgram> =
-        ShaderHooks.STAGES.flatMap { stage -> passes.filter { stage in it.hooks }.map { ShaderProgram(it, stage) } }
+    /**
+     * The passes by stage, each storing as many channels as it says, else as many as the image
+     * it hooks has at that point: the page's four to start with (passes a [ShaderPass.condition]
+     * skips counted as run).
+     */
+    val programs: List<ShaderProgram> = run {
+        var mainComponents = 4
+        ShaderHooks.STAGES.flatMap { stage ->
+            var hooked = mainComponents
+            passes.filter { stage in it.hooks }.map { pass ->
+                val saves = pass.saves
+                if (saves != null && saves in ShaderHooks.STAGES && saves != stage) {
+                    throw ShaderException("${pass.desc ?: "A pass"} at $stage saves into $saves")
+                }
+                val n = pass.components ?: hooked
+                if (saves == null || saves == ShaderHooks.HOOKED || saves == stage) {
+                    hooked = n
+                    if (stage == ShaderHooks.MAIN) mainComponents = n
+                }
+                ShaderProgram(pass, stage, n)
+            }
+        }
+    }
 
     /** The fragment shader of each program. */
     val sources: List<String> get() = programs.map { it.source }
@@ -121,30 +145,39 @@ class ShaderChain(val passes: List<ShaderPass>, val scale: Int) {
         require(input.width > 0 && input.height > 0) { "Empty input" }
         val target = Dims(input.width * scale, input.height * scale)
         val source = Value(input).also { it.slot = 0 }
+        // MAIN's image, kept once PREKERNEL starts; and the image of the stage running.
         var main = source
+        var hooked = source
         val saved = HashMap<String, Value>()
         class Draw(val program: Int, val out: Value, val inputs: List<Value>)
         val draws = ArrayList<Draw>()
         for ((p, program) in programs.withIndex()) {
             val pass = program.pass
+            val stage = program.stage
             fun valueOf(name: String): Value? = when (name) {
-                ShaderHooks.HOOKED, ShaderHooks.MAIN, ShaderHooks.PREKERNEL -> main
+                ShaderHooks.HOOKED, stage -> hooked
+                ShaderHooks.MAIN -> main
+                // A later stage's image does not exist yet.
+                in ShaderHooks.STAGES -> null
                 else -> saved[name]
             }
             fun dimsOf(name: String): Dims? = if (name == ShaderHooks.OUTPUT) target else valueOf(name)?.dims
             if (pass.condition?.eval(::dimsOf) == 0f) continue
             val inputs = program.bindings.map { valueOf(it) ?: throw ShaderException("${pass.desc ?: "A pass"} binds $it, which no pass before it saves") }
-            val w = pass.width?.let { side(it.eval(::dimsOf), it) } ?: main.dims.width
-            val h = pass.height?.let { side(it.eval(::dimsOf), it) } ?: main.dims.height
+            val w = pass.width?.let { side(it.eval(::dimsOf), it) } ?: hooked.dims.width
+            val h = pass.height?.let { side(it.eval(::dimsOf), it) } ?: hooked.dims.height
             val out = Value(Dims(w, h))
             for (v in inputs) v.lastUse = draws.size
             draws += Draw(p, out, inputs)
             when (val name = pass.saves ?: ShaderHooks.HOOKED) {
-                ShaderHooks.HOOKED, ShaderHooks.MAIN, ShaderHooks.PREKERNEL -> main = out
+                ShaderHooks.HOOKED, stage -> {
+                    hooked = out
+                    if (stage == ShaderHooks.MAIN) main = out
+                }
                 else -> saved[name] = out
             }
         }
-        main.lastUse = Int.MAX_VALUE
+        hooked.lastUse = Int.MAX_VALUE
         // Slots by first fit of the same size among those no later draw reads.
         val slots = arrayListOf(input)
         val free = ArrayList<Int>()
@@ -161,7 +194,7 @@ class ShaderChain(val passes: List<ShaderPass>, val scale: Int) {
             steps += ShaderStep(d.program, d.out.slot, d.out.dims.width, d.out.dims.height, IntArray(d.inputs.size) { d.inputs[it].slot })
             for (v in d.inputs + d.out) if (v.slot > 0 && v.lastUse <= i && v.slot !in free) free += v.slot
         }
-        return ShaderPlan(input, target, slots, steps, main.slot)
+        return ShaderPlan(input, target, slots, steps, hooked.slot)
     }
 
     private fun side(v: Float, expr: ShaderExpr): Int {
@@ -187,7 +220,9 @@ class ShaderChain(val passes: List<ShaderPass>, val scale: Int) {
  * `NAME_tex(pos)` (sampled bilinearly, edges clamped), `NAME_texOff(offset)` (offset in
  * NAME's pixels), `NAME_mul`, `NAME_rot` and `NAME_off`. `target_size` and `input_size` are
  * the target's and the input's sizes, `random` and `frame` 0. The pass's code follows, then a
- * `main` writing `hook()` to the target. The runner draws one triangle covering the target.
+ * `main` writing `hook()` to the target, the channels past [ShaderProgram.components] as a
+ * texture of that many channels reads them (0, alpha 1). The runner draws one triangle
+ * covering the target.
  */
 object ShaderSource {
     fun fragment(program: ShaderProgram): String = buildString {
@@ -215,6 +250,15 @@ object ShaderSource {
         append("#line 1\n")
         append(program.pass.body)
         append("\nout vec4 emanata_color;\n")
-        append("void main() {\n  emanata_pos = gl_FragCoord.xy / emanata_out;\n  emanata_color = hook();\n}\n")
+        append("void main() {\n  emanata_pos = gl_FragCoord.xy / emanata_out;\n")
+        append(
+            when (program.components) {
+                1 -> "  emanata_color = vec4(hook().r, 0.0, 0.0, 1.0);\n"
+                2 -> "  emanata_color = vec4(hook().rg, 0.0, 1.0);\n"
+                3 -> "  emanata_color = vec4(hook().rgb, 1.0);\n"
+                else -> "  emanata_color = hook();\n"
+            }
+        )
+        append("}\n")
     }
 }

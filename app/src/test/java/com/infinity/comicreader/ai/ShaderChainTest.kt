@@ -149,11 +149,80 @@ class ShaderChainTest {
         assertTrue(stats.contains("#define HOOKED_pos emanata_pos"))
         assertTrue(stats.contains("return vec4(MAIN_texOff(vec2(1, 0)).x"))
         assertTrue(stats.contains("emanata_pos = gl_FragCoord.xy / emanata_out;"))
-        assertTrue(stats.trimEnd().endsWith("emanata_color = hook();\n}"))
+        assertTrue("one channel kept", stats.trimEnd().endsWith("emanata_color = vec4(hook().r, 0.0, 0.0, 1.0);\n}"))
         val up = chain.programs[5].source
         assertTrue(up.contains("#define d_tex(pos) texture(emanata_t1, pos)"))
         assertTrue(up.contains("uniform vec2 emanata_s1;"))
         assertTrue("no texture past the bound ones", !up.contains("emanata_t2"))
         assertEquals(chain.programs.map { it.source }, chain.sources)
+    }
+
+    @Test
+    fun prekernelPassesReadMainAsItsStageLeftIt() {
+        val text = """
+            //!DESC brighten
+            //!HOOK MAIN
+            //!BIND HOOKED
+            vec4 hook() { return HOOKED_tex(HOOKED_pos) * 2.0; }
+            //!DESC first
+            //!HOOK PREKERNEL
+            //!BIND HOOKED
+            vec4 hook() { return HOOKED_tex(HOOKED_pos) + 1.0; }
+            //!DESC both
+            //!HOOK PREKERNEL
+            //!BIND HOOKED
+            //!BIND MAIN
+            vec4 hook() { return HOOKED_tex(HOOKED_pos) - MAIN_tex(MAIN_pos); }
+        """.trimIndent()
+        val c = ShaderChain.parse(listOf(text), 1)
+        assertEquals(listOf(listOf("HOOKED", "PREKERNEL"), listOf("MAIN")), c.programs[2].aliases)
+        val plan = c.plan(4, 4)
+        val (brighten, first, both) = plan.steps
+        assertArrayEquals("HOOKED is the PREKERNEL image so far, MAIN the MAIN stage's", intArrayOf(first.out, brighten.out), both.inputs)
+        assertEquals(both.out, plan.result)
+    }
+
+    @Test
+    fun stagesNotYetRunOrSavedIntoFromAnotherStageAreRefused() {
+        val early = "//!HOOK MAIN\n//!BIND PREKERNEL\nvec4 hook() { return PREKERNEL_tex(PREKERNEL_pos); }\n"
+        assertThrows(ShaderException::class.java) { ShaderChain.parse(listOf(early), 1).plan(4, 4) }
+        val across = "//!HOOK PREKERNEL\n//!BIND HOOKED\n//!SAVE MAIN\nvec4 hook() { return HOOKED_tex(HOOKED_pos); }\n"
+        assertThrows(ShaderException::class.java) { ShaderChain.parse(listOf(across), 1) }
+    }
+
+    @Test
+    fun passesStoreTheirComponentsElseTheHookedImages() {
+        val text = """
+            //!DESC named
+            //!HOOK MAIN
+            //!BIND HOOKED
+            //!SAVE feature
+            vec4 hook() { return HOOKED_tex(HOOKED_pos); }
+            //!DESC rgb
+            //!HOOK MAIN
+            //!BIND HOOKED
+            //!COMPONENTS 3
+            vec4 hook() { return HOOKED_tex(HOOKED_pos); }
+            //!DESC after
+            //!HOOK MAIN
+            //!BIND HOOKED
+            //!SAVE other
+            vec4 hook() { return HOOKED_tex(HOOKED_pos); }
+            //!DESC two
+            //!HOOK PREKERNEL
+            //!BIND HOOKED
+            //!SAVE pair
+            //!COMPONENTS 2
+            vec4 hook() { return HOOKED_tex(HOOKED_pos); }
+            //!DESC late
+            //!HOOK PREKERNEL
+            //!BIND HOOKED
+            vec4 hook() { return HOOKED_tex(HOOKED_pos); }
+        """.trimIndent()
+        val c = ShaderChain.parse(listOf(text), 1)
+        assertEquals(listOf(4, 3, 3, 2, 3), c.programs.map { it.components })
+        assertTrue(c.programs[0].source.contains("emanata_color = hook();"))
+        assertTrue(c.programs[1].source.contains("emanata_color = vec4(hook().rgb, 1.0);"))
+        assertTrue(c.programs[3].source.contains("emanata_color = vec4(hook().rg, 0.0, 1.0);"))
     }
 }

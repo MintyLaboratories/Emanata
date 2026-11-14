@@ -91,8 +91,8 @@ class ShaderExpr private constructor(val text: String, private val tokens: List<
  * One pass of an mpv user shader: GLSL code ([body]) defining `vec4 hook()`, run once per
  * output pixel at each stage it [hooks], reading the textures it [binds] and writing the one
  * it [saves] (null: the hooked image itself), [width] x [height] (null: the hooked image's
- * size), only while [condition] (null: always) is not 0. [components] and [desc] are kept as
- * given; outputs are always stored as four channels.
+ * size), only while [condition] (null: always) is not 0. It stores the first [components]
+ * channels of its result (null: as many as the hooked image has; [ShaderChain] resolves it).
  */
 data class ShaderPass(
     val desc: String?,
@@ -101,7 +101,7 @@ data class ShaderPass(
     val saves: String?,
     val width: ShaderExpr?,
     val height: ShaderExpr?,
-    val components: Int,
+    val components: Int?,
     val condition: ShaderExpr?,
     val body: String
 )
@@ -166,7 +166,7 @@ object ShaderHooks {
         var saves: String? = null
         var width: ShaderExpr? = null
         var height: ShaderExpr? = null
-        var components = 4
+        var components: Int? = null
         var condition: ShaderExpr? = null
         for (line in lines) {
             val key = line.substringBefore(' ').trim()

@@ -72,7 +72,7 @@ class ShaderHooksTest {
         assertEquals(listOf("MAIN", "half"), b.binds)
         assertNull(b.saves)
         assertNull(b.width)
-        assertEquals(4, b.components)
+        assertEquals("not given: as the hooked image", null, b.components)
         assertEquals("OUTPUT.w MAIN.w / 1.2 >", b.condition.toString())
         assertTrue(b.body.startsWith("#define x(o)"))
     }

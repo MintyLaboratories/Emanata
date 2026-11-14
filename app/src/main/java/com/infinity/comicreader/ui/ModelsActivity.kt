@@ -41,6 +41,7 @@ import com.infinity.comicreader.ai.DetectorModel
 import com.infinity.comicreader.ai.DownloadFailure
 import com.infinity.comicreader.ai.DownloadState
 import com.infinity.comicreader.ai.Downloads
+import com.infinity.comicreader.ai.FileSet
 import com.infinity.comicreader.ai.ImportFailure
 import com.infinity.comicreader.ai.ImportState
 import com.infinity.comicreader.ai.ImportWarning
@@ -50,9 +51,11 @@ import com.infinity.comicreader.ai.ModelCheck
 import com.infinity.comicreader.ai.ModelDownloads
 import com.infinity.comicreader.ai.ModelImports
 import com.infinity.comicreader.ai.ModelRefusal
+import com.infinity.comicreader.ai.ModelSource
 import com.infinity.comicreader.ai.ModelStore
 import com.infinity.comicreader.ai.Models
 import com.infinity.comicreader.ai.ReaderAi
+import com.infinity.comicreader.ai.ShaderModel
 import com.infinity.comicreader.ai.UserModel
 import com.infinity.comicreader.ai.UserModels
 import com.infinity.comicreader.data.Prefs
@@ -75,6 +78,7 @@ object ModelText {
     /** Scale, size and license; for an imported model, that it is imported instead of a license. */
     fun details(context: Context, m: AiModel): String = when (m) {
         is CatalogModel -> context.getString(R.string.ai_model_details, m.scale, size(context, m.bytes), m.source.license)
+        is ShaderModel -> context.getString(R.string.ai_model_details, m.scale, size(context, m.bytes), m.source.license)
         is UserModel -> context.getString(R.string.ai_model_details_imported, m.scale, size(context, m.bytes))
     }
 
@@ -162,11 +166,10 @@ object ModelText {
         return (if (AiChain.slow(chain)) lines + context.getString(R.string.ai_chain_slow) else lines).joinToString("\n")
     }
 
-    /** Who made [m], its license, where it is from and where it downloads from; then, for a conversion made for the app, what it is. */
-    fun attribution(context: Context, m: CatalogModel): String {
-        val s = m.source
-        val info = context.getString(R.string.ai_model_info, details(context, m), s.author, s.license, s.url, s.repository)
-        return s.conversion?.let { "$info\n\n$it" } ?: info
+    /** Who made [m], from [source], its license, where it is from and where it downloads from; then, for a conversion made for the app, what it is. */
+    fun attribution(context: Context, m: AiModel, source: ModelSource): String {
+        val info = context.getString(R.string.ai_model_info, details(context, m), source.author, source.license, source.url, source.repository)
+        return source.conversion?.let { "$info\n\n$it" } ?: info
     }
 
     /** What is known of imported model [m]: its details, that it is the user's, and its time here. */
@@ -417,8 +420,10 @@ class ModelsActivity : AppCompatActivity() {
                 action.setOnClickListener { confirmDelete(m) }
                 continue
             }
-            m as CatalogModel
-            row.isVisible = !simple || !m.slow || m.id in installed || d.states[m.id] != null
+            m as FileSet
+            // Kept simple: no slow models, and one level of each shader family, unless installed or downloading.
+            val plain = !m.slow && (m as? ShaderModel)?.defaultLevel != false
+            row.isVisible = !simple || plain || m.id in installed || d.states[m.id] != null
             when (val s = d.states[m.id]) {
                 is DownloadState.Running -> {
                     status.isVisible = false
@@ -560,18 +565,23 @@ class ModelsActivity : AppCompatActivity() {
 
     private fun showInfo(m: AiModel) {
         when (m) {
-            is CatalogModel -> AlertDialog.Builder(this)
-                .setTitle(m.name)
-                .setMessage(ModelText.attribution(this, m))
-                .setPositiveButton(R.string.ok, null)
-                .setNeutralButton(R.string.about_project_page) { _, _ -> open(m.source.url) }
-                .show()
+            is CatalogModel -> sourceInfo(m, m.source)
+            is ShaderModel -> sourceInfo(m, m.source)
             is UserModel -> AlertDialog.Builder(this)
                 .setTitle(m.name)
                 .setMessage(ModelText.imported(this, m))
                 .setPositiveButton(R.string.ok, null)
                 .show()
         }
+    }
+
+    private fun sourceInfo(m: AiModel, source: ModelSource) {
+        AlertDialog.Builder(this)
+            .setTitle(m.name)
+            .setMessage(ModelText.attribution(this, m, source))
+            .setPositiveButton(R.string.ok, null)
+            .setNeutralButton(R.string.about_project_page) { _, _ -> open(source.url) }
+            .show()
     }
 
     private fun open(url: String) {

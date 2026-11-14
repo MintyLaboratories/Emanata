@@ -1,0 +1,115 @@
+package com.infinity.comicreader.ai
+
+import com.infinity.comicreader.util.Notices
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import java.io.File
+
+/** The shader chains offered: Anime4K at its pinned release, five families in five levels, under its MIT notice. */
+class ShaderCatalogTest {
+
+    @Test
+    fun everyFamilyComesInEveryLevel() {
+        assertEquals(listOf("S", "M", "L", "VL", "UL"), ShaderCatalog.LEVELS)
+        val families = ShaderCatalog.all.map { it.family }.distinct()
+        assertEquals(listOf("anime4k-a", "anime4k-b", "anime4k-c", "anime4k-upscale", "anime4k-upscale-denoise"), families)
+        for (f in families) {
+            val levels = ShaderCatalog.family(f)
+            assertEquals(f, (0..4).toList(), levels.map { it.level })
+            assertEquals(f, levels.map { "$f-${it.levelName.lowercase()}" }, levels.map { it.id })
+            assertTrue(f, levels.all { it.name == "${it.familyName}, ${it.levelName}" })
+            assertEquals("one default per family", 1, levels.count { it.defaultLevel })
+            assertEquals("UL", levels.single { it.defaultLevel }.levelName)
+        }
+    }
+
+    @Test
+    fun chainsHoldTheFilesOfTheirMode() {
+        fun names(id: String) = ShaderCatalog.byId(id)!!.files.map { it.name }
+        assertEquals(listOf("Anime4K_Clamp_Highlights.glsl", "Anime4K_Restore_CNN_UL.glsl", "Anime4K_Upscale_CNN_x2_UL.glsl"), names("anime4k-a-ul"))
+        assertEquals(listOf("Anime4K_Clamp_Highlights.glsl", "Anime4K_Restore_CNN_Soft_M.glsl", "Anime4K_Upscale_CNN_x2_M.glsl"), names("anime4k-b-m"))
+        assertEquals(listOf("Anime4K_Clamp_Highlights.glsl", "Anime4K_Upscale_Denoise_CNN_x2_S.glsl"), names("anime4k-c-s"))
+        assertEquals(listOf("Anime4K_Upscale_CNN_x2_VL.glsl"), names("anime4k-upscale-vl"))
+        assertEquals(listOf("Anime4K_Upscale_Denoise_CNN_x2_L.glsl"), names("anime4k-upscale-denoise-l"))
+    }
+
+    @Test
+    fun filesComeUnchangedFromThePinnedRelease() {
+        assertTrue(ShaderCatalog.COMMIT.matches(Regex("[0-9a-f]{40}")))
+        assertEquals("https://raw.githubusercontent.com/bloc97/Anime4K/${ShaderCatalog.COMMIT}/glsl/", ShaderCatalog.BASE)
+        val byName = HashMap<String, ModelFile>()
+        for (m in ShaderCatalog.all) {
+            assertEquals(m.id, AiStep.UPSCALE, m.step)
+            assertEquals(m.id, 2, m.scale)
+            assertEquals(ModelSource.ANIME4K, m.source)
+            assertEquals(m.files.sumOf { it.bytes }, m.bytes)
+            for (f in m.files) {
+                assertTrue(f.url, f.url.startsWith(ShaderCatalog.BASE) && f.url.endsWith("/" + f.name) && f.name.endsWith(".glsl"))
+                assertTrue(f.sha256, f.sha256.matches(Regex("[0-9a-f]{64}")))
+                assertTrue(f.name, f.bytes > 1000)
+                // A file shared by chains is the same file everywhere.
+                byName.put(f.name, f)?.let { assertEquals(f.name, it, f) }
+            }
+            assertEquals(m.files.map { it.name }.size, m.files.map { it.name }.toSet().size)
+        }
+        assertEquals("one clamp, twenty networks", 21, byName.size)
+        assertEquals(byName.size, byName.values.map { it.sha256 }.toSet().size)
+    }
+
+    @Test
+    fun aChainsFingerprintChangesWithAnyOfItsFiles() {
+        val a = ShaderCatalog.byId("anime4k-a-ul")!!
+        val b = ShaderCatalog.byId("anime4k-b-ul")!!
+        assertTrue(a.fingerprint != b.fingerprint)
+        assertEquals(3, a.fingerprint.split(':').size)
+    }
+
+    @Test
+    fun idsDoNotClashWithTheCatalogsOrTheStores() {
+        val ids = ShaderCatalog.all.map { it.id }
+        assertEquals(25, ids.size)
+        assertEquals(ids.size, ids.toSet().size)
+        assertTrue(ids.none { ModelCatalog.byId(it) != null })
+        for (m in ShaderCatalog.all) assertEquals(m, Models.byId(m.id))
+        for (id in ids) assertTrue(id, id.matches(Regex("[a-z0-9][a-z0-9._-]*")))
+        assertTrue(ShaderCatalog.all.all { it in ModelCatalog.sets })
+        assertNull(ShaderCatalog.byId(null))
+    }
+
+    @Test
+    fun simplePickersOfferOneLevelPerFamily() {
+        val simple = ShaderCatalog.offered(AiStep.UPSCALE, keepSimple = true, current = null)
+        assertEquals(5, simple.size)
+        assertTrue(simple.all { it.defaultLevel })
+        assertEquals(6, ShaderCatalog.offered(AiStep.UPSCALE, keepSimple = true, current = "anime4k-c-s").size)
+        assertEquals(25, ShaderCatalog.offered(AiStep.UPSCALE, keepSimple = false, current = null).size)
+        assertTrue(ShaderCatalog.offered(AiStep.ARTIFACTS, keepSimple = false, current = null).isEmpty())
+        // Beside the ncnn upscalers, before the slow ones.
+        val offered = Models.offered(AiStep.UPSCALE, keepSimple = false, current = null)
+        assertEquals(ModelCatalog.DEFAULT_UPSCALE, offered.first().id)
+        val slow = offered.map { it.slow }
+        assertEquals(slow.sorted(), slow)
+        assertTrue(offered.containsAll(ShaderCatalog.all))
+    }
+
+    @Test
+    fun everyChainTakesAPageWithinTheBudget() {
+        for (m in ShaderCatalog.all) assertTrue("${m.id}: ${m.pageMs} ms", m.pageMs in 1..ModelCatalog.MAX_PAGE_MS)
+    }
+
+    @Test
+    fun anime4ksNoticeIsShippedListedAndInTheReadme() {
+        val s = ModelSource.ANIME4K
+        assertEquals("MIT License", s.license)
+        assertEquals(ShaderCatalog.REPOSITORY, s.repository)
+        val text = File("src/main/assets/licenses/anime4k.txt").readText()
+        assertTrue(text.startsWith("MIT License") && text.contains("Copyright (c) 2019 bloc97"))
+        val notice = Notices.models.single { it.name == "Anime4K" }
+        assertTrue(notice.note!!, notice.note!!.contains("Anime4K A (sharp) 2× (S/M/L/VL/UL)"))
+        assertTrue(notice.note!!.contains("from ${ShaderCatalog.REPOSITORY} and run on this device only"))
+        assertTrue(Notices.models.single { it.name == "waifu2x" }.note!!.contains("from ${ModelCatalog.REPOSITORY}"))
+        assertTrue(File("../README.md").readText().contains("| [Anime4K](https://github.com/bloc97/Anime4K) | bloc97 | MIT |"))
+    }
+}

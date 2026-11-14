@@ -11,6 +11,7 @@ import com.infinity.comicreader.R
 import com.infinity.comicreader.ai.AiStep
 import com.infinity.comicreader.ai.ModelCatalog
 import com.infinity.comicreader.ai.ModelStore
+import com.infinity.comicreader.ai.Models
 import com.infinity.comicreader.ai.OfflineDownloads
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ResumeMode
@@ -82,7 +83,7 @@ class ViewerActivityAiChoicesTest {
     @Test
     fun upscalersShowWhatTheyDoAndTheSlowOnesWaitForAdvancedSettings() {
         val (dialog, items) = upscaleChoices(open())
-        val fast = ModelCatalog.forStep(AiStep.UPSCALE).filter { !it.slow }
+        val fast = Models.offered(AiStep.UPSCALE, keepSimple = true, current = null)
         assertEquals(listOf(context.getString(R.string.ai_none)) + fast.map { ModelText.entry(context, it).toString() }, items)
         assertTrue(items[1], items[1].endsWith("\nFaithful, fast and reliable clarity improvement (default)"))
         // The default runs, so it is checked.
@@ -91,7 +92,7 @@ class ViewerActivityAiChoicesTest {
 
         prefs.keepSimple = false
         val (_, all) = upscaleChoices(open())
-        assertEquals(ModelCatalog.forStep(AiStep.UPSCALE).size + 1, all.size)
+        assertEquals(Models.offered(AiStep.UPSCALE, keepSimple = false, current = null).size + 1, all.size)
         assertTrue(all.any { it.endsWith("\nSlow (~11 s per page)") })
     }
 

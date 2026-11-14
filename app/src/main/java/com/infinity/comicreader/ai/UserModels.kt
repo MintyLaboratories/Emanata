@@ -3,7 +3,7 @@ package com.infinity.comicreader.ai
 import java.io.File
 import java.util.Properties
 
-/** A model a step can run: from the catalog ([CatalogModel]) or imported by the user ([UserModel]). */
+/** A model a step can run: from the catalog ([CatalogModel]), a shader chain ([ShaderModel]), or imported by the user ([UserModel]). */
 sealed interface AiModel {
     val id: String
     val name: String
@@ -106,19 +106,21 @@ object UserModels {
     fun byId(id: String?): UserModel? = if (id == null) null else all.firstOrNull { it.id == id }
 }
 
-/** Every model a step can run: the catalog's, then the user's imported ones ([UserModels]). */
+/** Every model a step can run: the catalog's, its shader chains ([ShaderCatalog]), then the user's imported ones ([UserModels]). */
 object Models {
-    fun all(): List<AiModel> = ModelCatalog.all + UserModels.all
+    fun all(): List<AiModel> = ModelCatalog.all + ShaderCatalog.all + UserModels.all
 
-    fun byId(id: String?): AiModel? = ModelCatalog.byId(id) ?: UserModels.byId(id)
+    fun byId(id: String?): AiModel? = ModelCatalog.byId(id) ?: ShaderCatalog.byId(id) ?: UserModels.byId(id)
 
-    /** [step]'s models: the catalog's in order, then the imported ones. */
-    fun forStep(step: AiStep): List<AiModel> = ModelCatalog.forStep(step) + UserModels.all.filter { it.step == step }
+    /** [step]'s models: the catalog's in order, its shader chains, then the imported ones. */
+    fun forStep(step: AiStep): List<AiModel> = ModelCatalog.forStep(step) + ShaderCatalog.forStep(step) + UserModels.all.filter { it.step == step }
 
     /**
-     * [step]'s models a picker offers: the catalog's ([ModelCatalog.offered]), then every
-     * imported one: the user took it in themselves, slow or not.
+     * [step]'s models a picker offers: the catalog's ([ModelCatalog.offered]) and its shader
+     * chains ([ShaderCatalog.offered]), the slow ones last, then every imported one: the user
+     * took it in themselves, slow or not.
      */
     fun offered(step: AiStep, keepSimple: Boolean, current: String?): List<AiModel> =
-        ModelCatalog.offered(step, keepSimple, current) + UserModels.all.filter { it.step == step }
+        (ModelCatalog.offered(step, keepSimple, current) + ShaderCatalog.offered(step, keepSimple, current)).sortedBy { it.slow } +
+            UserModels.all.filter { it.step == step }
 }

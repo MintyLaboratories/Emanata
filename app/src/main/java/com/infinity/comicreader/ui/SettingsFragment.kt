@@ -21,8 +21,8 @@ import com.infinity.comicreader.R
 import com.infinity.comicreader.ai.AiChain
 import com.infinity.comicreader.ai.AiModel
 import com.infinity.comicreader.ai.AiStep
-import com.infinity.comicreader.ai.CatalogModel
 import com.infinity.comicreader.ai.Downloads
+import com.infinity.comicreader.ai.FileSet
 import com.infinity.comicreader.ai.ModelDownloads
 import com.infinity.comicreader.ai.ModelStore
 import com.infinity.comicreader.ai.Models
@@ -568,7 +568,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
             pref.setOnPreferenceChangeListener { _, value ->
                 // Picking the shown default stores it: ListPreference skips an unchanged value.
                 if (value == pref.value) prefs.setAiModel(step, value as String)
-                if (prefs.aiEnabled) (chosen(step, value) as? CatalogModel)?.let { ModelDownloads.start(store, it) }
+                if (prefs.aiEnabled) (chosen(step, value) as? FileSet)?.let { ModelDownloads.start(store, it) }
                 refreshAi()
                 true
             }
@@ -576,7 +576,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
         fillAi(prefs.keepSimple)
         val ai = findPreference<Preference>(Prefs.KEY_AI)
         ai?.setOnPreferenceChangeListener { _, value ->
-            if (value == true) for (step in AiStep.entries) (chosen(step, prefs.aiModel(step)) as? CatalogModel)?.let { ModelDownloads.start(store, it) }
+            if (value == true) for (step in AiStep.entries) (chosen(step, prefs.aiModel(step)) as? FileSet)?.let { ModelDownloads.start(store, it) }
             refreshAi()
             true
         }
@@ -615,7 +615,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
         // A failed download waits to be chosen again; one the app's end cut short goes on, unless on a metered connection.
         lifecycleScope.launch(AppDispatchers.io) {
             val state = ModelDownloads.state.value
-            for (m in AiChain.chosen(prefs)) if (m is CatalogModel && ModelDownloads.mayStartBySelf(state, m.id)) ModelDownloads.start(store, m, optional = true)
+            for (m in AiChain.chosen(prefs)) if (m is FileSet && ModelDownloads.mayStartBySelf(state, m.id)) ModelDownloads.start(store, m, optional = true)
         }
     }
 

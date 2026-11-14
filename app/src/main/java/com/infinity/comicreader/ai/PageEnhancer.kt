@@ -71,7 +71,9 @@ class ReaderAi internal constructor(
     /** Milliseconds on a clock that never jumps. */
     private val clock: () -> Long = SystemClock::elapsedRealtime,
     /** The display sizes at which the chain's models run, as set now. */
-    private val thresholds: () -> AiThresholds = { AiThresholds() }
+    private val thresholds: () -> AiThresholds = { AiThresholds() },
+    /** What runs shader chains ([ShaderModel]); [runtime] runs the rest. */
+    private val shaders: ShaderRuntime = GlesShaders
 ) : PageEnhancer, AutoCloseable {
 
     override val worker: CoroutineDispatcher get() = WORKER
@@ -222,14 +224,14 @@ class ReaderAi internal constructor(
         // Kept pages show even while paused, as those processed in memory do: a read costs about a plain decode, no GPU.
         key?.let { store.get(it, width, height) }?.let { return AiOutcome.Done(it, stored = true, ms = clock() - t0) }
         if (gate() != null) return AiOutcome.Later
-        val files = chain.map { m ->
-            models.files(m) ?: run {
+        for (m in chain) {
+            if (!models.installed(m)) {
                 download(m)
                 return AiOutcome.Later
             }
         }
-        val opened = chain.mapIndexed { i, m ->
-            session(m, files[i], canceled) ?: return if (!closed && m.id !in sessions) AiOutcome.Later else AiOutcome.Skipped(Fallback.UNOPENED)
+        val opened = chain.map { m ->
+            session(m, canceled) ?: return if (!closed && m.id !in sessions) AiOutcome.Later else AiOutcome.Skipped(Fallback.UNOPENED)
         }
         // Nobody waits on it: decoded and resampled on the budget of pages read ahead.
         val input = Urgency.later { Cancellation.during(canceled) { source.loadPage(index, target.detail(size, MAX_INPUT_PIXELS * 4)) } }
@@ -307,13 +309,18 @@ class ReaderAi internal constructor(
      * it is tried once more with them no sooner than [AiQueue.BACKOFF_MS] later ([MEMORY_TRIES]
      * tries in a row in all), then left out until [closeModels] closes it.
      */
-    private fun session(m: AiModel, files: ModelFiles, canceled: () -> Boolean): Session? {
+    private fun session(m: AiModel, canceled: () -> Boolean): Session? {
         used = true
         if (closed) return null
         if (m.id in sessions) return sessions[m.id]
         // Put off again, untried, until the back-off since its last refusal has passed: a page turn or wake-up skips the queue's.
         shortOfMemoryAt[m.id]?.let { if (clock() - it < AiQueue.BACKOFF_MS) return null }
-        val o = Sessions.attempt(runtime, files, threads, memoryBytes = memory(), canceled = canceled)
+        val o = when (m) {
+            is ShaderModel -> models.shaderFiles(m)?.let { files ->
+                ShaderSessions.attempt(shaders, { files.map { it.readText() } }, m.scale, memoryBytes = memory(), canceled = canceled)
+            }
+            else -> models.files(m)?.let { files -> Sessions.attempt(runtime, files, threads, memoryBytes = memory(), canceled = canceled) }
+        } ?: Opening.refused(ModelRefusal.NOT_LOADED)
         val s = o.session
         if (s != null) {
             refusals.remove(m.id)
@@ -450,7 +457,7 @@ class ReaderAi internal constructor(
             return ReaderAi(
                 prefs, library::aiPicks, models, ProcessedStore(ProcessedStore.dirIn(app.cacheDir)), LibNcnn,
                 AiConditions.gate(app),
-                { m -> if (m is CatalogModel && ModelDownloads.mayStartBySelf(ModelDownloads.state.value, m.id)) ModelDownloads.start(models, m, optional = true) },
+                { m -> if (m is FileSet && ModelDownloads.mayStartBySelf(ModelDownloads.state.value, m.id)) ModelDownloads.start(models, m, optional = true) },
                 memory = { ModelMemory.of(app) },
                 thresholds = { prefs.aiThresholds }
             )

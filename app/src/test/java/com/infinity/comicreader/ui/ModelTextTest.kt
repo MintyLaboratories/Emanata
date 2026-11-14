@@ -8,6 +8,7 @@ import com.infinity.comicreader.R
 import com.infinity.comicreader.ai.AiStep
 import com.infinity.comicreader.ai.ModelCatalog
 import com.infinity.comicreader.ai.ModelSource
+import com.infinity.comicreader.ai.Models
 import com.infinity.comicreader.data.Prefs
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -47,11 +48,11 @@ class ModelTextTest {
 
     @Test
     fun anAttributionNamesWhereTheFilesComeFromAndWhatAConversionIs() {
-        val cunny = ModelText.attribution(context, ModelCatalog.byId("cunny-8x32-ds-rp")!!)
+        val cunny = ModelCatalog.byId("cunny-8x32-ds-rp")!!.let { ModelText.attribution(context, it, it.source) }
         assertTrue(cunny, cunny.contains("By funnyplanter, under the LGPL 3.0 or later.") && cunny.contains("https://github.com/funnyplanter/CuNNy"))
         assertTrue(cunny, cunny.contains("Downloaded unchanged from: ${ModelCatalog.HOSTED_REPOSITORY}"))
         assertTrue(cunny, cunny.endsWith("\n\n" + ModelSource.CUNNY.conversion))
-        val waifu2x = ModelText.attribution(context, ModelCatalog.byId("waifu2x-upconv7-2x")!!)
+        val waifu2x = ModelCatalog.byId("waifu2x-upconv7-2x")!!.let { ModelText.attribution(context, it, it.source) }
         assertTrue(waifu2x, waifu2x.endsWith("Downloaded unchanged from: ${ModelCatalog.REPOSITORY}"))
     }
 
@@ -81,10 +82,10 @@ class ModelTextTest {
         val (simple, simpleIds) = ModelText.choices(context, AiStep.UPSCALE, keepSimple = true, current = null)
         assertEquals(context.getString(R.string.ai_none), simple[0].toString())
         assertEquals(Prefs.AI_NONE, simpleIds[0])
-        assertEquals(listOf(Prefs.AI_NONE) + ModelCatalog.offered(AiStep.UPSCALE, true, null).map { it.id }, simpleIds)
+        assertEquals(listOf(Prefs.AI_NONE) + Models.offered(AiStep.UPSCALE, true, null).map { it.id }, simpleIds)
         assertFalse(simple.any { it.contains("Slow (~") })
         val (all, allIds) = ModelText.choices(context, AiStep.UPSCALE, keepSimple = false, current = null)
-        assertEquals(ModelCatalog.forStep(AiStep.UPSCALE).size + 1, allIds.size)
+        assertEquals(Models.forStep(AiStep.UPSCALE).size + 1, allIds.size)
         assertTrue(all.any { it.contains("Slow (~11 s per page)") })
         // A slow model chosen stays listed.
         assertTrue("realesr-animevideov3-x3" in ModelText.choices(context, AiStep.UPSCALE, true, "realesr-animevideov3-x3").second)

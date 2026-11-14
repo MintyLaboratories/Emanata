@@ -43,11 +43,15 @@ class ModelStore(val root: File) {
     /** True once both of [model]'s files are in place ([has]). */
     fun installed(model: CatalogModel): Boolean = installed(model as FileSet)
 
-    /** [model]'s files for [Sessions.open]; null until [installed]. */
+    /** [model]'s ncnn files for [Sessions.open]; null until [installed], and for shader chains ([shaderFiles]). */
     fun files(model: AiModel): ModelFiles? = when (model) {
         is CatalogModel -> if (installed(model)) ModelFiles(target(model, model.param), target(model, model.bin)) else null
         is UserModel -> userFiles(userDir(model.id)).takeIf { it.param.isFile && it.bin.isFile }
+        is ShaderModel -> null
     }
+
+    /** [model]'s shader files in the order they run, for [ShaderSessions.attempt]; null until [installed]. */
+    fun shaderFiles(model: ShaderModel): List<File>? = if (installed(model as FileSet)) model.files.map { target(model, it) } else null
 
     /** [model]'s files; null until [installed]. */
     fun files(model: ToolModel): ModelFiles? =
@@ -56,6 +60,7 @@ class ModelStore(val root: File) {
     /** True once [model]'s files are in place: downloaded and verified, or imported. */
     fun installed(model: AiModel): Boolean = when (model) {
         is CatalogModel -> installed(model as FileSet)
+        is ShaderModel -> installed(model as FileSet)
         is UserModel -> files(model) != null
     }
 

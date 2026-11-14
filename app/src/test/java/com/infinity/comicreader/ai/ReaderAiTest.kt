@@ -71,10 +71,23 @@ class ReaderAiTest {
     /** The store of every reader [reader] makes. */
     private val store by lazy { ProcessedStore(tmp.newFolder(), PngPageCodec, Executor { it.run() }) }
 
+    /** What runs shader chains for every reader [reader] makes. */
+    private var shaders: ShaderRuntime = FakeShaders()
+
     private fun reader(): ReaderAi = ReaderAi(
         prefs, { own[it] }, models, store, runtime,
-        { stop }, { downloads += it.id }, threads = 2, clock = { now }, thresholds = { thresholds }
+        { stop }, { downloads += it.id }, threads = 2, clock = { now }, thresholds = { thresholds }, shaders = shaders
     )
+
+    /** Installs [m] with each file a synthetic upscaler at the size the catalog says. */
+    private fun install(m: ShaderModel) {
+        models.dir(m).mkdirs()
+        for (f in m.files) {
+            val text = (FakeShaderFiles.UPSCALER + "\n//").toByteArray()
+            File(models.dir(m), f.name).writeBytes(text + ByteArray(f.bytes.toInt() - text.size) { ' '.code.toByte() })
+            File(models.dir(m), f.name + ModelStore.STAMP).writeText(f.sha256)
+        }
+    }
 
     private fun install(m: CatalogModel) {
         for (f in m.files) {
@@ -135,6 +148,43 @@ class ReaderAiTest {
         stop = Fallback.PAUSED
         assertTrue(ai.enhance(b, 0, target, 40, 60) { false } is AiOutcome.Later)
         assertEquals(0, b.loads.get())
+    }
+
+    @Test
+    fun aShaderChainDownloadsThenRunsOnTheShaderRuntime() {
+        val chain = ShaderCatalog.byId("anime4k-a-ul")!!
+        prefs.setAiModel(AiStep.UPSCALE, chain.id)
+        val shaders = FakeShaders().also { shaders = it }
+        val reader = reader()
+        try {
+            val b = bookOf()
+            assertTrue(reader.enhance(b, 0, target, 40, 60) { false } is AiOutcome.Later)
+            assertEquals(listOf(chain.id), downloads)
+            install(chain)
+            val made = reader.enhance(b, 0, target, 40, 60) { false } as AiOutcome.Done
+            assertEquals(40, made.bitmap.width)
+            assertEquals(60, made.bitmap.height)
+            assertEquals("its three files, one chain", 6, shaders.chains.single().programs.size)
+            assertTrue("ncnn untouched", runtime.opened.isEmpty())
+            assertTrue((reader.enhance(b, 0, target, 40, 60) { false } as AiOutcome.Done).stored)
+        } finally {
+            reader.close()
+        }
+    }
+
+    @Test
+    fun aShaderChainWithoutAUsableGpuLeavesPagesPlain() {
+        val chain = ShaderCatalog.byId("anime4k-upscale-s")!!
+        prefs.setAiModel(AiStep.UPSCALE, chain.id)
+        install(chain)
+        shaders = FakeShaders(available = false)
+        val reader = reader()
+        try {
+            assertEquals(Fallback.UNOPENED, (reader.enhance(bookOf(), 0, target, 40, 60) { false } as AiOutcome.Skipped).why)
+            assertEquals(ModelRefusal.RUNTIME, reader.refusal(chain.id))
+        } finally {
+            reader.close()
+        }
     }
 
     @Test

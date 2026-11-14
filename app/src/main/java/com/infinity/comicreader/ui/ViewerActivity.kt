@@ -66,7 +66,7 @@ import com.infinity.comicreader.ai.AiPicks
 import com.infinity.comicreader.ai.AiStep
 import com.infinity.comicreader.ai.DownloadState
 import com.infinity.comicreader.ai.Downloads
-import com.infinity.comicreader.ai.ModelCatalog
+import com.infinity.comicreader.ai.FileSet
 import com.infinity.comicreader.ai.ModelDownloads
 import com.infinity.comicreader.ai.ModelRefusal
 import com.infinity.comicreader.ai.ModelStore
@@ -3958,7 +3958,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
                 prefs.aiEnabled = false
             }
         }
-        ModelCatalog.byId(id)?.let { m -> if (!aiModels.installed(m)) ModelDownloads.start(aiModels, m) }
+        (Models.byId(id) as? FileSet)?.let { m -> if (!aiModels.installed(m)) ModelDownloads.start(aiModels, m) }
         aiChanged()
         followDownloads.run()
     }

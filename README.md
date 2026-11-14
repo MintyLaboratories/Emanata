@@ -831,7 +831,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - **AI processing** (off by default): a model
   per step, or none, for artifact removal, then descreening, then upscaling
   (waifu2x UpConv7 2× by default; only a choice is stored, so a step never
-  chosen follows a later default). Each choice says in a few words what its
+  chosen follows a later default). Upscaling also offers Anime4K's GPU
+  shaders (modes A, B and C, Upscale, Upscale + Denoise), at size UL with
+  Keep it simple on and in every size from S to UL with it off. Each choice says in a few words what its
   model does; models that take 10 s or more for a 1000×1500 page on the
   reference tablet are marked slow with their time, and are offered only with
   Keep it simple off (or once chosen), in Settings, the reader's sheet and
@@ -1070,6 +1072,26 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   again. AI pages share one; the covers' text detector has its own, CPU only, so
   neither waits for the other. Each thread's ncnn threads are placed on the
   large cores before each CPU run and let go before each GPU run.
+- GPU shader chains (`ShaderHooks`, `ShaderChain`, `ShaderSessions`,
+  `GlesShaders`, `shader_gles.c`): mpv-style hook shaders (Anime4K) run as
+  models through the same tile engine, so they share its stops, pacing,
+  thresholds, gray pages and processed-page cache. The headers (`HOOK`,
+  `BIND`, `SAVE`, `DESC`, `WIDTH`, `HEIGHT`, `COMPONENTS`, `WHEN`, sizes and
+  conditions in reverse Polish notation) are read as mpv's manual describes
+  them; stages MAIN and PREKERNEL run in that order, and each pass gets mpv's
+  names for the textures it binds (`HOOKED_tex`, `NAME_pos`, `NAME_pt`,
+  `NAME_texOff`…). Each pass is a fragment shader drawing into an RGBA16F
+  texture (RGBA32F where 16-bit float targets are not renderable; neither,
+  and chains are refused), sampled bilinearly with clamped edges; a texture
+  is reused once no later pass reads it. The OpenGL ES 3 context is the
+  runner's own, at low priority where the driver allows. A chain is measured
+  on the GPU (its passes compute every pixel alike wherever it sits in a
+  tile), checked for seams at its tile size (up to 512 by default, its
+  textures within a quarter of the model memory), and refused when its files
+  use what the runner lacks (compute passes, embedded textures, parameters,
+  other stages) or do not compile. A GPU run past 10 s, or three failed runs
+  in a row, turn the shader path off for the process: its pages then show
+  without it.
 - Imported models (`ModelImports`, `ModelCheck`, `UserModels`): the picked
   files are told apart by name (else by the `.param`'s first line), copied
   into a staging folder (at most 4 MB and 512 MB), opened as above within the
@@ -1526,7 +1548,8 @@ Dual-licensed components are used under Apache-2.0.
 
 AI models for pages are not bundled: the app downloads the ones you choose, unchanged,
 from [OpenComic AI's model repository](https://github.com/ollm/opencomic-ai-models)
-or, for the ncnn conversions made for this app, from the
+(ncnn models), from [Anime4K's repository](https://github.com/bloc97/Anime4K) at its
+v4.0.1 release (GLSL shaders) or, for the ncnn conversions made for this app, from the
 [Emanata model repository](https://huggingface.co/MadameMinty/Emanata) (which also
 holds their originals and the conversion scripts, the Corresponding Source for
 CuNNy), and lists their authors and licenses under Settings → About.
@@ -1539,6 +1562,7 @@ CuNNy), and lists their authors and licenses under Settings → About.
 | [Helaman's models](https://github.com/Phhofm/models) | Philip Hofmann (Helaman) | CC BY 4.0 |
 | [CuNNy](https://github.com/funnyplanter/CuNNy) | funnyplanter; ncnn conversion made for this app | LGPL-3.0-or-later |
 | [ArtCNN](https://github.com/Artoriuz/ArtCNN) | João Chrisóstomo (Artoriuz); ncnn conversion made for this app | MIT |
+| [Anime4K](https://github.com/bloc97/Anime4K) | bloc97 | MIT |
 
 **UnRAR:** junrar is derived from the UnRAR source code. All copyrights to RAR
 and UnRAR are owned by Alexander Roshal. The UnRAR code may not be used to

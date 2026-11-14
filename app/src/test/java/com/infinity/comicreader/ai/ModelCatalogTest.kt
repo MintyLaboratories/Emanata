@@ -64,7 +64,7 @@ class ModelCatalogTest {
     @Test
     fun theStoreKeepsEverySetAndNoIdsClash() {
         val ids = ModelCatalog.sets.map { it.id }
-        assertEquals(ModelCatalog.all.size + ModelCatalog.tools.size, ids.size)
+        assertEquals(ModelCatalog.all.size + ShaderCatalog.all.size + ModelCatalog.tools.size, ids.size)
         assertEquals(ids.size, ids.toSet().size)
         for (id in ids) assertTrue(id, id.matches(Regex("[a-z0-9][a-z0-9._-]*")) && ".." !in id)
         for (reserved in listOf(ModelStore.USER, ModelStore.STAGING, ModelImports.CHECKING)) assertTrue(reserved, reserved !in ids)

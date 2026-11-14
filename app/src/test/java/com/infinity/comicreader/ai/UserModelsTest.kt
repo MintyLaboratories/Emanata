@@ -113,12 +113,12 @@ class UserModelsTest {
         val clean = import("user-2", "Cleaner", AiStep.ARTIFACTS)
         assertEquals(up, Models.byId("user-1"))
         assertEquals(ModelCatalog.byId(ModelCatalog.DEFAULT_UPSCALE), Models.byId(ModelCatalog.DEFAULT_UPSCALE))
-        assertEquals(ModelCatalog.forStep(AiStep.UPSCALE) + up, Models.forStep(AiStep.UPSCALE))
+        assertEquals(ModelCatalog.forStep(AiStep.UPSCALE) + ShaderCatalog.forStep(AiStep.UPSCALE) + up, Models.forStep(AiStep.UPSCALE))
         assertEquals(ModelCatalog.forStep(AiStep.ARTIFACTS) + clean, Models.forStep(AiStep.ARTIFACTS))
         // Slow or not, an imported model is offered while keeping it simple.
         import("user-3", "Slow one", AiStep.UPSCALE, pageMs = 60_000)
         assertTrue(Models.offered(AiStep.UPSCALE, keepSimple = true, current = null).any { it.id == "user-3" })
-        assertEquals(ModelCatalog.all.size + 3, Models.all().size)
+        assertEquals(ModelCatalog.all.size + ShaderCatalog.all.size + 3, Models.all().size)
     }
 
     @Test

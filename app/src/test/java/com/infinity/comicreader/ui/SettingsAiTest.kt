@@ -20,6 +20,7 @@ import com.infinity.comicreader.ai.DownloadFailure
 import com.infinity.comicreader.ai.DownloadState
 import com.infinity.comicreader.ai.ModelCatalog
 import com.infinity.comicreader.ai.ModelStore
+import com.infinity.comicreader.ai.Models
 import com.infinity.comicreader.ai.OfflineDownloads
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.Thrift
@@ -171,11 +172,12 @@ class SettingsAiTest {
         val fragment = settings()
         for (step in AiStep.entries) {
             val pref = fragment.findPreference<ListPreference>(Prefs.aiKey(step))!!
-            assertEquals(listOf(Prefs.AI_NONE) + ModelCatalog.forStep(step).map { it.id }, pref.entryValues.map { it.toString() })
+            val offered = Models.offered(step, keepSimple = false, current = null)
+            assertEquals(listOf(Prefs.AI_NONE) + offered.map { it.id }, pref.entryValues.map { it.toString() })
             assertEquals(context.getString(R.string.ai_none), pref.entries[0].toString())
             assertTrue(pref.entries[1].toString().startsWith(ModelCatalog.forStep(step)[0].name + " · "))
             // Each with what it does below.
-            for ((i, m) in ModelCatalog.forStep(step).withIndex()) assertEquals(ModelText.entry(context, m).toString(), pref.entries[i + 1].toString())
+            for ((i, m) in offered.withIndex()) assertEquals(ModelText.entry(context, m).toString(), pref.entries[i + 1].toString())
             assertFalse("needs AI processing on", pref.isEnabled)
         }
         fragment.findPreference<Preference>(Prefs.KEY_AI)!!.performClick()
@@ -188,13 +190,13 @@ class SettingsAiTest {
         val fragment = settings()
         val pref = fragment.findPreference<ListPreference>(Prefs.aiKey(AiStep.UPSCALE))!!
         val simple = pref.entryValues.map { it.toString() }
-        assertEquals(listOf(Prefs.AI_NONE) + ModelCatalog.forStep(AiStep.UPSCALE).filter { !it.slow }.map { it.id }, simple)
+        assertEquals(listOf(Prefs.AI_NONE) + Models.offered(AiStep.UPSCALE, keepSimple = true, current = null).map { it.id }, simple)
         assertTrue(pref.entries[1].toString().endsWith("Faithful, fast and reliable clarity improvement (default)"))
         val keep = fragment.findPreference<Preference>("pref_keep_simple")!!
         keep.performClick()
         idle()
         assertFalse(Prefs(context).keepSimple)
-        assertEquals(listOf(Prefs.AI_NONE) + ModelCatalog.forStep(AiStep.UPSCALE).map { it.id }, pref.entryValues.map { it.toString() })
+        assertEquals(listOf(Prefs.AI_NONE) + Models.offered(AiStep.UPSCALE, keepSimple = false, current = null).map { it.id }, pref.entryValues.map { it.toString() })
         val slow = pref.entries[pref.findIndexOfValue("realesr-animevideov3-x2")].toString()
         assertTrue(slow, slow.endsWith("\nSlow (~11 s per page)"))
         keep.performClick()

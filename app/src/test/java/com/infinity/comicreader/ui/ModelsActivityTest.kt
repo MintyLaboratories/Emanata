@@ -14,6 +14,9 @@ import com.infinity.comicreader.ai.CatalogModel
 import com.infinity.comicreader.ai.ModelCatalog
 import com.infinity.comicreader.ai.ModelImports
 import com.infinity.comicreader.ai.ModelStore
+import com.infinity.comicreader.ai.Models
+import com.infinity.comicreader.ai.ShaderCatalog
+import com.infinity.comicreader.ai.ShaderModel
 import com.infinity.comicreader.ai.UserModel
 import com.infinity.comicreader.ai.UserModels
 import com.infinity.comicreader.ai.AiStep
@@ -101,18 +104,35 @@ class ModelsActivityTest {
         Prefs(context).keepSimple = false
         val activity = open()
         val rows = rows(activity)
-        assertEquals(ModelCatalog.all.size, rows.size)
-        for ((m, row) in ModelCatalog.all.zip(rows)) {
+        val all = AiStep.entries.flatMap { Models.forStep(it) }
+        assertEquals(ModelCatalog.all.size + ShaderCatalog.all.size, rows.size)
+        for ((m, row) in all.zip(rows)) {
             assertEquals(View.VISIBLE, row.visibility)
             assertEquals(m.name, row.findViewById<TextView>(R.id.title).text.toString())
             assertEquals(ModelText.details(activity, m), row.findViewById<TextView>(R.id.subtitle).text.toString())
-            assertTrue(row.findViewById<TextView>(R.id.subtitle).text.contains(m.source.license))
+            val license = if (m is ShaderModel) m.source.license else (m as CatalogModel).source.license
+            assertTrue(row.findViewById<TextView>(R.id.subtitle).text.contains(license))
             val blurb = row.findViewById<TextView>(R.id.blurb)
             assertEquals(ModelText.blurb(activity, m), blurb.text.toString())
             assertEquals(m.id, blurb.text.isNotEmpty(), blurb.visibility == View.VISIBLE)
         }
         val waifu2x = rows[ModelCatalog.all.indexOfFirst { it.id == ModelCatalog.DEFAULT_UPSCALE }]
         assertEquals("Faithful, fast and reliable clarity improvement (default)", waifu2x.findViewById<TextView>(R.id.blurb).text.toString())
+    }
+
+    @Test
+    fun keepingItSimpleShowsOneLevelOfEachShaderFamilyAndThoseDownloaded() {
+        assertTrue(Prefs(context).keepSimple)
+        val kept = ShaderCatalog.byId("anime4k-c-s")!!
+        for (f in kept.files) {
+            store.dir(kept).mkdirs()
+            RandomAccessFile(File(store.dir(kept), f.name), "rw").use { it.setLength(f.bytes) }
+            File(store.dir(kept), f.name + ModelStore.STAMP).writeText(f.sha256)
+        }
+        val rows = rows(open()).drop(ModelCatalog.all.size)
+        for ((m, row) in ShaderCatalog.all.zip(rows)) {
+            assertEquals(m.id, m.defaultLevel || m == kept, row.visibility == View.VISIBLE)
+        }
     }
 
     @Test
@@ -143,12 +163,18 @@ class ModelsActivityTest {
     fun aRowOpensItsAttribution() {
         val activity = open()
         val m = ModelCatalog.all.last()
-        rows(activity).last().performClick()
+        rows(activity)[ModelCatalog.all.size - 1].performClick()
         shadowOf(Looper.getMainLooper()).idle()
         val dialog = ShadowDialog.getLatestDialog() as AlertDialog
         val text = dialog.findViewById<TextView>(android.R.id.message)!!.text.toString()
         assertTrue(text, text.contains(m.source.author) && text.contains(m.source.license) && text.contains(m.source.url))
         assertTrue(text.contains(ModelCatalog.REPOSITORY))
+        dialog.dismiss()
+        // A shader chain names its own repository.
+        rows(activity).last().performClick()
+        shadowOf(Looper.getMainLooper()).idle()
+        val chain = (ShadowDialog.getLatestDialog() as AlertDialog).findViewById<TextView>(android.R.id.message)!!.text.toString()
+        assertTrue(chain, chain.contains("bloc97") && chain.contains(ShaderCatalog.REPOSITORY) && !chain.contains(ModelCatalog.REPOSITORY))
     }
 
     @Test
@@ -156,8 +182,8 @@ class ModelsActivityTest {
         val mine = imported("user-1", "My upscaler", AiStep.UPSCALE)
         val activity = open()
         val rows = rows(activity)
-        assertEquals(ModelCatalog.all.size + 1, rows.size)
-        val row = rows[ModelCatalog.all.size]
+        assertEquals(ModelCatalog.all.size + ShaderCatalog.all.size + 1, rows.size)
+        val row = rows.last()
         assertEquals(View.VISIBLE, row.visibility)
         assertEquals("My upscaler", row.findViewById<TextView>(R.id.title).text.toString())
         val details = row.findViewById<TextView>(R.id.subtitle).text.toString()
@@ -173,12 +199,12 @@ class ModelsActivityTest {
         ask.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
         for (i in 0 until 100) {
             shadowOf(Looper.getMainLooper()).idle()
-            if (UserModels.all.isEmpty() && rows(activity).size == ModelCatalog.all.size) break
+            if (UserModels.all.isEmpty() && rows(activity).size == ModelCatalog.all.size + ShaderCatalog.all.size) break
             Thread.sleep(20)
         }
         assertTrue(UserModels.all.isEmpty())
         assertFalse(store.userDir(mine.id).exists())
-        assertEquals(ModelCatalog.all.size, rows(activity).size)
+        assertEquals(ModelCatalog.all.size + ShaderCatalog.all.size, rows(activity).size)
     }
 
     @Test

@@ -2,6 +2,8 @@ package com.infinity.comicreader.util
 
 import com.infinity.comicreader.ai.ModelCatalog
 import com.infinity.comicreader.ai.ModelSource
+import com.infinity.comicreader.ai.ShaderCatalog
+import com.infinity.comicreader.ai.ShaderModel
 
 /**
  * A third-party component shipped in the app and the license it is used under.
@@ -210,10 +212,15 @@ object Notices {
         get() = ModelSource.entries.filter { it.models.isNotEmpty() }.map { s ->
             Notice(
                 s.title, s.license, s.url, s.texts,
-                note = "By ${s.author}. Models: ${s.models.joinToString { it.name }}. Downloaded on demand, unchanged, " +
+                note = "By ${s.author}. Models: ${modelNames(s)}. Downloaded on demand, unchanged, " +
                     "from ${s.repository} and run on this device only." + (s.conversion?.let { " $it" } ?: "")
             )
         }
+
+    /** [s]'s models by name, a shader family once with its levels. */
+    private fun modelNames(s: ModelSource): String = s.models.map { m ->
+        if (m is ShaderModel) "${m.familyName} (${ShaderCatalog.family(m.family).joinToString("/") { it.levelName }})" else m.name
+    }.distinct().joinToString()
 
     /** Every license and NOTICE file the notices and the AI models refer to. */
     val textFiles: Set<String> get() = (all + models).flatMap { it.texts }.toSet()

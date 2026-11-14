@@ -55,10 +55,14 @@ enum class ModelSource(
         listOf("artcnn.txt"), ModelCatalog.HOSTED_REPOSITORY,
         "An ncnn conversion of the ONNX release of ArtCNN C4F32 DS, made for this app: the same weights, with RGB in " +
             "and out. The original and the conversion scripts are in the same repository at the same revision."
+    ),
+    ANIME4K(
+        "Anime4K", "bloc97", "MIT License", "https://github.com/bloc97/Anime4K",
+        listOf("anime4k.txt"), ShaderCatalog.REPOSITORY
     );
 
-    /** The catalog's models from this source. */
-    val models: List<CatalogModel> get() = ModelCatalog.all.filter { it.source == this }
+    /** The catalog's models from this source, shader chains included. */
+    val models: List<AiModel> get() = ModelCatalog.all.filter { it.source == this } + ShaderCatalog.all.filter { it.source == this }
 }
 
 /** What a model does to a page, in a few words shown beside it where it is picked ([CatalogModel.blurb]). */
@@ -288,8 +292,8 @@ object ModelCatalog {
     /** The app's own models. */
     val tools: List<ToolModel> = listOf(TEXT_DETECTOR)
 
-    /** Every file set the store keeps ([ModelStore.prune]): the catalog's models and the app's own. */
-    val sets: List<FileSet> get() = all + tools
+    /** Every file set the store keeps ([ModelStore.prune]): the catalog's models, its shader chains and the app's own. */
+    val sets: List<FileSet> get() = all + ShaderCatalog.all + tools
 
     /** The longest [CatalogModel.pageMs] the catalog takes, and the budget of a whole chain ([AiChain.slow]). */
     const val MAX_PAGE_MS = PageLimits.DEFAULT_TIMEOUT_MS * 2 / 3

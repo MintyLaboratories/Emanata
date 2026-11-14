@@ -216,7 +216,26 @@ static void save_current(was_current * w)
     w->read = eglGetCurrentSurface(EGL_READ);
 }
 
-// Makes the context current, creating it the first time; 0 when usable. sh_lock held.
+// Lets go of a context and surface whose setup failed: nothing will ever run on them. sh_lock held.
+static int sh_give_up(void)
+{
+    if (context != EGL_NO_CONTEXT) {
+        if (eglGetCurrentContext() == context) eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+        eglDestroyContext(display, context);
+        context = EGL_NO_CONTEXT;
+    }
+    if (surface != EGL_NO_SURFACE) {
+        eglDestroySurface(display, surface);
+        surface = EGL_NO_SURFACE;
+    }
+    vertex_shader = 0;
+    encode_program = 0;
+    vao = 0;
+    return -1;
+}
+
+// Makes the context current, creating it the first time; 0 when usable. sh_lock held. A first
+// setup that fails frees what it made and leaves the runner unusable for the process.
 static int sh_begin(was_current * w)
 {
     save_current(w);
@@ -238,12 +257,12 @@ static int sh_begin(was_current * w)
         if (extensions == NULL || strstr(extensions, "EGL_KHR_surfaceless_context") == NULL) {
             const EGLint surface_attrs[] = { EGL_WIDTH, 1, EGL_HEIGHT, 1, EGL_NONE };
             surface = eglCreatePbufferSurface(display, config, surface_attrs);
-            if (surface == EGL_NO_SURFACE) return -1;
+            if (surface == EGL_NO_SURFACE) return sh_give_up();
         }
-        if (!eglMakeCurrent(display, surface, surface, context)) return -1;
+        if (!eglMakeCurrent(display, surface, surface, context)) return sh_give_up();
         GLint major = 0;
         glGetIntegerv(GL_MAJOR_VERSION, &major);
-        if (major < 3) return -1;
+        if (major < 3) return sh_give_up();
         glGetIntegerv(GL_MAX_TEXTURE_SIZE, &max_side);
         glGetIntegerv(GL_MAX_TEXTURE_IMAGE_UNITS, &max_units);
         if (renderable(GL_RGBA16F)) {
@@ -254,19 +273,19 @@ static int sh_begin(was_current * w)
             float_bytes = 16;
         } else {
             __android_log_print(ANDROID_LOG_WARN, TAG, "no renderable float textures: shader path off");
-            return -1;
+            return sh_give_up();
         }
         vertex_shader = compile_shader(GL_VERTEX_SHADER, VERTEX, "vertex");
-        if (vertex_shader == 0) return -1;
+        if (vertex_shader == 0) return sh_give_up();
         encode_program = link_program(ENCODE, "encode");
-        if (encode_program == 0) return -1;
+        if (encode_program == 0) return sh_give_up();
         encode_src = glGetUniformLocation(encode_program, "src");
         glGenVertexArrays(1, &vao);
         const char * r = (const char *)glGetString(GL_RENDERER);
         snprintf(renderer, sizeof(renderer), "%s", r != NULL ? r : "?");
         const char * v = (const char *)glGetString(GL_VERSION);
         snprintf(gl_version, sizeof(gl_version), "%s", v != NULL ? v : "?");
-        if (glGetError() != GL_NO_ERROR) return -1;
+        if (glGetError() != GL_NO_ERROR) return sh_give_up();
         __android_log_print(ANDROID_LOG_INFO, TAG, "ready: %s, %s, max side %d, %d units%s", renderer,
                             float_format == GL_RGBA16F ? "RGBA16F" : "RGBA32F", max_side, max_units, low ? ", low priority" : "");
         sh_state = 1;

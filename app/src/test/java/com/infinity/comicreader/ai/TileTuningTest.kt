@@ -225,6 +225,14 @@ class TileTuningTest {
     }
 
     @Test
+    fun anotherSystemBuildKeepsItsOwnChoices() {
+        val a = TileTuning.keyOf("model-a", "build-1")
+        assertTrue(a != TileTuning.keyOf("model-a", "build-2"))
+        assertTrue(a != TileTuning.keyOf("model-b", "build-1"))
+        assertTrue("${TileTuning.VERSION}" in a)
+    }
+
+    @Test
     fun aSizeLeftTryingLowersTheCeiling() {
         assertEquals(TileChoice(0, 383, 0), TileChoice(384, Int.MAX_VALUE, 384).settled())
         assertEquals(TileChoice(256, 511, 0), TileChoice(256, Int.MAX_VALUE, 512).settled())

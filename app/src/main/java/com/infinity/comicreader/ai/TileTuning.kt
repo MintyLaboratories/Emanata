@@ -2,6 +2,7 @@ package com.infinity.comicreader.ai
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.os.Build
 import android.util.Log
 import java.io.File
 import java.nio.file.Files
@@ -14,9 +15,20 @@ import kotlin.math.max
 /**
  * A model's tile sizes to choose among on the GPU ([candidates]; those past [TileSizing.DEFAULT_MAX]
  * only where they fit), and where what this device learns of them is kept: [choices], under
- * [key] (what identifies the model's files).
+ * [key] (what identifies the model's files, as [keyOf] makes it).
  */
-internal class TileTuning(val candidates: List<Int>, val choices: TileChoices, val key: String)
+internal class TileTuning(val candidates: List<Int>, val choices: TileChoices, val key: String) {
+    companion object {
+        /** How sizes are timed and kept; a new version times them afresh. */
+        const val VERSION = 1
+
+        /**
+         * The key for a model whose files are [model] on [system] (the OS build: its GPU driver
+         * sets tiles' speed and memory, so an update times them afresh and lifts ceilings).
+         */
+        fun keyOf(model: String, system: String = Build.FINGERPRINT): String = "v$VERSION|$system|$model"
+    }
+}
 
 /**
  * What this device learned of one model's tiles on its GPU in one precision: the [size] chosen

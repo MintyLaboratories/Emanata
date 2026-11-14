@@ -259,7 +259,7 @@ class AiCheckService : Service() {
     /** Tile tuning for the model of [param] as the reader tunes a catalog model's, from a store cleared first, so it times afresh. */
     private fun tuningFor(param: File): TileTuning {
         val dir = File(out.parentFile, "tile-choices").apply { deleteRecursively() }
-        return TileTuning(TileSizing.CANDIDATES, TileChoices(dir), param.name)
+        return TileTuning(TileSizing.CANDIDATES, TileChoices(dir), TileTuning.keyOf(param.name))
     }
 
     /** What [tuning] keeps for the GPU in fp16 or fp32 ([fp16]): the size chosen and the largest that may run. */

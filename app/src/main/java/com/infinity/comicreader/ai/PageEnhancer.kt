@@ -368,7 +368,7 @@ class ReaderAi internal constructor(
     private fun tuningOf(m: AiModel): TileTuning? {
         val choices = tiles ?: return null
         val sizes = (m as? CatalogModel)?.tiles?.takeIf { it.isNotEmpty() } ?: return null
-        return TileTuning(sizes, choices, m.fingerprint)
+        return TileTuning(sizes, choices, TileTuning.keyOf(m.fingerprint))
     }
 
     /** Why model [id] did not open when last tried; null when it opened or was not tried. Any thread. */

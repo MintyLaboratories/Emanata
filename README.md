@@ -1364,12 +1364,10 @@ another, as the headroom rose from 0.79 to 0.93:
 | waifu2x UpConv7 2x, denoise 0 and 1 | upscale | GPU fp16, 192 px | 15 px | 70 | 3.4 s | 4.0 s | 324 MB |
 | waifu2x UpConv7 2x, denoise 2 and 3 | upscale | GPU fp16, 192 px | 7 px | 54 | 2.7 s | 3.1 s | 322 MB |
 
-CuNNy 8x32 DS 2x and ArtCNN C4F32 DS 2x are in the catalog at provisional times
-from an earlier timing on the same tablet (GPU fp16, 192 px tiles, 70 tiles: 2.9 s
-and 2.0 s; that run timed waifu2x UpConv7 2x at 3.9 s, so it ran slower than the
-table above). On the GPU in fp16 they run with margins of 17 and 8 px (CuNNy's
-probe measures 9 on the CPU; the GPU check widens it). In 384 px tiles
-(CuNNy) and 512 px tiles (ArtCNN) the same pages took about 1.5 s.
+ArtCNN C4F32 DS 2x and CuNNy 8x32 DS 2x have provisional times (GPU fp16,
+192 px tiles): ArtCNN 2.0 s (8 px margin, 54 tiles), CuNNy 2.9 s (17 px margin,
+70 tiles). In larger tiles than the app's 192 px cap, 512 px (ArtCNN) and
+384 px (CuNNy), the same pages took about 1.5 s.
 
 Warm, models took up to 1.5 times as long as cool (single pages of the
 download check reached 21.4 s), still within the page time; the AI gate stops

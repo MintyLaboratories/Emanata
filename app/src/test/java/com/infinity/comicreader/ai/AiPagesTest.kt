@@ -67,6 +67,22 @@ class AiPagesTest {
     }
 
     @Test
+    fun aModelsOutputIsNeverSharpenedWhileAFallbackIs() {
+        val model = FakeModel(scale = 2, reach = 1)
+        val session = Session(model, ModelProbe.measure(model), 48)
+        val src = page(60, 90)
+        val sharp = Scaling(sharpen = 100)
+        val ran = AiPages.render(session, src, plan, sharp)
+        assertArrayEquals(pixels(AiPages.render(session, src, plan, Scaling.DEFAULT).bitmap), pixels(ran.bitmap))
+        val chained = AiPages.chain(listOf(session), src, plan, sharp)
+        assertArrayEquals(pixels(ran.bitmap), pixels(chained.bitmap!!))
+        // The plain page in a model's place is sharpened as any page is.
+        val fallback = AiPages.render(session, src, plan, sharp, gate = { Fallback.PAUSED })
+        assertArrayEquals(pixels(BitmapUtils.resample(src, plan, false, sharp)), pixels(fallback.bitmap))
+        assertTrue(!pixels(fallback.bitmap).contentEquals(pixels(BitmapUtils.resample(src, plan, false, Scaling.DEFAULT))))
+    }
+
+    @Test
     fun cancelingThrows() {
         val model = FakeModel()
         val session = Session(model, ModelProbe.measure(model), 48)

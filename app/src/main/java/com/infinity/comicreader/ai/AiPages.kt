@@ -105,7 +105,8 @@ data class ChainModel(val step: AiStep, val scale: Int) {
 internal object AiPages {
     /**
      * [src] rendered as [plan] (in [src]'s pixels) and [scaling] say: through [session]'s model
-     * and then resampled, or, when the run falls back, [src] resampled alone. An upscaling model
+     * and then resampled, never sharpened ([Scaling.unsharpened]), or, when the run falls back,
+     * [src] resampled alone, sharpened as a plain page is. An upscaling model
      * runs only where [thresholds] let it ([Fallback.UNNEEDED]); a 1x one always runs. The model's
      * output is collapsed to gray with [gray], or with [gray] null when [src] is gray ([GrayPages]).
      * Throws [java.util.concurrent.CancellationException] once [canceled].
@@ -133,7 +134,7 @@ internal object AiPages {
                 AiRendered(BitmapUtils.resample(src, plan, linear, scaling), run)
             } else {
                 try {
-                    AiRendered(BitmapUtils.resample(big, scaled(plan, session.geometry.scale), linear, scaling), run)
+                    AiRendered(BitmapUtils.resample(big, scaled(plan, session.geometry.scale), linear, scaling.unsharpened), run)
                 } finally {
                     big.recycle()
                 }
@@ -143,7 +144,7 @@ internal object AiPages {
 
     /**
      * [src] through [sessions]' models in turn, then resampled as [plan] (in [src]'s pixels)
-     * and [scaling] say; no bitmap when the chain falls back ([ChainRun.fallback]), when
+     * and [scaling] say, never sharpened ([Scaling.unsharpened]); no bitmap when the chain falls back ([ChainRun.fallback]), when
      * nothing else is made: the page shows as it would without AI. Only the models of [steps]
      * run (by default: an upscaler where the page shows larger than its input to it, and every
      * 1x model); the chain falls back as [Fallback.UNNEEDED] when
@@ -200,7 +201,7 @@ internal object AiPages {
                 scale *= session.geometry.scale
                 ran++
             }
-            val out = Cancellation.during(canceled) { BitmapUtils.resample(page, scaled(plan, scale), linear, scaling) }
+            val out = Cancellation.during(canceled) { BitmapUtils.resample(page, scaled(plan, scale), linear, scaling.unsharpened) }
             return ChainRun(out, null, ran, clock() - start)
         } finally {
             if (page !== src) page.recycle()

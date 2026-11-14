@@ -203,7 +203,9 @@ class ReaderAi internal constructor(
         return outcome
     }
 
-    private fun enhanceNow(source: PageSource, index: Int, target: Target, width: Int, height: Int, held: () -> Boolean, canceled: () -> Boolean): AiOutcome {
+    private fun enhanceNow(source: PageSource, index: Int, pageTarget: Target, width: Int, height: Int, held: () -> Boolean, canceled: () -> Boolean): AiOutcome {
+        // Models see and make pages unsharpened: sharpening is for plain pages, so its strength keys no processed page.
+        val target = pageTarget.copy(scaling = pageTarget.scaling.unsharpened)
         val chain = chainFor(source.bookKey)
         if (chain.isEmpty() || source.isVector) return AiOutcome.Skipped(Fallback.UNNEEDED)
         val t0 = clock()

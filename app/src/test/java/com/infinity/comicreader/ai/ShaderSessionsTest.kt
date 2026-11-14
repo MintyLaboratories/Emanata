@@ -89,6 +89,7 @@ class ShaderSessionsTest {
         assertTrue(name != GlesShaders.cacheName(gpu, listOf("a", "c")))
         assertTrue(name != GlesShaders.cacheName(gpu, listOf("ab")))
         assertTrue("a driver update compiles again", name != GlesShaders.cacheName(gpu.dropLast(1) + "OpenGL ES 3.2 V@2", listOf("a", "b")))
+        assertTrue("so does a runner update", name != GlesShaders.cacheName(gpu, listOf("a", "b"), ShaderSource.RUNNER + 1))
     }
 
     @Test

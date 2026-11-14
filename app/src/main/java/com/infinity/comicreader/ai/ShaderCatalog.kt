@@ -23,7 +23,8 @@ data class ShaderModel(
 
     override val bytes: Long get() = files.sumOf { it.bytes }
 
-    override val fingerprint: String get() = files.joinToString(":") { it.sha256.take(16) }
+    /** Its files' checksums and the runner's version ([ShaderSource.RUNNER]). */
+    override val fingerprint: String get() = "r${ShaderSource.RUNNER}:" + files.joinToString(":") { it.sha256.take(16) }
 }
 
 /**

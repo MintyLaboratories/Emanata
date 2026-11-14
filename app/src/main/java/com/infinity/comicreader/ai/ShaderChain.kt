@@ -225,6 +225,14 @@ class ShaderChain(val passes: List<ShaderPass>, val scale: Int) {
  * covering the target.
  */
 object ShaderSource {
+    /**
+     * The runner's version: raised whenever what a chain computes may change other than through
+     * its files (these conventions, `shader_gles.c`'s vertex and encode shaders, the formats or
+     * arithmetic between passes), so compiled programs ([GlesShaders.cacheName]) and stored
+     * pages ([ShaderModel.fingerprint]) of an earlier runner are not used.
+     */
+    const val RUNNER = 1
+
     fun fragment(program: ShaderProgram): String = buildString {
         append("#version 300 es\n")
         append("precision highp float;\nprecision highp int;\nprecision highp sampler2D;\n")

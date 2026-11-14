@@ -62,10 +62,10 @@ internal object GlesShaders : ShaderRuntime {
         return if (handle == 0L) null else Opened(handle, chain)
     }
 
-    /** The cache file name of [sources] compiled by the GPU [info] describes: a hash of both. */
-    internal fun cacheName(info: List<String>, sources: List<String>): String {
+    /** The cache file name of [sources] compiled by the GPU [info] describes: a hash of both and the runner's version ([ShaderSource.RUNNER]). */
+    internal fun cacheName(info: List<String>, sources: List<String>, runner: Int = ShaderSource.RUNNER): String {
         val digest = MessageDigest.getInstance("SHA-256")
-        for (s in info + sources) {
+        for (s in listOf("runner $runner") + info + sources) {
             digest.update(s.toByteArray())
             digest.update(0)
         }

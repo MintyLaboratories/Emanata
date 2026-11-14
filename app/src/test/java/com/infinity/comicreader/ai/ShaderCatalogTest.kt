@@ -63,11 +63,13 @@ class ShaderCatalogTest {
     }
 
     @Test
-    fun aChainsFingerprintChangesWithAnyOfItsFiles() {
+    fun aChainsFingerprintChangesWithAnyOfItsFilesAndTheRunner() {
         val a = ShaderCatalog.byId("anime4k-a-ul")!!
         val b = ShaderCatalog.byId("anime4k-b-ul")!!
         assertTrue(a.fingerprint != b.fingerprint)
-        assertEquals(3, a.fingerprint.split(':').size)
+        val parts = a.fingerprint.split(':')
+        assertEquals("r${ShaderSource.RUNNER}", parts.first())
+        assertEquals(a.files.map { it.sha256.take(16) }, parts.drop(1))
     }
 
     @Test

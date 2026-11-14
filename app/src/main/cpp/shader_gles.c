@@ -183,6 +183,8 @@ static int has_extension(const char * name)
     return 0;
 }
 
+// Changing VERTEX or ENCODE, or how passes draw, raises ShaderSource.RUNNER in Kotlin, so
+// cached programs and stored pages of the old runner are not used.
 static const char * VERTEX =
     "#version 300 es\n"
     "void main() {\n"

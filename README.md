@@ -834,8 +834,10 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   artifact removal, then descreening, then upscaling (waifu2x UpConv7 2× by
   default in both; only a choice is stored, so a step never chosen follows a
   later default). Under each chain's name a load estimate bar sums its
-  models' page times (this device's as the reader measured them, else the
-  reference tablet's) on a scale to 30 s: green below 10 s, yellow to 20 s,
+  models' page times (this device's as the reader measured them, each page
+  moving a model's time a quarter of the way; a model not run yet takes the
+  reference tablet's time scaled by how the measured ones compare with
+  theirs) on a scale to 30 s: green below 10 s, yellow to 20 s,
   red past it, with no unit or numbers; TalkBack reads it as light, moderate
   or heavy. Upscaling also offers Anime4K's GPU
   shaders (modes A, B and C, Upscale, Upscale + Denoise) in every size from

@@ -310,15 +310,15 @@ class ReaderAi internal constructor(
     /**
      * Takes [m]'s run on an input of [pixels] into its measured rate, a run stopped early by
      * its whole input's expected time ([RunStats.fullMs]): its first tile, which carries the
-     * GPU's warm-up, counted once, not as the pace of the rest. Keeps the rate as [m]'s page
-     * time here ([times]).
+     * GPU's warm-up, counted once, not as the pace of the rest. Gives the run's own rate to
+     * [m]'s page time here ([times]), which blends it with those of earlier readers.
      */
     internal fun learn(m: AiModel, pixels: Long, stats: RunStats) {
         val ms = stats.fullMs ?: return
         if (pixels <= 0) return
         val rate = ms / (pixels / 1e6)
-        val now = rates.merge(m.id, rate) { old, new -> (old + new) / 2 } ?: return
-        times?.keep(m, (now * REFERENCE_MP).toLong())
+        rates.merge(m.id, rate) { old, new -> (old + new) / 2 }
+        times?.keep(m, (rate * REFERENCE_MP).toLong())
     }
 
     /**

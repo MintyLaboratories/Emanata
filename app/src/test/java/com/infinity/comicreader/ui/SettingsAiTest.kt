@@ -406,11 +406,11 @@ class SettingsAiTest {
             if (pref.callChangeListener(descreen.id)) pref.value = descreen.id
             awaitLoad(manga, descreen.pageMs + upscale.pageMs)
             assertEquals(upscale.pageMs, other.pageMs)
-            // A time learned here replaces the catalog's.
+            // A time learned here replaces the catalog's, and scales the times of models not learned yet alike.
             times.keep(upscale, 1_234)
             val again = settings()
             awaitLoad(again.findPreference("ai_chain_other")!!, 1_234)
-            awaitLoad(again.findPreference("ai_chain_manga")!!, descreen.pageMs + 1_234)
+            awaitLoad(again.findPreference("ai_chain_manga")!!, Math.round(descreen.pageMs * 1_234.0 / upscale.pageMs) + 1_234)
         } finally {
             times.clear()
         }

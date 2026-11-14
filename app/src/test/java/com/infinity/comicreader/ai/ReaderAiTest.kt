@@ -636,9 +636,22 @@ class ReaderAiTest {
             // A 3 MP page at the same pace: the same time for a reference page.
             reader.learn(upscale, 3_000_000, RunStats(3, 3, longArrayOf(2_000, 2_000, 2_000), 6_000))
             assertEquals(3_000L, times.pageMs(upscale))
-            // Averaged with what came before, as the reader paces itself.
+            // Each page moves it a quarter of the way.
             reader.learn(upscale, 1_500_000, RunStats(3, 3, longArrayOf(3_000, 3_000, 3_000), 9_000))
-            assertEquals(6_000L, times.pageMs(upscale))
+            assertEquals(4_500L, times.pageMs(upscale))
+        } finally {
+            reader.close()
+        }
+    }
+
+    @Test
+    fun aNewReadersFirstPageDoesNotReplaceTheTimeKept() {
+        val times = PageTimes(File(tmp.newFolder(), "times"))
+        times.keep(upscale, 3_000)
+        val reader = ReaderAi(prefs, { own[it] }, models, store, runtime, { stop }, { downloads += it.id }, threads = 2, times = times)
+        try {
+            reader.learn(upscale, 1_500_000, RunStats(3, 3, longArrayOf(2_000, 2_000, 2_000), 6_000))
+            assertEquals(3_750L, times.pageMs(upscale))
         } finally {
             reader.close()
         }

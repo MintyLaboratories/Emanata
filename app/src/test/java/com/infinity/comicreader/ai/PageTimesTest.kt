@@ -11,7 +11,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.io.File
 
-/** Page times learned on this device: kept by model and its files, written only on a real change, read back by a new instance. */
+/** Page times learned on this device: kept by model and its files, blended page by page, written only on a real change, read back by a new instance; unlearned ones scaled alike. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = Application::class)
 class PageTimesTest {
@@ -36,20 +36,48 @@ class PageTimesTest {
     }
 
     @Test
-    fun aSmallChangeIsNotWrittenALargerOneIs() {
+    fun laterPagesMoveTheTimeAQuarterOfTheWayWrittenOnlyOnALargerMove() {
         val file = File(tmp.root, "times")
         val times = PageTimes(file)
         times.keep(upscale, 4_000)
         val written = file.lastModified()
         file.setLastModified(written - 10_000)
-        times.keep(upscale, 4_150)
-        assertEquals(4_000L, times.pageMs(upscale))
+        // 4000 + (4400 - 4000) / 4: 2.5 % from what was written.
+        times.keep(upscale, 4_400)
+        assertEquals(4_100L, times.pageMs(upscale))
         assertEquals("not written", written - 10_000, file.lastModified())
-        times.keep(upscale, 4_200)
-        assertEquals(4_200L, times.pageMs(upscale))
-        assertEquals(4_200L, PageTimes(file).pageMs(upscale))
+        assertEquals(4_000L, PageTimes(file).pageMs(upscale))
+        // 4100 + (5300 - 4100) / 4 = 4400: 10 % from 4000.
+        times.keep(upscale, 5_300)
+        assertEquals(4_400L, times.pageMs(upscale))
+        assertEquals(4_400L, PageTimes(file).pageMs(upscale))
         times.keep(upscale, 0)
-        assertEquals("nothing to learn from", 4_200L, times.pageMs(upscale))
+        assertEquals("nothing to learn from", 4_400L, times.pageMs(upscale))
+    }
+
+    @Test
+    fun oneSlowPageDoesNotReplaceATimeKeptBefore() {
+        val file = File(tmp.root, "times")
+        PageTimes(file).keep(upscale, 4_000)
+        // A later reader's first page, taken warm.
+        val later = PageTimes(file)
+        later.keep(upscale, 8_000)
+        assertEquals(5_000L, later.pageMs(upscale))
+    }
+
+    @Test
+    fun modelsNotLearnedYetAreScaledAsTheLearnedOnesRan() {
+        val times = PageTimes(File(tmp.root, "times"))
+        assertEquals("the catalog's before any", descreen.pageMs, times.estimate(descreen))
+        times.keep(upscale, upscale.pageMs * 3 / 2)
+        assertEquals(1.5, times.ratio(), 0.001)
+        assertEquals(upscale.pageMs * 3 / 2, times.estimate(upscale))
+        assertEquals(Math.round(descreen.pageMs * times.ratio()), times.estimate(descreen))
+        // The median of the ratios learned.
+        val artifacts = ModelCatalog.forStep(AiStep.ARTIFACTS).first()
+        times.keep(descreen, descreen.pageMs * 2)
+        times.keep(artifacts, artifacts.pageMs)
+        assertEquals(1.5, times.ratio(), 0.001)
     }
 
     @Test
@@ -66,7 +94,7 @@ class PageTimesTest {
     @Test
     fun anUnreadableFileReadsAsNoneLearned() {
         val file = File(tmp.root, "times")
-        file.writeText("garbage\n${upscale.id}\t${upscale.fingerprint}\tnot-a-number\n${descreen.id}\t${descreen.fingerprint}\t5000\n")
+        file.writeText("garbage\n${upscale.id}\t${upscale.fingerprint}\tnot-a-number\t3000\n${descreen.id}\t${descreen.fingerprint}\t5000\t4000\n")
         val times = PageTimes(file)
         assertNull(times.pageMs(upscale))
         assertEquals(5_000L, times.pageMs(descreen))

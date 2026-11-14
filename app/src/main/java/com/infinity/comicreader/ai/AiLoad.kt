@@ -17,7 +17,7 @@ object AiLoad {
 
     enum class Level { LIGHT, MODERATE, HEAVY }
 
-    /** [models]' page times together: each one's [learned] on this device where known, else its [AiModel.pageMs]. */
+    /** [models]' page times together: each one's on this device ([learned], as [PageTimes.estimate] gives) where known, else its [AiModel.pageMs]. */
     fun pageMs(models: List<AiModel>, learned: (AiModel) -> Long? = { null }): Long = models.sumOf { learned(it) ?: it.pageMs }
 
     /** How full the bar is for [ms], from 0 to 1. */

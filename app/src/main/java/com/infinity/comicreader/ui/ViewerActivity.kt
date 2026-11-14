@@ -3915,7 +3915,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
             button.visibility = if (shown) View.VISIBLE else View.GONE
             aiLabels[step]?.let { view.findViewById<View>(it).visibility = button.visibility }
         }
-        view.findViewById<AiLoadBar>(R.id.ai_load_bar).pageMs = AiLoad.pageMs(picks.models, aiTimes::pageMs)
+        view.findViewById<AiLoadBar>(R.id.ai_load_bar).pageMs = AiLoad.pageMs(picks.models, aiTimes::estimate)
         view.findViewById<View>(R.id.btn_ai_book).isEnabled = book() != null
         view.findViewById<View>(R.id.sheet_ai_kind_row).visibility = if (own == null) View.VISIBLE else View.GONE
         setGroupEnabled(view.findViewById(R.id.sheet_ai_kind), book() != null || aiKindFolder() != null)

@@ -612,7 +612,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
             val used = withContext(AppDispatchers.io) { store.bytesUsed() }
             // Each chain's load estimate, of the models it runs whether AI processing is on or not.
             val loads = withContext(AppDispatchers.io) {
-                ChainKind.entries.associateWith { AiLoad.pageMs(AiPicks.of(prefs, it).models, times::pageMs) }
+                ChainKind.entries.associateWith { AiLoad.pageMs(AiPicks.of(prefs, it).models, times::estimate) }
             }
             if (!isAdded) return
             for ((kind, ms) in loads) findPreference<AiChainPreference>(chainKey(kind))?.pageMs = ms

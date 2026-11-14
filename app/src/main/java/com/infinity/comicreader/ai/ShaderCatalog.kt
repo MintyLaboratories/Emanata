@@ -5,7 +5,8 @@ package com.infinity.comicreader.ai
  * as one chain, [scale] times larger out than in, at [step], from [source], at [level] of its
  * family ([ShaderCatalog.LEVELS]: the same network in sizes from lightest to heaviest).
  * [pageMs]: its time for a synthetic 1000 x 1500 page on the reference tablet's GPU, at its
- * own scale.
+ * own scale (for now warm, [ShaderCatalog]'s page times). [blurb]: what it does, as every
+ * level of its family shares it.
  */
 data class ShaderModel(
     override val id: String,
@@ -80,7 +81,12 @@ object ShaderCatalog {
     /** A family: its id (model ids are it and the level), name, and files at each level. */
     private class Family(val id: String, val name: String, val files: (Int) -> List<ModelFile>, val pageMs: LongArray)
 
-    /** Page times: a synthetic 1000 x 1500 page in 512-pixel tiles on the reference tablet's GPU (Adreno 730), thermal status 0, after one warm-up page. */
+    /**
+     * Page times: a synthetic 1000 x 1500 page in 512-pixel tiles on the reference tablet's GPU
+     * (Adreno 730), from one batch of all 25 chains run back to back, so warm rather than
+     * started cool as [AiModel.pageMs] asks (A UL about 1.7 times its cool time): upper bounds
+     * until a cool session measures them again.
+     */
     private val FAMILIES = listOf(
         Family("anime4k-a", "Anime4K A (sharp) 2×", { l -> listOf(CLAMP, RESTORE[l], UPSCALE[l]) }, longArrayOf(180, 300, 470, 590, 840)),
         Family("anime4k-b", "Anime4K B (clean) 2×", { l -> listOf(CLAMP, RESTORE_SOFT[l], UPSCALE[l]) }, longArrayOf(250, 340, 490, 760, 830)),

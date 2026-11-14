@@ -94,6 +94,7 @@ class ShaderCatalogTest {
 
     @Test
     fun everyChainTakesAPageWithinTheBudget() {
+        // Warm batch figures for now (ShaderCatalog's page times), so upper bounds of the cool ones.
         for (m in ShaderCatalog.all) assertTrue("${m.id}: ${m.pageMs} ms", m.pageMs in 1..ModelCatalog.MAX_PAGE_MS)
         for (f in ShaderCatalog.all.map { it.level.family }.distinct()) {
             val times = ShaderCatalog.family(f).map { it.pageMs }

@@ -20,8 +20,6 @@ class ShaderCatalogTest {
             assertEquals(f, (0..4).toList(), levels.map { it.level })
             assertEquals(f, levels.map { "$f-${it.levelName.lowercase()}" }, levels.map { it.id })
             assertTrue(f, levels.all { it.name == "${it.familyName}, ${it.levelName}" })
-            assertEquals("one default per family", 1, levels.count { it.defaultLevel })
-            assertEquals("UL", levels.single { it.defaultLevel }.levelName)
         }
     }
 
@@ -79,19 +77,17 @@ class ShaderCatalogTest {
     }
 
     @Test
-    fun simplePickersOfferOneLevelPerFamily() {
-        val simple = ShaderCatalog.offered(AiStep.UPSCALE, keepSimple = true, current = null)
-        assertEquals(5, simple.size)
-        assertTrue(simple.all { it.defaultLevel })
-        assertEquals(6, ShaderCatalog.offered(AiStep.UPSCALE, keepSimple = true, current = "anime4k-c-s").size)
-        assertEquals(25, ShaderCatalog.offered(AiStep.UPSCALE, keepSimple = false, current = null).size)
-        assertTrue(ShaderCatalog.offered(AiStep.ARTIFACTS, keepSimple = false, current = null).isEmpty())
-        // Beside the ncnn upscalers, before the slow ones.
-        val offered = Models.offered(AiStep.UPSCALE, keepSimple = false, current = null)
-        assertEquals(ModelCatalog.DEFAULT_UPSCALE, offered.first().id)
-        val slow = offered.map { it.slow }
-        assertEquals(slow.sorted(), slow)
-        assertTrue(offered.containsAll(ShaderCatalog.all))
+    fun pickersOfferEveryLevel() {
+        assertEquals(25, ShaderCatalog.forStep(AiStep.UPSCALE).size)
+        assertTrue(ShaderCatalog.forStep(AiStep.ARTIFACTS).isEmpty())
+        for (simple in listOf(true, false)) {
+            // Beside the ncnn upscalers, before the slow ones.
+            val offered = Models.offered(AiStep.UPSCALE, keepSimple = simple, current = null)
+            assertEquals(ModelCatalog.DEFAULT_UPSCALE, offered.first().id)
+            val slow = offered.map { it.slow }
+            assertEquals(slow.sorted(), slow)
+            assertTrue("kept simple: $simple", offered.containsAll(ShaderCatalog.all))
+        }
     }
 
     @Test

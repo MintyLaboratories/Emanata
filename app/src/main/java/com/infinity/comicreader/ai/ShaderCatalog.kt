@@ -28,9 +28,6 @@ data class ShaderModel(
 
     /** The [level]'s name, as Anime4K names its sizes. */
     val levelName: String get() = ShaderCatalog.LEVELS[level]
-
-    /** True for the level pickers offer while kept simple ([ShaderCatalog.DEFAULT_LEVEL]). */
-    val defaultLevel: Boolean get() = level == ShaderCatalog.DEFAULT_LEVEL
 }
 
 /**
@@ -38,8 +35,7 @@ data class ShaderModel(
  * from the upstream repository at the release's commit, so their checksums hold. Five families,
  * each in every size from S to UL: the upscaler alone and with denoise, and mpv's modes A
  * (highlight clamp, restore, upscale), B (the same with the soft restore) and C (highlight
- * clamp, upscale with denoise), as the user compared them. Pickers kept simple offer each
- * family's [DEFAULT_LEVEL] only; the others are there for a level slider and advanced settings.
+ * clamp, upscale with denoise), as the user compared them. Pickers offer every level.
  */
 object ShaderCatalog {
     /** The repository the files come from, and the commit they are fetched at (tag v4.0.1). */
@@ -49,9 +45,6 @@ object ShaderCatalog {
 
     /** Anime4K's sizes, lightest first. */
     val LEVELS = listOf("S", "M", "L", "VL", "UL")
-
-    /** The level pickers offer while kept simple: UL, the one the user compared. */
-    const val DEFAULT_LEVEL = 4
 
     private fun file(path: String, bytes: Long, sha256: String) = ModelFile(path.substringAfterLast('/'), BASE + path, bytes, sha256)
 
@@ -116,7 +109,4 @@ object ShaderCatalog {
     /** The levels of [family], lightest first. */
     fun family(family: String): List<ShaderModel> = all.filter { it.family == family }
 
-    /** [step]'s chains a picker offers: with [keepSimple] on, each family's default level, and [current] (an id). */
-    fun offered(step: AiStep, keepSimple: Boolean, current: String?): List<ShaderModel> =
-        forStep(step).filter { !keepSimple || it.defaultLevel || it.id == current }
 }

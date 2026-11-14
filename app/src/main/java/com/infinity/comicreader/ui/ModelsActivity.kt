@@ -421,9 +421,8 @@ class ModelsActivity : AppCompatActivity() {
                 continue
             }
             m as FileSet
-            // Kept simple: no slow models, and one level of each shader family, unless installed or downloading.
-            val plain = !m.slow && (m as? ShaderModel)?.defaultLevel != false
-            row.isVisible = !simple || plain || m.id in installed || d.states[m.id] != null
+            // Kept simple: no slow models, unless installed or downloading.
+            row.isVisible = !simple || !m.slow || m.id in installed || d.states[m.id] != null
             when (val s = d.states[m.id]) {
                 is DownloadState.Running -> {
                     status.isVisible = false

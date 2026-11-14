@@ -832,8 +832,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   per step, or none, for artifact removal, then descreening, then upscaling
   (waifu2x UpConv7 2× by default; only a choice is stored, so a step never
   chosen follows a later default). Upscaling also offers Anime4K's GPU
-  shaders (modes A, B and C, Upscale, Upscale + Denoise), at size UL with
-  Keep it simple on and in every size from S to UL with it off. Each choice says in a few words what its
+  shaders (modes A, B and C, Upscale, Upscale + Denoise) in every size from
+  S to UL. Each choice says in a few words what its
   model does; models that take 10 s or more for a 1000×1500 page on the
   reference tablet are marked slow with their time, and are offered only with
   Keep it simple off (or once chosen), in Settings, the reader's sheet and

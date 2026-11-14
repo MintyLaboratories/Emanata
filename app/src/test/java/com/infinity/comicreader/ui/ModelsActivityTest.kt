@@ -121,17 +121,11 @@ class ModelsActivityTest {
     }
 
     @Test
-    fun keepingItSimpleShowsOneLevelOfEachShaderFamilyAndThoseDownloaded() {
+    fun keepingItSimpleShowsEveryLevelOfEachShaderFamily() {
         assertTrue(Prefs(context).keepSimple)
-        val kept = ShaderCatalog.byId("anime4k-c-s")!!
-        for (f in kept.files) {
-            store.dir(kept).mkdirs()
-            RandomAccessFile(File(store.dir(kept), f.name), "rw").use { it.setLength(f.bytes) }
-            File(store.dir(kept), f.name + ModelStore.STAMP).writeText(f.sha256)
-        }
         val rows = rows(open()).drop(ModelCatalog.all.size)
         for ((m, row) in ShaderCatalog.all.zip(rows)) {
-            assertEquals(m.id, m.defaultLevel || m == kept, row.visibility == View.VISIBLE)
+            assertEquals(m.id, !m.slow, row.visibility == View.VISIBLE)
         }
     }
 

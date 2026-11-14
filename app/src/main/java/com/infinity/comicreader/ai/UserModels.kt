@@ -117,10 +117,10 @@ object Models {
 
     /**
      * [step]'s models a picker offers: the catalog's ([ModelCatalog.offered]) and its shader
-     * chains ([ShaderCatalog.offered]), the slow ones last, then every imported one: the user
-     * took it in themselves, slow or not.
+     * chains, every level, the slow ones last, then every imported one: the user took it in
+     * themselves, slow or not.
      */
     fun offered(step: AiStep, keepSimple: Boolean, current: String?): List<AiModel> =
-        (ModelCatalog.offered(step, keepSimple, current) + ShaderCatalog.offered(step, keepSimple, current)).sortedBy { it.slow } +
+        (ModelCatalog.offered(step, keepSimple, current) + ShaderCatalog.forStep(step)).sortedBy { it.slow } +
             UserModels.all.filter { it.step == step }
 }

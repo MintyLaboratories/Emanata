@@ -57,7 +57,12 @@ internal object GlesShaders : ShaderRuntime {
         if (!available) return null
         val sources = chain.sources
         val file = cache?.let { dir -> runCatching { dir.mkdirs(); File(dir, cacheName(info.orEmpty(), sources)) }.getOrNull() }
-        val handle = nOpen(sources.toTypedArray(), chain.programs.map { it.bindings.size }.toIntArray(), file?.path)
+        val handle = try {
+            nOpen(sources.toTypedArray(), chain.programs.map { it.bindings.size }.toIntArray(), file?.path)
+        } catch (e: OutOfMemoryError) {
+            Log.w(TAG, "open: $e")
+            0L
+        }
         if (file != null) prune(file)
         return if (handle == 0L) null else Opened(handle, chain)
     }
@@ -105,7 +110,12 @@ internal object GlesShaders : ShaderRuntime {
                 return null
             }
             val c = crop ?: Box(0, 0, 0, 0)
-            val code = nRun(handle, plan.encoded, src, input.x, input.y, input.width, input.height, if (crop == null) null else dst, c.x, c.y, c.width, c.height, dx, dy)
+            val code = try {
+                nRun(handle, plan.encoded, src, input.x, input.y, input.width, input.height, if (crop == null) null else dst, c.x, c.y, c.width, c.height, dx, dy)
+            } catch (e: OutOfMemoryError) {
+                Log.w(TAG, "tile $input: $e")
+                return null
+            }
             return if (code == 0) plan.output else null
         }
 

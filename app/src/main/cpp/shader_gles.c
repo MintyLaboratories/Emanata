@@ -502,7 +502,8 @@ static void save_cache(const chain * c, int n, const char * path)
 
 // A chain of the fragment shaders `sources`, one program per pass binding binds[i] textures;
 // 0 when one does not compile. With `cache` (a file path), the programs load from it when this
-// driver made it, else compile and are written to it.
+// driver made it, else compile and are written to it. A JNI call that fails (out of memory)
+// leaves its exception pending: nothing more is asked of JNI but releases, and 0 returns.
 EXPORT jlong JNICALL Java_com_infinity_comicreader_ai_GlesShaders_nOpen(JNIEnv * env, jclass clazz, jobjectArray sources, jintArray binds, jstring cache)
 {
     (void)clazz;
@@ -511,6 +512,10 @@ EXPORT jlong JNICALL Java_com_infinity_comicreader_ai_GlesShaders_nOpen(JNIEnv *
     jint * bound = (*env)->GetIntArrayElements(env, binds, NULL);
     if (bound == NULL) return 0;
     const char * path = cache != NULL ? (*env)->GetStringUTFChars(env, cache, NULL) : NULL;
+    if (cache != NULL && path == NULL) {
+        (*env)->ReleaseIntArrayElements(env, binds, bound, JNI_ABORT);
+        return 0;
+    }
     chain * c = calloc(1, sizeof(*c));
     if (c != NULL) c->passes = calloc((size_t)n, sizeof(pass));
     pthread_mutex_lock(&sh_lock);
@@ -534,7 +539,7 @@ EXPORT jlong JNICALL Java_com_infinity_comicreader_ai_GlesShaders_nOpen(JNIEnv *
     const int cached = ok && path != NULL && load_cache(c, n, path) == 0;
     for (int i = 0; ok && !cached && i < n; i++) {
         jstring s = (jstring)(*env)->GetObjectArrayElement(env, sources, i);
-        const char * text = s != NULL ? (*env)->GetStringUTFChars(env, s, NULL) : NULL;
+        const char * text = s != NULL && !(*env)->ExceptionCheck(env) ? (*env)->GetStringUTFChars(env, s, NULL) : NULL;
         char label[32];
         snprintf(label, sizeof(label), "pass %d", i);
         c->passes[i].program = text != NULL ? link_program(text, label) : 0;

@@ -74,7 +74,7 @@
     <string name="share_password_cleared">Saving removes the stored password</string>
     <string name="share_password_none">No password is stored</string>
     <string name="share_thumbnails">Load thumbnails</string>
-    <string name="share_thumbnails_hint">Turn off for slow drives: covers already made still show</string>
+    <string name="share_thumbnails_hint">Recommended off for slow drives. Covers already made still show.</string>
     <string name="share_speed">Speed</string>
     <string name="share_speed_auto">Auto</string>
     <string name="share_speed_fast">Fast</string>

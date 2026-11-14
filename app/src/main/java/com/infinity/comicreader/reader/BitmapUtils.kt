@@ -158,7 +158,13 @@ object BitmapUtils {
             Timing.span("resample ${src.width}x${src.height} to ${plan.width}x${plan.height} ${scaling.filter.key} ${scaling.upRing}/${scaling.downRing}$sharpened") {
                 val canceled = Cancellation.current()
                 resampleInto(src, out, window, linear, scaling, canceled)
-                if (scaling.sharpen > 0) sharpen(src, out, window, linear, scaling, canceled)
+                if (scaling.sharpen > 0) {
+                    sharpen(src, out, window, Rcas.amount(scaling.sharpen), canceled) { win, strip ->
+                        // Thin strips: the CPU's, which needs no GPU job for a row or a column.
+                        val engine = if (NativeResampler.engine == PixelEngine.GPU) PixelEngine.NATIVE else NativeResampler.engine
+                        resampleInto(src, strip, win, linear, scaling, canceled, engine)
+                    }
+                }
             }
         } catch (t: Throwable) {
             out.recycle()
@@ -186,27 +192,24 @@ object BitmapUtils {
     }
 
     /**
-     * Sharpens [out], [window] of [src] resampled as [scaling] says, by [Scaling.sharpen]
-     * ([Rcas]), in place. Where [window] lies inside [src], the one-pixel strip just past that
-     * edge is resampled too ([rimWindows]) and serves as the edge's neighbors, so a region
+     * Sharpens [out], [window] of [src] shown at its size, by [amount] ([Rcas]), in place.
+     * Where [window] lies inside [src], [fill] draws the one-pixel strip just past that edge
+     * ([rimWindows]) at the same scale, which serves as the edge's neighbors, so a region
      * rendered alone (a zoomed detail, a band) matches the whole page rendered at once; at
-     * the source's own edges, the edge pixels repeat.
+     * the source's own edges, the edge pixels repeat. Every strip is freed, also on failure.
      */
-    private fun sharpen(src: Bitmap, out: Bitmap, window: Resampler.Window, linear: Boolean, scaling: Scaling, canceled: () -> Boolean) {
-        val amount = Rcas.amount(scaling.sharpen)
-        val strips = rimWindows(src.width, src.height, window, out.width, out.height).map { (win, size) ->
-            // Thin strips: the CPU's, which needs no GPU job for a row or a column.
-            val engine = if (NativeResampler.engine == PixelEngine.GPU) PixelEngine.NATIVE else NativeResampler.engine
-            Bitmap.createBitmap(size[0], size[1], Bitmap.Config.ARGB_8888, src.hasAlpha()).also { strip ->
-                try {
-                    resampleInto(src, strip, win, linear, scaling, canceled, engine)
-                } catch (t: Throwable) {
-                    strip.recycle()
-                    throw t
+    private fun sharpen(
+        src: Bitmap, out: Bitmap, window: Resampler.Window, amount: Float, canceled: () -> Boolean,
+        fill: (Resampler.Window, Bitmap) -> Unit
+    ) {
+        val made = ArrayList<Bitmap>(4)
+        try {
+            val strips = rimWindows(src.width, src.height, window, out.width, out.height).map { (win, size) ->
+                Bitmap.createBitmap(size[0], size[1], Bitmap.Config.ARGB_8888, src.hasAlpha()).also { strip ->
+                    made += strip
+                    fill(win, strip)
                 }
             }
-        }
-        try {
             if (NativeResampler.sharpen(out, amount, strips, canceled)) return
             val w = out.width
             val rim = strips.map { b -> IntArray(b.width * b.height).also { b.getPixels(it, 0, b.width, 0, 0, b.width, b.height) } }
@@ -217,7 +220,7 @@ object BitmapUtils {
                 rim, minOf(out.height, Runtime.getRuntime().availableProcessors() * 3), Runtime.getRuntime().availableProcessors(), canceled
             )
         } finally {
-            listOfNotNull(strips.top, strips.bottom, strips.left, strips.right).forEach { it.recycle() }
+            made.forEach { it.recycle() }
         }
     }
 

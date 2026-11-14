@@ -76,12 +76,23 @@ class PageScan(val opaque: Boolean, val gray: Boolean)
 
 /**
  * A model ready to run tiles: opened ([model]), measured ([geometry]), with its tile [size],
- * computing in fp16 when [fp16]. Closing it closes the model; a run in progress then falls back.
+ * computing in fp16 when [fp16]; with [pick], each page's tile size is its choice for the
+ * page's width and height, at most [size] ([sizeFor]). Closing it closes the model; a run in
+ * progress then falls back.
  */
-internal class Session(val model: TileModel, val geometry: Geometry, val size: Int, val fp16: Boolean = false) : AutoCloseable {
+internal class Session(
+    val model: TileModel,
+    val geometry: Geometry,
+    val size: Int,
+    val fp16: Boolean = false,
+    private val pick: ((Int, Int) -> Int)? = null
+) : AutoCloseable {
     init {
         require(TilePlan.fits(size, geometry)) { "Tile $size too small for margin ${geometry.margin}" }
     }
+
+    /** The tile size for a [width] x [height] page: [pick]'s within [size] when it fits, else [size]. */
+    fun sizeFor(width: Int, height: Int): Int = pick?.invoke(width, height)?.takeIf { it <= size && TilePlan.fits(it, geometry) } ?: size
 
     override fun close() = model.close()
 }
@@ -172,7 +183,7 @@ internal object TileEngine {
     ): PageRun {
         if (src.isRecycled || src.config != Bitmap.Config.ARGB_8888) return PageRun(null, Fallback.UNREADABLE, RunStats.NONE)
         val g = session.geometry
-        val tiles = TilePlan.tiles(src.width, src.height, session.size, g)
+        val tiles = TilePlan.tiles(src.width, src.height, session.sizeFor(src.width, src.height), g)
         val times = LongArray(tiles.size)
         // Moved on by the time held, which counts toward neither the limit nor the pace.
         var start = clock()

@@ -18,8 +18,9 @@ import java.io.IOException
  * Anime4K UL chain about twenty at 8 bytes a pixel, plus the enlarged image), so a whole page
  * of the 8 MP a chain may read would need well over a gigabyte of GPU memory; tiles bound it
  * to tens of megabytes ([ShaderPlan.bytes]) and give the engine its chances to stop, wait and
- * pace between them. Tile sizes run to [SIZES]' largest: a shader pass costs little per draw,
- * so larger tiles waste less on margins.
+ * pace between them. The session's tile size is the most a tile may be; each page then takes
+ * the size up to it that leaves the least work ([pageTile]): a chain computes a pixel alike
+ * at any place in a tile of any size, so one size checked for seams vouches for the others.
  */
 internal object ShaderSessions {
     private const val TAG = "AiShaders"
@@ -28,10 +29,16 @@ internal object ShaderSessions {
     val SIZES = intArrayOf(1024, 768, 512, 384, 256, 192, 128, 96, 64)
 
     /**
-     * The largest tile by default: a quarter of a 1000 x 1500 page between chances to stop, its
-     * textures (an Anime4K UL chain's) about 60 MB, margins of 20 pixels keeping 85 % of it.
+     * The largest tile by default: its textures (an Anime4K UL chain's) about 60 MB, margins of
+     * 20 pixels keeping 85 % of it, a 1000 x 1500 page in about a dozen tiles.
      */
     const val DEFAULT_MAX = 512
+
+    /**
+     * What a tile costs beyond its pixels, as pixels: its upload, read-back and draw calls
+     * ([pageTile] weighs fewer, larger tiles against less overlap).
+     */
+    const val TILE_COST_PIXELS = 128 * 128
 
     /** Times the margin is widened for seams before the chain is refused. */
     const val MAX_WIDENINGS = 3
@@ -103,7 +110,9 @@ internal object ShaderSessions {
                 Log.i(TAG, "${chain.programs.size} passes, $size px tiles, $g: seams ${check.seams} (${SystemClock.elapsedRealtime() - t0} ms in all)")
                 if (check.seams.max <= SEAM_MAX) {
                     model.trim()
-                    return Opening(Session(model, g, size, fp16 = runtime.floatBytes == 8), null).also { kept = true }
+                    val geometry = g
+                    val pick = { w: Int, h: Int -> pageTile(w, h, geometry, size) }
+                    return Opening(Session(model, g, size, fp16 = runtime.floatBytes == 8, pick = pick), null).also { kept = true }
                 }
                 g = g.copy(context = g.margin + TilePlan.ALIGN)
             }
@@ -111,6 +120,30 @@ internal object ShaderSessions {
         } finally {
             if (!kept) model.close()
         }
+    }
+
+    /**
+     * The tile size, at most [maxSize], that covers a [width] x [height] page at [geometry]
+     * with the least work: tiles' pixels and [TILE_COST_PIXELS] each, ties to the larger tile.
+     * Sizes tried are those whose core is a whole multiple of [TilePlan.ALIGN], so none of a
+     * tile is wasted to rounding; [maxSize] when none fits.
+     */
+    fun pageTile(width: Int, height: Int, geometry: Geometry, maxSize: Int): Int {
+        val m = geometry.margin
+        var best = maxSize
+        var bestCost = Long.MAX_VALUE
+        var core = (maxSize - 2 * m) / TilePlan.ALIGN * TilePlan.ALIGN
+        while (core >= TilePlan.MIN_CORE) {
+            val size = core + 2 * m
+            val tiles = TilePlan.starts(width, core).size.toLong() * TilePlan.starts(height, core).size
+            val cost = tiles * (size.toLong() * size + TILE_COST_PIXELS)
+            if (cost < bestCost) {
+                best = size
+                bestCost = cost
+            }
+            core -= TilePlan.ALIGN
+        }
+        return best
     }
 
     /**

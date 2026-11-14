@@ -116,10 +116,10 @@ import kotlin.math.max
  *  [--ez save false] [--ez off false]`
  *
  * - shaders: per chain, how it opens on the GPU within the device's model memory (or why not):
- *   open time (compile, measure, seam check), geometry and tile size; per page size and tile
- *   size, `reps` synthetic pages after one warm-up, as `time` logs them; the page at the
- *   chosen size against the same page in 256 or 192 px tiles (`seams`: 0 when tiles join
- *   exactly); a page canceled after three tiles (`stopMs`). With `save`, each page and output
+ *   open time (compile, measure, seam check), geometry and largest tile; per page size and
+ *   tile size (by default the page's own, as the reader picks it), `reps` synthetic pages
+ *   after one warm-up, as `time` logs them; the page at its own tile against the same page in
+ *   256 or 192 px tiles (`seams`: 0 when tiles join exactly); a page canceled after three tiles (`stopMs`). With `save`, each page and output
  *   as PNG (`shader-page-WxH.png`, `shader-<id>-WxH.png`) for comparison with a PC reference.
  *   With `off`, the GPU path is then held off while the first chain opens again (`refusal`
  *   RUNTIME: its pages show without it), and back on after.
@@ -547,9 +547,11 @@ class AiCheckService : Service() {
                         val name = "shader-page-${w}x$h.png"
                         if (!File(out.parentFile, name).isFile) save(page, name)
                     }
-                    for (size in tiles.ifEmpty { listOf(s.size) }.filter { TilePlan.fits(it, g) }) {
+                    // 0: the session's own tile for the page, as the reader runs it.
+                    for (asked in tiles.ifEmpty { listOf(0) }.filter { it == 0 || TilePlan.fits(it, g) }) {
                         val waitedS = cool?.let { coolDown(it, COOL_TIME_MAX_S) } ?: 0L
-                        val session = Session(s.model, g, size)
+                        val session = if (asked == 0) s else Session(s.model, g, asked)
+                        val size = session.sizeFor(w, h)
                         val before = state()
                         val w0 = SystemClock.elapsedRealtime()
                         TileEngine.run(session, page, UNLIMITED).bitmap?.recycle()
@@ -575,9 +577,9 @@ class AiCheckService : Service() {
                     }
                     // Tiles of another size meet elsewhere: any difference is a seam.
                     val main = TileEngine.run(s, page, UNLIMITED).bitmap
-                    val other = listOf(256, 192).firstOrNull { it != s.size && TilePlan.fits(it, g) }
+                    val other = listOf(256, 192).firstOrNull { it != s.sizeFor(w, h) && TilePlan.fits(it, g) }
                     val small = other?.let { TileEngine.run(Session(s.model, g, it), page, UNLIMITED).bitmap }
-                    val line = JSONObject().put("shaderSeams", m.id).put("page", "${w}x$h").put("tile", s.size).put("against", other ?: JSONObject.NULL)
+                    val line = JSONObject().put("shaderSeams", m.id).put("page", "${w}x$h").put("tile", s.sizeFor(w, h)).put("against", other ?: JSONObject.NULL)
                     if (main != null && small != null) {
                         val d = diff(pixels(main), pixels(small))
                         line.put("maxDiff", d.max).put("over2", d.over2)

@@ -162,6 +162,33 @@ class ShaderSessionsTest {
     }
 
     @Test
+    fun eachPageTakesTheTileThatLeavesTheLeastWork() {
+        val g = Geometry(2, 0, 20)
+        // 3 x 4 tiles either way, but 416 px ones overlap less than 512 px ones.
+        assertEquals(416, ShaderSessions.pageTile(1000, 1500, g, 512))
+        assertEquals(472, ShaderSessions.pageTile(2000, 3000, g, 512))
+        assertEquals("one tile just large enough", 440, ShaderSessions.pageTile(300, 400, g, 512))
+        assertTrue("never past the most", ShaderSessions.pageTile(5000, 5000, g, 512) <= 512)
+        assertEquals("nothing fits: the most", 40, ShaderSessions.pageTile(100, 100, g, 40))
+    }
+
+    @Test
+    fun theEngineRunsEachPageAtItsOwnTile() {
+        val s = open(FakeShaders()).session!!
+        val model = s.model as FakeModel
+        val expected = ShaderSessions.pageTile(300, 400, s.geometry, s.size)
+        assertTrue("$expected", expected < s.size)
+        assertEquals(expected, s.sizeFor(300, 400))
+        model.inputs.clear()
+        val page = android.graphics.Bitmap.createBitmap(300, 400, android.graphics.Bitmap.Config.ARGB_8888).apply { eraseColor(0xFF336699.toInt()) }
+        val run = TileEngine.run(s, page)
+        assertTrue(run.bitmap != null)
+        assertEquals(1, run.stats.planned)
+        assertTrue(model.inputs.all { it.width == expected && it.height == expected })
+        assertEquals("a session without a pick keeps its size", 256, Session(model, s.geometry, 256).sizeFor(300, 400))
+    }
+
+    @Test
     fun tooLittleMemoryIsRefused() {
         val runtime = FakeShaders(make = { FakeModel(scale = 2) })
         val o = open(runtime, memory = 4L * 1024)

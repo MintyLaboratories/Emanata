@@ -268,6 +268,23 @@ class ReaderAiTest {
     }
 
     @Test
+    fun aPageEnhancedForASharpenedTargetIsFoundStoredForIt() {
+        install(upscale)
+        thresholds = AiThresholds(upscalePct = 50)
+        val sharp = target.copy(scaling = target.scaling.copy(sharpen = 50))
+        val b = bookOf(60, 90)
+        assertFalse((ai.enhance(b, 0, sharp, 40, 60) { false } as AiOutcome.Done).stored)
+        assertTrue(ai.stored(b, 0, sharp, 40, 60))
+        assertTrue("sharpening keys no processed page", ai.stored(b, 0, target, 40, 60))
+        val fresh = reader()
+        try {
+            assertTrue("before the page's size is read", fresh.stored(b, 0, sharp, 40, 60))
+        } finally {
+            fresh.close()
+        }
+    }
+
+    @Test
     fun thresholdsMovedIsHeardOnce() {
         assertFalse(ai.thresholdsMoved())
         thresholds = AiThresholds(cleanupPct = 60)

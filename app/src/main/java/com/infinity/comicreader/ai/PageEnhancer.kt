@@ -174,11 +174,13 @@ class ReaderAi internal constructor(
 
     /**
      * The key [store] keeps page [index] of [source] by, made by [chain] for [target] at
-     * [width] x [height] running [run] ([runKeyOf]); null for a book without a key.
+     * [width] x [height] running [run] ([runKeyOf]); null for a book without a key. Models
+     * make pages unsharpened, so [target]'s sharpening is left out.
      */
     private fun keyOf(source: PageSource, index: Int, target: Target, width: Int, height: Int, chain: List<AiModel>, run: String): String? =
         source.bookKey?.let {
-            ProcessedStore.keyOf(it, HiddenPages.bookIndex(source, index), source.pageName(index), target, width, height, AiChain.signature(chain), run)
+            val plain = target.copy(scaling = target.scaling.unsharpened)
+            ProcessedStore.keyOf(it, HiddenPages.bookIndex(source, index), source.pageName(index), plain, width, height, AiChain.signature(chain), run)
         }
 
     /** Where page [index] of [source] is, for [sizes]. */

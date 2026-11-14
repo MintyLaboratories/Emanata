@@ -141,7 +141,8 @@ internal object TileTiming {
      * tiles are: smallest first, each run once untimed and once timed, stopping at a size that
      * fails, takes past [TILE_MS], or would take past [SKIP_PAST] times that at the pace of the
      * size below; then [RUNS] - 1 more rounds over those within [TILE_MS], each size again run
-     * once untimed before it is timed (a page's tiles all have one shape). [trying] hears each
+     * once untimed before it is timed (a page's tiles all have one shape), its buffers freed
+     * before another size runs (as after a page). [trying] hears each
      * size before its first run. A size that fails is timed no more; failing in the first round,
      * it ends the climb.
      * Throws [CancellationException] once [canceled], checked before every run.
@@ -158,9 +159,15 @@ internal object TileTiming {
         val runs = LinkedHashMap<Int, MutableList<Long>>()
         val peaks = HashMap<Int, Long>()
         val failed = HashSet<Int>()
+        var shape = 0
         fun run(size: Int): Long? {
             if (canceled()) throw CancellationException("AI work canceled while timing tiles")
             val out = TilePlan.outputSize(size, geometry)
+            // A new size: the last one's buffers freed first, so the GPU holds one size's at a time and each peak is its own.
+            if (size != shape) {
+                if (shape != 0) model.trim()
+                shape = size
+            }
             model.takePeak()
             val t0 = clock()
             val ran = model.run(src, Box(0, 0, size, size), dst, Box(0, 0, out, out), 0, 0) != null

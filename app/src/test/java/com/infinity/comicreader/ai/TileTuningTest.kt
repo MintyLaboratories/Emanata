@@ -120,7 +120,7 @@ class TileTuningTest {
         assertEquals(round + listOf(512, 512) + round + round, m.widths)
         assertEquals(listOf(42L, 42L, 42L), t.first { it.size == 192 }.ms)
         assertEquals(listOf(185L), t.first { it.size == 512 }.ms)
-        assertEquals(1, m.inner.trims.get())
+        assertEquals("freed before each other size, and at the end", m.widths.zipWithNext().count { (a, b) -> a != b } + 1, m.inner.trims.get())
         assertEquals(384, TileTiming.rank(t, Geometry(2, 0, 5)).first())
     }
 

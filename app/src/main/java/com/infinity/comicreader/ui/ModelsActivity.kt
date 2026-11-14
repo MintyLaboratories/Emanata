@@ -88,18 +88,19 @@ object ModelText {
      */
     fun blurb(context: Context, m: AiModel): String {
         val lines = ArrayList<String>(2)
-        val what = when (m) {
-            is CatalogModel -> m.blurb
-            is ShaderModel -> m.blurb
-            is UserModel -> null
-        }
-        what?.let { b ->
-            val text = context.getString(blurbText(b))
+        description(context, m)?.let { text ->
             lines += if (m.id == ModelCatalog.DEFAULT_UPSCALE) context.getString(R.string.ai_model_default, text) else text
         }
         if (m.slow) lines += context.getString(R.string.ai_model_slow, m.pageSeconds)
         return lines.joinToString("\n")
     }
+
+    /** What [m] does, best fit first, then its biggest downside; null where unknown (an imported model). */
+    fun description(context: Context, m: AiModel): String? = when (m) {
+        is CatalogModel -> m.blurb
+        is ShaderModel -> m.blurb
+        is UserModel -> null
+    }?.let { context.getString(blurbText(it)) }
 
     private fun blurbText(b: ModelBlurb): Int = when (b) {
         ModelBlurb.WAIFU2X -> R.string.ai_blurb_waifu2x
@@ -109,6 +110,7 @@ object ModelText {
         ModelBlurb.DESCREEN_V2 -> R.string.ai_blurb_descreen_v2
         ModelBlurb.DESCREEN_V3 -> R.string.ai_blurb_descreen_v3
         ModelBlurb.ARTIFACT_REMOVAL -> R.string.ai_blurb_artifact_removal
+        ModelBlurb.LSDIR -> R.string.ai_blurb_lsdir
         ModelBlurb.CUNNY -> R.string.ai_blurb_cunny
         ModelBlurb.ARTCNN -> R.string.ai_blurb_artcnn
         ModelBlurb.ANIME4K_A -> R.string.ai_blurb_anime4k_a

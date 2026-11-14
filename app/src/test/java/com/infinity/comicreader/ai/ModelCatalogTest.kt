@@ -230,8 +230,7 @@ class ModelCatalogTest {
         assertEquals(ModelBlurb.ARTIFACT_REMOVAL, blurbOf("opencomic-ai-artifact-removal-compact-v2"))
         assertEquals(ModelBlurb.CUNNY, blurbOf("cunny-8x32-ds-rp"))
         assertEquals(ModelBlurb.ARTCNN, blurbOf("artcnn-c4f32-ds"))
-        // No description was given for it: it shows as slow alone.
-        assertNull(blurbOf("4x-lsdir-compact-c3"))
+        assertEquals(ModelBlurb.LSDIR, blurbOf("4x-lsdir-compact-c3"))
     }
 
     @Test

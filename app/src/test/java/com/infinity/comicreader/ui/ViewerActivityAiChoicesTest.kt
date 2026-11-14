@@ -85,7 +85,7 @@ class ViewerActivityAiChoicesTest {
         val (dialog, items) = upscaleChoices(open())
         val fast = Models.offered(AiStep.UPSCALE, keepSimple = true, current = null)
         assertEquals(listOf(context.getString(R.string.ai_none)) + fast.map { ModelText.entry(context, it).toString() }, items)
-        assertTrue(items[1], items[1].endsWith("\nFaithful, fast and reliable clarity improvement (default)"))
+        assertTrue(items[1], items[1].endsWith("\nFaithful, fast and reliable clarity improvement; does little for blurry art or jagged lines (default)"))
         // The default runs, so it is checked.
         assertEquals(1, dialog.listView.checkedItemPosition)
         dialog.dismiss()

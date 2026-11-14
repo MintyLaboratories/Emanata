@@ -30,21 +30,21 @@ class ModelTextTest {
 
     @Test
     fun eachUpscalerSaysWhatItDoes() {
-        assertEquals("Faithful, fast and reliable clarity improvement (default)", blurb("waifu2x-upconv7-2x"))
+        assertEquals("Faithful, fast and reliable clarity improvement; does little for blurry art or jagged lines (default)", blurb("waifu2x-upconv7-2x"))
         for (n in 0..3) {
-            assertEquals("May mildly blur textures yet sharpen detail; a balance between faithful and enhanced", blurb("waifu2x-upconv7-2x-denoise$n"))
+            assertEquals("A balance between faithful and enhanced, sharpening detail; may mildly blur textures", blurb("waifu2x-upconv7-2x-denoise$n"))
         }
         for (x in 2..4) {
-            assertEquals("Slower and sharper; may remove noise, ringing and similar flaws in the original", blurb("opencomic-ai-upscale-${x}x-compact-v2"))
+            assertEquals("Sharper; may remove noise, ringing and similar flaws in the original; slower than waifu2x", blurb("opencomic-ai-upscale-${x}x-compact-v2"))
         }
         assertEquals(
             "Sharpest restoration, for vintage or low-resolution webcomics; unfaithful: reimagines fine detail, texture and color\nSlow (~11 s per page)",
             blurb("realesr-animevideov3-x2")
         )
         assertTrue(blurb("realesr-animevideov3-x4").endsWith("\nSlow (~14 s per page)"))
-        assertEquals("Fast and cleaner than ArtCNN, for soft or lightly compressed pages; less faithful than waifu2x", blurb("cunny-8x32-ds-rp"))
-        assertEquals("Fast and sharper than CuNNy, for soft or lightly compressed pages; less faithful than waifu2x", blurb("artcnn-c4f32-ds"))
-        assertEquals("Slow (~14 s per page)", blurb("4x-lsdir-compact-c3"))
+        assertEquals("For soft or lightly compressed pages, cleaner than ArtCNN; less faithful than waifu2x", blurb("cunny-8x32-ds-rp"))
+        assertEquals("For soft or lightly compressed pages, sharper than CuNNy; less faithful than waifu2x", blurb("artcnn-c4f32-ds"))
+        assertEquals("Best for restoring heavily artifacted or blurry art; slow, may reimagine detail\nSlow (~14 s per page)", blurb("4x-lsdir-compact-c3"))
     }
 
     @Test
@@ -59,19 +59,27 @@ class ModelTextTest {
 
     @Test
     fun everyShaderLevelSaysWhatItsFamilyDoes() {
-        for (m in ShaderCatalog.all) assertTrue(m.id, ModelText.blurb(context, m).startsWith("Fast GPU "))
-        assertEquals("Fast GPU restore and upscale; up to sharp lines; sharpens compression artifacts too", ModelText.blurb(context, ShaderCatalog.byId("anime4k-a-s")!!))
+        // Best fit, then biggest downside.
+        for (m in ShaderCatalog.all) assertEquals(m.id, 2, ModelText.blurb(context, m).split("; ").size)
+        assertEquals("For clean art that needs sharper lines; sharpens compression artifacts too", ModelText.blurb(context, ShaderCatalog.byId("anime4k-a-s")!!))
         assertEquals(ModelText.blurb(context, ShaderCatalog.byId("anime4k-c-ul")!!), ModelText.blurb(context, ShaderCatalog.byId("anime4k-c-m")!!))
     }
 
     @Test
     fun cleanupModelsSayWhatTheyDo() {
         assertEquals("For scanned print with visible dot patterns; softens clean art", blurb("opencomic-ai-descreen-hard-compact-v2"))
-        assertEquals(
-            "For scanned print with visible dot patterns; softens clean art; slower, smoother tone\nSlow (~15 s per page)",
-            blurb("opencomic-ai-descreen-hard-fast-v3-256")
-        )
+        assertEquals("For scanned print with visible dot patterns\nSlow (~15 s per page)", blurb("opencomic-ai-descreen-hard-fast-v3-256"))
         assertEquals("For blocky, heavily compressed pages; no visible effect on clean ones", blurb("opencomic-ai-artifact-removal-compact-v2"))
+    }
+
+    @Test
+    fun aDescriptionIsWhatTheModelDoesWithoutMarks() {
+        val waifu2x = ModelCatalog.byId(ModelCatalog.DEFAULT_UPSCALE)!!
+        assertEquals("Faithful, fast and reliable clarity improvement; does little for blurry art or jagged lines", ModelText.description(context, waifu2x))
+        val lsdir = ModelCatalog.byId("4x-lsdir-compact-c3")!!
+        assertEquals("Best for restoring heavily artifacted or blurry art; slow, may reimagine detail", ModelText.description(context, lsdir))
+        // Every catalog model and shader chain has one.
+        for (m in ModelCatalog.all + ShaderCatalog.all) assertTrue(m.id, !ModelText.description(context, m).isNullOrEmpty())
     }
 
     @Test

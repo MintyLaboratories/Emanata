@@ -74,6 +74,7 @@ enum class ModelBlurb {
     DESCREEN_V2,
     DESCREEN_V3,
     ARTIFACT_REMOVAL,
+    LSDIR,
     CUNNY,
     ARTCNN,
     ANIME4K_A,
@@ -272,7 +273,8 @@ object ModelCatalog {
             "4x-lsdir-compact-c3", "LSDIR Compact C3 4×", AiStep.UPSCALE, 4, ModelSource.HELAMAN,
             file("upscale/models/4xLSDIRCompactC3.param", 2767, "6e3795fb5b6c68b2c39822e78bf83b575c918f96e9db6c36934a79e7d491d5e1"),
             file("upscale/models/4xLSDIRCompactC3.bin", 1247368, "692aa5e70c86522ce2d72b94f372751339a2fee65f515d06da5d496d8cf93667"),
-            pageMs = 14_000
+            pageMs = 14_000,
+            blurb = ModelBlurb.LSDIR
         ),
     )
 

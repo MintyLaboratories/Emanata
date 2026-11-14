@@ -191,7 +191,7 @@ class SettingsAiTest {
         val pref = fragment.findPreference<ListPreference>(Prefs.aiKey(AiStep.UPSCALE))!!
         val simple = pref.entryValues.map { it.toString() }
         assertEquals(listOf(Prefs.AI_NONE) + Models.offered(AiStep.UPSCALE, keepSimple = true, current = null).map { it.id }, simple)
-        assertTrue(pref.entries[1].toString().endsWith("Faithful, fast and reliable clarity improvement (default)"))
+        assertTrue(pref.entries[1].toString().endsWith("Faithful, fast and reliable clarity improvement; does little for blurry art or jagged lines (default)"))
         val keep = fragment.findPreference<Preference>("pref_keep_simple")!!
         keep.performClick()
         idle()

@@ -117,7 +117,7 @@ class ModelsActivityTest {
             assertEquals(m.id, blurb.text.isNotEmpty(), blurb.visibility == View.VISIBLE)
         }
         val waifu2x = rows[ModelCatalog.all.indexOfFirst { it.id == ModelCatalog.DEFAULT_UPSCALE }]
-        assertEquals("Faithful, fast and reliable clarity improvement (default)", waifu2x.findViewById<TextView>(R.id.blurb).text.toString())
+        assertEquals("Faithful, fast and reliable clarity improvement; does little for blurry art or jagged lines (default)", waifu2x.findViewById<TextView>(R.id.blurb).text.toString())
     }
 
     @Test

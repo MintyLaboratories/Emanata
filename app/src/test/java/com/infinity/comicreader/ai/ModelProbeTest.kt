@@ -162,6 +162,52 @@ class ModelProbeTest {
     }
 
     @Test
+    fun theSwapChangesOnlyPixelsWithinReach() {
+        for (across in listOf(true, false)) {
+            val worst = ModelProbe.swap(FakeModel(scale = 2, reach = 5), 128, 2, 0, ModelProbe.Pattern.NOISE, across)
+            assertTrue(worst.take(5).any { it > 0 })
+            assertTrue(worst.drop(5).all { it == 0 })
+        }
+    }
+
+    /** A 1x model mixing in a faint share (at most 2 codes) of the pixel 12 to the right. */
+    private val faint = object : TileModel {
+        override val onGpu = true
+
+        override fun run(src: Bitmap, input: Box, dst: Bitmap?, crop: Box?, dx: Int, dy: Int): Dims? {
+            val n = input.width
+            if (dst != null) {
+                val c = crop!!
+                fun at(px: Int, py: Int) = src.getPixel((input.x + px).coerceIn(0, src.width - 1), (input.y + py).coerceIn(0, src.height - 1))
+                for (y in 0 until c.height) for (x in 0 until c.width) {
+                    val a = at(c.x + x, c.y + y)
+                    val b = at(minOf(c.x + x + 12, n - 1), c.y + y)
+                    fun ch(s: Int) = (((a shr s) and 0xFF) * 254 + ((b shr s) and 0xFF) * 2) / 256
+                    dst.setPixel(dx + x, dy + y, (0xFF shl 24) or (ch(16) shl 16) or (ch(8) shl 8) or ch(0))
+                }
+            }
+            return Dims(n, input.height)
+        }
+
+        override fun trim() {}
+
+        override fun close() {}
+    }
+
+    @Test
+    fun anExactProbeFindsContextTooFaintForTheTolerance() {
+        assertEquals("hidden by the tolerance", Geometry(1, 0, ModelProbe.SAFETY), ModelProbe.measure(faint))
+        assertEquals(Geometry(1, 0, 12 + ModelProbe.SAFETY), ModelProbe.probeExact(faint).geometry)
+    }
+
+    @Test
+    fun anExactProbeMeasuresAsTheCutDoesForPlainModels() {
+        for (scale in 1..3) assertEquals(Geometry(scale, 0, 3 + ModelProbe.SAFETY), ModelProbe.probeExact(FakeModel(scale = scale, reach = 3)).geometry)
+        assertEquals(Geometry(1, 0, 40 + ModelProbe.SAFETY), ModelProbe.probeExact(FakeModel(scale = 1, reach = 40)).geometry)
+        assertThrows(ModelProbe.Unfit::class.java) { ModelProbe.probeExact(FakeModel(scale = 1, reach = 100, taps = intArrayOf(8, 40, 100))) }
+    }
+
+    @Test
     fun probesRunOnStripsNoWiderThanATile() {
         val model = FakeModel(scale = 1, reach = 40)
         ModelProbe.measure(model)

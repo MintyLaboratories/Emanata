@@ -8,10 +8,11 @@ import java.io.IOException
 /**
  * Opens shader chains ([ShaderModel]) as [Session]s for the tile engine, as [Sessions] opens
  * ncnn models: the files parsed ([ShaderHooks]) and planned ([ShaderChain]), the passes
- * compiled ([ShaderRuntime.open]), the chain measured on the GPU ([ModelProbe.probe]: a chain
- * computes each pixel alike wherever it sits in a tile, so no CPU reference is needed), then
- * checked for seams at the tile size chosen ([ModelProbe.verify]), a margin wider by
- * [TilePlan.ALIGN] up to [MAX_WIDENINGS] times when they show.
+ * compiled ([ShaderRuntime.open]), the chain measured on the GPU ([ModelProbe.probeExact]: a
+ * chain computes each pixel alike wherever it sits in a tile, so its whole reach is found
+ * exactly and no CPU reference is needed), then checked for seams at the tile size chosen
+ * ([ModelProbe.verify]: at most [SEAM_MAX] codes), a margin wider by [TilePlan.ALIGN] up to
+ * [MAX_WIDENINGS] times when they show.
  *
  * Tiles, not whole pages: the passes keep many full-size float textures alive at once (an
  * Anime4K UL chain about twenty at 8 bytes a pixel, plus the enlarged image), so a whole page
@@ -34,6 +35,13 @@ internal object ShaderSessions {
 
     /** Times the margin is widened for seams before the chain is refused. */
     const val MAX_WIDENINGS = 3
+
+    /**
+     * The most two tilings of a page may differ by, in codes: with the whole reach in the margin
+     * only the GPU's rounding of sampling positions, which differ by a pixel's place in its
+     * tile, is left.
+     */
+    const val SEAM_MAX = 1
 
     /**
      * The chain of [texts] (shader files in order, read when opening) enlarging [scale] times,
@@ -72,7 +80,7 @@ internal object ShaderSessions {
         var kept = false
         try {
             val probed = try {
-                ModelProbe.probe(model, canceled, memoryBytes)
+                ModelProbe.probeExact(model, canceled, memoryBytes)
             } catch (e: ModelProbe.Unfit) {
                 Log.w(TAG, "cannot measure: ${e.message}")
                 return Opening.refused(e.reason, e.bytes, memoryBytes)
@@ -93,7 +101,7 @@ internal object ShaderSessions {
                 }
                 val check = ModelProbe.verify(model, model, g, size, size, canceled)
                 Log.i(TAG, "${chain.programs.size} passes, $size px tiles, $g: seams ${check.seams} (${SystemClock.elapsedRealtime() - t0} ms in all)")
-                if (check.seams.same) {
+                if (check.seams.max <= SEAM_MAX) {
                     model.trim()
                     return Opening(Session(model, g, size, fp16 = runtime.floatBytes == 8), null).also { kept = true }
                 }

@@ -92,6 +92,25 @@ object ModelProbe {
     internal fun measure(model: TileModel, canceled: () -> Boolean = { false }): Geometry = probe(model, canceled).geometry
 
     /**
+     * [probe] for a model that computes every output pixel alike wherever it sits in a tile of
+     * a given size (a shader chain: no rounding by place), so its whole reach can be found
+     * exactly: strips whose last quarter is replaced by its negative ([swap]), the same size as
+     * the strips they are compared with, change no output pixel past the reach by even one
+     * code, however faint the far context's share. The context is that reach and [SAFETY].
+     */
+    internal fun probeExact(model: TileModel, canceled: () -> Boolean = { false }, budgetBytes: Long = Long.MAX_VALUE): Probed {
+        val m = Checked(model, canceled, budgetBytes)
+        val (scale, trim) = scaleAndTrim(m)
+        var size = FIRST_PROBE
+        while (true) {
+            val reach = Pattern.entries.maxOf { p -> listOf(true, false).maxOf { across -> reach(swap(m, size, scale, trim, p, across), 0) } }
+            if (reach < size / 4) return Probed(Geometry(scale, trim, reach + SAFETY), m.perPixel)
+            if (size >= MAX_PROBE) throw Unfit(ModelRefusal.REACH, "Output changes ${size / 4} or more pixels away from a change: tiles would show")
+            size *= 2
+        }
+    }
+
+    /**
      * [model]'s geometry and working memory, no run taking more than [budgetBytes]; throws
      * [Unfit] when it fails to run, maps tiles in a way tiles cannot use or would need more
      * memory, and [CancellationException] once [canceled], checked before every run.
@@ -212,9 +231,48 @@ object ModelProbe {
         }
     }
 
-    /** Input pixels next to the cut whose output changed past [TOLERANCE]: one past the furthest such distance. */
-    internal fun reach(worst: IntArray): Int {
-        for (d in worst.indices.reversed()) if (worst[d] > TOLERANCE) return d + 1
+    /**
+     * The largest output change, in codes, at each distance (in input pixels) from where a
+     * [size] x [STRIP] strip of [pattern] ([across]: a row, else a column) changes: [model]'s
+     * output for the strip against its output for the strip with its last quarter negated.
+     * Index 0 is the column or row next to the change; only pixels before it are compared.
+     */
+    internal fun swap(model: TileModel, size: Int, scale: Int, trim: Int, pattern: Pattern, across: Boolean = true): IntArray {
+        val part = size - size / 4
+        val thin = min(size, STRIP)
+        val w = if (across) size else thin
+        val h = if (across) thin else size
+        val src = content(w, h, pattern)
+        val other = src.copy(Bitmap.Config.ARGB_8888, true)
+        try {
+            val px = pixels(other)
+            for (y in 0 until h) for (x in 0 until w) {
+                if ((if (across) x else y) >= part) px[y * w + x] = px[y * w + x] xor 0xFFFFFF
+            }
+            other.setPixels(px, 0, w, 0, 0, w, h)
+            val a = output(model, src, w, h, scale, trim)
+            val b = output(model, other, w, h, scale, trim)
+            val ow = w * scale - 2 * trim
+            val oh = h * scale - 2 * trim
+            val worst = IntArray(part)
+            for (y in 0 until oh) for (x in 0 until ow) {
+                val along = (if (across) x else y) + trim
+                if (along >= part * scale) continue
+                val d = differ(a[y * ow + x], b[y * ow + x])
+                if (d == 0) continue
+                val from = part - 1 - along / scale
+                worst[from] = max(worst[from], d)
+            }
+            return worst
+        } finally {
+            other.recycle()
+            src.recycle()
+        }
+    }
+
+    /** Input pixels next to the cut whose output changed past [tolerance] codes: one past the furthest such distance. */
+    internal fun reach(worst: IntArray, tolerance: Int = TOLERANCE): Int {
+        for (d in worst.indices.reversed()) if (worst[d] > tolerance) return d + 1
         return 0
     }
 

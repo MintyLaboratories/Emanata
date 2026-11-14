@@ -57,7 +57,7 @@ class ModelPickerTest {
     /** The ratings table's rows: label to stars. */
     private fun ratings(row: View): List<Pair<String, Int>> = row.findViewById<TableLayout>(R.id.ai_model_ratings).children
         .filterIsInstance<TableRow>()
-        .map { r -> (r.getChildAt(0) as TextView).text.toString() to (r.getChildAt(1) as StarsView).halves }.toList()
+        .map { r -> (r.getChildAt(0) as TextView).text.toString() to ((r.getChildAt(1) as ViewGroup).getChildAt(0) as StarsView).halves }.toList()
 
     @Test
     fun rowsHaveShortNamesWithoutTheStep() {
@@ -175,9 +175,9 @@ class ModelPickerTest {
         assertEquals("Offers up to, at UL:", head.text.toString())
         assertEquals(1, table.indexOfChild(head))
         val desharp = table.children.filterIsInstance<TableRow>().first { (it.getChildAt(0) as TextView).text == "Desharp" }
-        assertEquals(ModelRatings.WORSE, (desharp.getChildAt(1) as StarsView).halves)
-        assertEquals(1, (desharp.getChildAt(1) as StarsView).count)
-        assertEquals("makes it worse", (desharp.getChildAt(2) as TextView).text.toString())
+        assertEquals(ModelRatings.WORSE, ((desharp.getChildAt(1) as ViewGroup).getChildAt(0) as StarsView).halves)
+        assertEquals(1, ((desharp.getChildAt(1) as ViewGroup).getChildAt(0) as StarsView).count)
+        assertEquals("makes it worse", ((desharp.getChildAt(1) as ViewGroup).getChildAt(1) as TextView).text.toString())
         assertEquals("Desharp: makes it worse. Cleans up sharpening artifacts", desharp.contentDescription.toString())
         // Unpicked, its slider stands at the largest level.
         val slider = slider(row)

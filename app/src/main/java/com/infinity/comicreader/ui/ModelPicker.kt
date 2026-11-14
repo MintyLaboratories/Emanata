@@ -221,19 +221,23 @@ class ModelPicker(
                 TextViewCompat.setTextAppearance(this, com.google.android.material.R.style.TextAppearance_Material3_BodyMedium)
                 setPaddingRelative(0, 0, context.resources.getDimensionPixelSize(R.dimen.ai_model_name_start), 0)
             })
-            addView(StarsView(context).apply { this.halves = halves })
-            if (halves == ModelRatings.WORSE) {
-                addView(TextView(context).apply {
-                    text = context.getString(R.string.ai_rating_worse)
-                    TextViewCompat.setTextAppearance(this, com.google.android.material.R.style.TextAppearance_Material3_BodySmall)
-                    setPaddingRelative(context.resources.getDimensionPixelSize(R.dimen.ai_model_row_end), 0, 0, 0)
-                })
-            }
+            // Stars and, for a rating that makes things worse, its words, in one cell: right after the star.
+            addView(LinearLayout(context).apply {
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                addView(StarsView(context).apply { this.halves = halves })
+                if (halves == ModelRatings.WORSE) {
+                    addView(TextView(context).apply {
+                        text = context.getString(R.string.ai_rating_worse)
+                        TextViewCompat.setTextAppearance(this, com.google.android.material.R.style.TextAppearance_Material3_BodySmall)
+                        setPaddingRelative(context.resources.getDimensionPixelSize(R.dimen.ai_model_row_end), 0, 0, 0)
+                    })
+                }
+            })
             val padding = context.resources.getDimensionPixelSize(R.dimen.ai_model_rating_padding)
             setPadding(0, padding, 0, padding)
             contentDescription = listOfNotNull(said(label, halves), hint).joinToString(". ")
             ViewCompat.setScreenReaderFocusable(this, true)
-            for (i in 0 until childCount) getChildAt(i).importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            for (i in 0 until childCount) getChildAt(i).importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
             if (hint != null) TooltipCompat.setTooltipText(this, hint)
         }
     }

@@ -35,6 +35,7 @@ import com.infinity.comicreader.ai.ModelImports
 import com.infinity.comicreader.ai.ModelMemory
 import com.infinity.comicreader.ai.ModelStore
 import com.infinity.comicreader.ai.PageLimits
+import com.infinity.comicreader.ai.ReaderAi
 import com.infinity.comicreader.ai.Session
 import com.infinity.comicreader.ai.Sessions
 import com.infinity.comicreader.ai.ShaderCatalog
@@ -527,7 +528,7 @@ class AiCheckService : Service() {
             val files = store.shaderFiles(m)!!
             val memory = ModelMemory.of(this)
             val t0 = SystemClock.elapsedRealtime()
-            val opening = ShaderSessions.attempt(GlesShaders, { files.map { it.readText() } }, m.scale, memory)
+            val opening = ShaderSessions.attempt(GlesShaders, { files.map { it.readText() } }, m.scale, memory, cache = ReaderAi.programsIn(this))
             val openMs = SystemClock.elapsedRealtime() - t0
             val s = opening.session
             if (s == null) {

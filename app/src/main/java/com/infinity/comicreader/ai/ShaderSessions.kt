@@ -2,6 +2,7 @@ package com.infinity.comicreader.ai
 
 import android.os.SystemClock
 import android.util.Log
+import java.io.File
 import java.io.IOException
 
 /**
@@ -39,7 +40,8 @@ internal object ShaderSessions {
      * opened through [runtime]; tiles at most [maxTile] unless the margins call for more, their
      * textures within a [TileSizing.GPU_SHARE] share of [memoryBytes]. Refused when the GPU
      * cannot run chains, the files do not parse or compile, the chain does not measure as a
-     * [scale] times enlargement or reaches too far, or no tile fits. Throws
+     * [scale] times enlargement or reaches too far, or no tile fits. Compiled passes are kept
+     * in [cache] for the next open ([ShaderRuntime.open]). Throws
      * [java.util.concurrent.CancellationException] once [canceled], checked between runs.
      */
     fun attempt(
@@ -48,10 +50,13 @@ internal object ShaderSessions {
         scale: Int,
         memoryBytes: Long = Long.MAX_VALUE,
         maxTile: Int = DEFAULT_MAX,
+        cache: File? = null,
         canceled: () -> Boolean = { false }
-    ): Opening = TileEngine.exclusive(canceled) { openAlone(runtime, texts, scale, memoryBytes, maxTile, canceled) }
+    ): Opening = TileEngine.exclusive(canceled) { openAlone(runtime, texts, scale, memoryBytes, maxTile, cache, canceled) }
 
-    private fun openAlone(runtime: ShaderRuntime, texts: () -> List<String>, scale: Int, memoryBytes: Long, maxTile: Int, canceled: () -> Boolean): Opening {
+    private fun openAlone(
+        runtime: ShaderRuntime, texts: () -> List<String>, scale: Int, memoryBytes: Long, maxTile: Int, cache: File?, canceled: () -> Boolean
+    ): Opening {
         if (!runtime.available) return Opening.refused(ModelRefusal.RUNTIME)
         val chain = try {
             ShaderChain.parse(texts(), scale).also { it.plan(ModelProbe.FIRST_PROBE, ModelProbe.FIRST_PROBE) }
@@ -63,7 +68,7 @@ internal object ShaderSessions {
             return Opening.refused(ModelRefusal.NOT_LOADED)
         }
         val t0 = SystemClock.elapsedRealtime()
-        val model = runtime.open(chain) ?: return Opening.refused(ModelRefusal.NOT_LOADED)
+        val model = runtime.open(chain, cache) ?: return Opening.refused(ModelRefusal.NOT_LOADED)
         var kept = false
         try {
             val probed = try {

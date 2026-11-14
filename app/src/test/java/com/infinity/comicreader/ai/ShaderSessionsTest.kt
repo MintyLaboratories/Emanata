@@ -9,6 +9,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import java.io.File
 
 /** A runtime handing out [FakeModel]s for the chains it is asked to open ([make]; null: they do not compile). */
 internal class FakeShaders(
@@ -19,9 +20,11 @@ internal class FakeShaders(
 ) : ShaderRuntime {
     val chains = ArrayList<ShaderChain>()
     val opened = ArrayList<TileModel>()
+    val caches = ArrayList<File?>()
 
-    override fun open(chain: ShaderChain): TileModel? {
+    override fun open(chain: ShaderChain, cache: File?): TileModel? {
         chains += chain
+        caches += cache
         return make(chain)?.also { opened += it }
     }
 }
@@ -66,6 +69,40 @@ class ShaderSessionsTest {
         val model = s.model as FakeModel
         assertEquals("its textures freed once open", 1, model.trims.get())
         assertTrue(!model.closed)
+    }
+
+    @Test
+    fun compiledPassesGoToTheCacheAskedFor() {
+        val runtime = FakeShaders()
+        val dir = File("build/tmp/shader-cache-test")
+        ShaderSessions.attempt(runtime, { listOf(FakeShaderFiles.UPSCALER) }, 2, cache = dir).session!!.close()
+        open(runtime)
+        assertEquals(listOf(dir, null), runtime.caches)
+    }
+
+    @Test
+    fun cacheNamesFollowTheSourcesAndTheDriver() {
+        val gpu = listOf("GPU", "8", "16384", "16", "OpenGL ES 3.2 V@1")
+        val name = GlesShaders.cacheName(gpu, listOf("a", "b"))
+        assertTrue(name, name.matches(Regex("[0-9a-f]{32}\\.programs")))
+        assertEquals(name, GlesShaders.cacheName(gpu, listOf("a", "b")))
+        assertTrue(name != GlesShaders.cacheName(gpu, listOf("a", "c")))
+        assertTrue(name != GlesShaders.cacheName(gpu, listOf("ab")))
+        assertTrue("a driver update compiles again", name != GlesShaders.cacheName(gpu.dropLast(1) + "OpenGL ES 3.2 V@2", listOf("a", "b")))
+    }
+
+    @Test
+    fun onlyTheMostRecentlyUsedCachesStay() {
+        val dir = File("build/tmp/shader-prune-test").apply { deleteRecursively(); mkdirs() }
+        val files = (0 until GlesShaders.CACHED + 3).map { i -> File(dir, "$i.programs").apply { writeText("x"); setLastModified(1_000_000L * (i + 1)) } }
+        val other = File(dir, "keep.txt").apply { writeText("x") }
+        GlesShaders.prune(files[0])
+        assertTrue("just used", files[0].isFile)
+        assertEquals(GlesShaders.CACHED, dir.listFiles { f -> f.name.endsWith(".programs") }!!.size)
+        assertTrue(files.last().isFile)
+        assertTrue(!files[1].isFile && !files[2].isFile)
+        assertTrue(other.isFile)
+        dir.deleteRecursively()
     }
 
     @Test

@@ -18,6 +18,7 @@ import com.infinity.comicreader.reader.Target
 import com.infinity.comicreader.reader.Urgency
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.asCoroutineDispatcher
+import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 
@@ -73,7 +74,9 @@ class ReaderAi internal constructor(
     /** The display sizes at which the chain's models run, as set now. */
     private val thresholds: () -> AiThresholds = { AiThresholds() },
     /** What runs shader chains ([ShaderModel]); [runtime] runs the rest. */
-    private val shaders: ShaderRuntime = GlesShaders
+    private val shaders: ShaderRuntime = GlesShaders,
+    /** Where shader chains keep their compiled passes; null: compiled at every open. */
+    private val programs: File? = null
 ) : PageEnhancer, AutoCloseable {
 
     override val worker: CoroutineDispatcher get() = WORKER
@@ -317,7 +320,7 @@ class ReaderAi internal constructor(
         shortOfMemoryAt[m.id]?.let { if (clock() - it < AiQueue.BACKOFF_MS) return null }
         val o = when (m) {
             is ShaderModel -> models.shaderFiles(m)?.let { files ->
-                ShaderSessions.attempt(shaders, { files.map { it.readText() } }, m.scale, memoryBytes = memory(), canceled = canceled)
+                ShaderSessions.attempt(shaders, { files.map { it.readText() } }, m.scale, memoryBytes = memory(), cache = programs, canceled = canceled)
             }
             else -> models.files(m)?.let { files -> Sessions.attempt(runtime, files, threads, memoryBytes = memory(), canceled = canceled) }
         } ?: Opening.refused(ModelRefusal.NOT_LOADED)
@@ -448,6 +451,9 @@ class ReaderAi internal constructor(
             return copy
         }
 
+        /** Where shader chains keep their compiled passes in [context]: a cache, made again when cleared. */
+        fun programsIn(context: Context): File = File(context.cacheDir, "shader-programs")
+
         /** The reader's AI processing in [context], with the library's per-book picks. */
         fun of(context: Context): ReaderAi {
             val app = context.applicationContext
@@ -459,7 +465,8 @@ class ReaderAi internal constructor(
                 AiConditions.gate(app),
                 { m -> if (m is FileSet && ModelDownloads.mayStartBySelf(ModelDownloads.state.value, m.id)) ModelDownloads.start(models, m, optional = true) },
                 memory = { ModelMemory.of(app) },
-                thresholds = { prefs.aiThresholds }
+                thresholds = { prefs.aiThresholds },
+                programs = programsIn(app)
             )
         }
     }

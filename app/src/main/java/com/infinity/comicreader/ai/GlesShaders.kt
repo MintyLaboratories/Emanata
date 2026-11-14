@@ -3,6 +3,8 @@ package com.infinity.comicreader.ai
 import android.graphics.Bitmap
 import android.util.Log
 import com.infinity.comicreader.reader.LibPixels
+import java.io.File
+import java.security.MessageDigest
 
 /** What runs shader chains: [GlesShaders] on the device; JVM tests stand in their own. */
 internal interface ShaderRuntime {
@@ -15,8 +17,11 @@ internal interface ShaderRuntime {
     /** The longest texture side the GPU allows. */
     val maxSide: Int
 
-    /** [chain]'s passes compiled, as a model running tiles ([TileModel]); null when one does not compile. */
-    fun open(chain: ShaderChain): TileModel?
+    /**
+     * [chain]'s passes compiled, as a model running tiles ([TileModel]); null when one does not
+     * compile. Given a [cache] folder, compiled programs are kept there for the next open.
+     */
+    fun open(chain: ShaderChain, cache: File? = null): TileModel?
 }
 
 /**
@@ -28,7 +33,7 @@ internal interface ShaderRuntime {
 internal object GlesShaders : ShaderRuntime {
     private const val TAG = "GlesShaders"
 
-    /** "renderer, float bytes, longest side, texture units", found once: finding it starts the context. */
+    /** "renderer, float bytes, longest side, texture units, GL version", found once: finding it starts the context. */
     private val info: List<String>? by lazy { if (LibPixels.loaded) runCatching { nInit() }.getOrNull()?.split('\t') else null }
 
     override val available: Boolean get() = info != null && nUsable()
@@ -45,11 +50,36 @@ internal object GlesShaders : ShaderRuntime {
         if (LibPixels.loaded) nTurnOff()
     }
 
-    override fun open(chain: ShaderChain): TileModel? {
+    /** Program caches kept in a cache folder, the most recently used first: about 1 to 4 MB each. */
+    const val CACHED = 8
+
+    override fun open(chain: ShaderChain, cache: File?): TileModel? {
         if (!available) return null
-        val handle = nOpen(chain.sources.toTypedArray(), chain.programs.map { it.bindings.size }.toIntArray())
+        val sources = chain.sources
+        val file = cache?.let { dir -> runCatching { dir.mkdirs(); File(dir, cacheName(info.orEmpty(), sources)) }.getOrNull() }
+        val handle = nOpen(sources.toTypedArray(), chain.programs.map { it.bindings.size }.toIntArray(), file?.path)
+        if (file != null) prune(file)
         return if (handle == 0L) null else Opened(handle, chain)
     }
+
+    /** The cache file name of [sources] compiled by the GPU [info] describes: a hash of both. */
+    internal fun cacheName(info: List<String>, sources: List<String>): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        for (s in info + sources) {
+            digest.update(s.toByteArray())
+            digest.update(0)
+        }
+        return digest.digest().take(16).joinToString("") { "%02x".format(it) } + CACHE_SUFFIX
+    }
+
+    /** Marks [used] as just used and deletes the caches beside it past the [CACHED] most recent. */
+    internal fun prune(used: File) {
+        if (used.isFile) used.setLastModified(System.currentTimeMillis())
+        val all = used.parentFile?.listFiles { f -> f.name.endsWith(CACHE_SUFFIX) }.orEmpty()
+        for (f in all.sortedByDescending { it.lastModified() }.drop(CACHED)) f.delete()
+    }
+
+    private const val CACHE_SUFFIX = ".programs"
 
     private class Opened(private var handle: Long, private val chain: ShaderChain) : TileModel {
         override val onGpu: Boolean = true
@@ -93,7 +123,7 @@ internal object GlesShaders : ShaderRuntime {
     private external fun nTurnOff()
 
     @JvmStatic
-    private external fun nOpen(sources: Array<String>, binds: IntArray): Long
+    private external fun nOpen(sources: Array<String>, binds: IntArray, cache: String?): Long
 
     @JvmStatic
     private external fun nRun(

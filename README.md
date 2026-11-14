@@ -1089,8 +1089,11 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   tile), checked for seams at its tile size (up to 512 by default, its
   textures within a quarter of the model memory), and refused when its files
   use what the runner lacks (compute passes, embedded textures, parameters,
-  other stages) or do not compile. A GPU run past 10 s, or three failed runs
-  in a row, turn the shader path off for the process: its pages then show
+  other stages) or do not compile. Compiled passes are kept as program
+  binaries in the app's cache (the eight chains used last, each keyed by its
+  sources and the GPU driver), so a chain opened again loads in milliseconds
+  instead of compiling for up to seconds. A GPU run past 10 s, or three failed
+  runs in a row, turn the shader path off for the process: its pages then show
   without it.
 - Imported models (`ModelImports`, `ModelCheck`, `UserModels`): the picked
   files are told apart by name (else by the `.param`'s first line), copied

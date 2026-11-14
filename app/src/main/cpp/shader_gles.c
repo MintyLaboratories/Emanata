@@ -5,15 +5,17 @@
 //   allows: the reader's frames go first. Intermediate textures are RGBA16F (bilinear, edges
 //   clamped), else RGBA32F where 16-bit float targets are not renderable and 32-bit ones are
 //   (with linear filtering); neither, and the runner is unusable.
-// - A chain's programs compile once (sh_open); its plan (Kotlin's ShaderPlan.encode) comes
-//   with every run: texture slots by size, then the draws. Slot 0 is the input tile, 8-bit;
-//   the result is drawn once more into an 8-bit texture (rounded, clamped) and read back.
-// - Slot textures stay from run to run while their sizes hold, until sh_trim frees them;
-//   programs stay until sh_close.
-// - One run at a time: sh_lock is held for each call, the context current only meanwhile (a
+// - A chain's programs compile when it opens (nOpen), or load from the program binaries an
+//   earlier open wrote to its cache file under the same driver (GL_VERSION). Its plan
+//   (Kotlin's ShaderPlan.encode) comes with every run: texture slots by size, then the draws.
+//   Slot 0 is the input tile, 8-bit; the result is drawn once more into an 8-bit texture
+//   (rounded, clamped) and read back.
+// - Slot textures stay from run to run while their sizes hold, until nTrim frees them;
+//   programs stay until nClose.
+// - One call at a time: sh_lock is held for each, the context current only meanwhile (a
 //   context the calling thread had current gets it back).
 // - A run the GPU has not done within WAIT_LIMIT_NS, or FAILURES_OFF runs failed in a row,
-//   turn the runner off for the process (sh_usable says so), as resample_gpu.c does.
+//   turn the runner off for the process (nUsable says so), as resample_gpu.c does.
 
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
@@ -58,6 +60,7 @@ static GLuint vertex_shader;
 static GLuint encode_program;
 static GLint encode_src;
 static char renderer[128];
+static char gl_version[128];
 
 // What the calling thread had current, given back at sh_end.
 typedef struct {
@@ -135,6 +138,7 @@ static GLuint link_program(const char * fragment, const char * label)
     const GLuint p = glCreateProgram();
     glAttachShader(p, vertex_shader);
     glAttachShader(p, fs);
+    glProgramParameteri(p, GL_PROGRAM_BINARY_RETRIEVABLE_HINT, GL_TRUE);
     glLinkProgram(p);
     glDetachShader(p, fs);
     glDeleteShader(fs);
@@ -253,6 +257,8 @@ static int sh_begin(was_current * w)
         glGenVertexArrays(1, &vao);
         const char * r = (const char *)glGetString(GL_RENDERER);
         snprintf(renderer, sizeof(renderer), "%s", r != NULL ? r : "?");
+        const char * v = (const char *)glGetString(GL_VERSION);
+        snprintf(gl_version, sizeof(gl_version), "%s", v != NULL ? v : "?");
         if (glGetError() != GL_NO_ERROR) return -1;
         __android_log_print(ANDROID_LOG_INFO, TAG, "ready: %s, %s, max side %d, %d units%s", renderer,
                             float_format == GL_RGBA16F ? "RGBA16F" : "RGBA32F", max_side, max_units, low ? ", low priority" : "");
@@ -347,15 +353,15 @@ static void count(int failed, int hung)
     }
 }
 
-// "renderer\tfloat bytes\tmax side\tunits", starting the context; NULL when unusable.
+// "renderer\tfloat bytes\tmax side\tunits\tGL version", starting the context; NULL when unusable.
 EXPORT jstring JNICALL Java_com_infinity_comicreader_ai_GlesShaders_nInit(JNIEnv * env, jclass clazz)
 {
     (void)clazz;
     pthread_mutex_lock(&sh_lock);
     was_current w;
     const int ok = sh_begin(&w) == 0;
-    char info[200];
-    if (ok) snprintf(info, sizeof(info), "%s\t%d\t%d\t%d", renderer, float_bytes, max_side, max_units);
+    char info[340];
+    if (ok) snprintf(info, sizeof(info), "%s\t%d\t%d\t%d\t%s", renderer, float_bytes, max_side, max_units, gl_version);
     sh_end(&w);
     pthread_mutex_unlock(&sh_lock);
     return ok ? (*env)->NewStringUTF(env, info) : NULL;
@@ -389,14 +395,113 @@ static void close_chain(chain * c)
     free(c);
 }
 
-// A chain of the fragment shaders `sources`, one program per pass; 0 when one does not compile.
-EXPORT jlong JNICALL Java_com_infinity_comicreader_ai_GlesShaders_nOpen(JNIEnv * env, jclass clazz, jobjectArray sources, jintArray binds)
+// Looks up p's uniforms and points its samplers at units 0 on; p->program in use.
+static void locate(pass * p)
+{
+    p->out = glGetUniformLocation(p->program, "emanata_out");
+    p->target = glGetUniformLocation(p->program, "emanata_target");
+    p->input = glGetUniformLocation(p->program, "emanata_input");
+    for (int b = 0; b < p->binds; b++) {
+        char name[24];
+        snprintf(name, sizeof(name), "emanata_t%d", b);
+        glUniform1i(glGetUniformLocation(p->program, name), b);
+        snprintf(name, sizeof(name), "emanata_s%d", b);
+        p->size[b] = glGetUniformLocation(p->program, name);
+        snprintf(name, sizeof(name), "emanata_p%d", b);
+        p->pt[b] = glGetUniformLocation(p->program, name);
+    }
+}
+
+// A program cache file: CACHE_MAGIC, the driver's GL_VERSION (length, then bytes), the
+// program count, then per program its binary format, length and bytes.
+#define CACHE_MAGIC 0x48534d45u
+
+static int read_u32(FILE * f, uint32_t * v)
+{
+    return fread(v, 4, 1, f) == 1 ? 0 : -1;
+}
+
+// Loads c's n programs from the cache at path, made by this driver; 0 when all link.
+static int load_cache(chain * c, int n, const char * path)
+{
+    FILE * f = fopen(path, "rb");
+    if (f == NULL) return -1;
+    const char * version = (const char *)glGetString(GL_VERSION);
+    uint32_t magic = 0, len = 0, count = 0;
+    int ok = read_u32(f, &magic) == 0 && magic == CACHE_MAGIC && read_u32(f, &len) == 0 && version != NULL && len == strlen(version);
+    if (ok) {
+        char * v = malloc(len + 1);
+        ok = v != NULL && fread(v, 1, len, f) == len && memcmp(v, version, len) == 0;
+        free(v);
+    }
+    ok = ok && read_u32(f, &count) == 0 && count == (uint32_t)n;
+    for (int i = 0; ok && i < n; i++) {
+        uint32_t format = 0, size = 0;
+        ok = read_u32(f, &format) == 0 && read_u32(f, &size) == 0 && size > 0 && size < (64u << 20);
+        void * data = ok ? malloc(size) : NULL;
+        ok = data != NULL && fread(data, 1, size, f) == size;
+        if (ok) {
+            pass * p = &c->passes[i];
+            p->program = glCreateProgram();
+            glProgramBinary(p->program, format, data, (GLsizei)size);
+            GLint linked = 0;
+            glGetProgramiv(p->program, GL_LINK_STATUS, &linked);
+            ok = linked != 0;
+        }
+        free(data);
+    }
+    fclose(f);
+    if (!ok) {
+        for (int i = 0; i < n; i++) {
+            if (c->passes[i].program != 0) glDeleteProgram(c->passes[i].program);
+            c->passes[i].program = 0;
+        }
+        clear_errors();
+        return -1;
+    }
+    return 0;
+}
+
+// Writes c's n programs to the cache at path, through a temporary file; best effort.
+static void save_cache(const chain * c, int n, const char * path)
+{
+    const char * version = (const char *)glGetString(GL_VERSION);
+    if (version == NULL) return;
+    char tmp[1024];
+    if (snprintf(tmp, sizeof(tmp), "%s.part", path) >= (int)sizeof(tmp)) return;
+    FILE * f = fopen(tmp, "wb");
+    if (f == NULL) return;
+    const uint32_t head[2] = { CACHE_MAGIC, (uint32_t)strlen(version) };
+    int ok = fwrite(head, 4, 2, f) == 2 && fwrite(version, 1, head[1], f) == head[1];
+    const uint32_t count = (uint32_t)n;
+    ok = ok && fwrite(&count, 4, 1, f) == 1;
+    for (int i = 0; ok && i < n; i++) {
+        GLint size = 0;
+        glGetProgramiv(c->passes[i].program, GL_PROGRAM_BINARY_LENGTH, &size);
+        void * data = size > 0 ? malloc((size_t)size) : NULL;
+        GLenum format = 0;
+        GLsizei got = 0;
+        if (data != NULL) glGetProgramBinary(c->passes[i].program, size, &got, &format, data);
+        const uint32_t entry[2] = { format, (uint32_t)got };
+        ok = data != NULL && got > 0 && glGetError() == GL_NO_ERROR && fwrite(entry, 4, 2, f) == 2 && fwrite(data, 1, (size_t)got, f) == (size_t)got;
+        free(data);
+    }
+    ok = fclose(f) == 0 && ok;
+    if (!ok || rename(tmp, path) != 0) remove(tmp);
+    clear_errors();
+}
+
+// A chain of the fragment shaders `sources`, one program per pass binding binds[i] textures;
+// 0 when one does not compile. With `cache` (a file path), the programs load from it when this
+// driver made it, else compile and are written to it.
+EXPORT jlong JNICALL Java_com_infinity_comicreader_ai_GlesShaders_nOpen(JNIEnv * env, jclass clazz, jobjectArray sources, jintArray binds, jstring cache)
 {
     (void)clazz;
     const int n = (*env)->GetArrayLength(env, sources);
     if (n < 1 || (*env)->GetArrayLength(env, binds) != n) return 0;
     jint * bound = (*env)->GetIntArrayElements(env, binds, NULL);
     if (bound == NULL) return 0;
+    const char * path = cache != NULL ? (*env)->GetStringUTFChars(env, cache, NULL) : NULL;
     chain * c = calloc(1, sizeof(*c));
     if (c != NULL) c->passes = calloc((size_t)n, sizeof(pass));
     pthread_mutex_lock(&sh_lock);
@@ -407,42 +512,32 @@ EXPORT jlong JNICALL Java_com_infinity_comicreader_ai_GlesShaders_nOpen(JNIEnv *
     if (ok) {
         c->count = n;
         glGenFramebuffers(1, &c->fbo);
-    }
-    for (int i = 0; ok && i < n; i++) {
-        pass * p = &c->passes[i];
-        p->binds = bound[i];
-        if (p->binds < 0 || p->binds > MAX_BINDS || p->binds > max_units) {
-            __android_log_print(ANDROID_LOG_WARN, TAG, "pass %d binds %d textures, over %d", i, p->binds, max_units < MAX_BINDS ? max_units : MAX_BINDS);
-            ok = 0;
-            break;
+        for (int i = 0; i < n; i++) {
+            c->passes[i].binds = bound[i];
+            if (bound[i] < 0 || bound[i] > MAX_BINDS || bound[i] > max_units) {
+                __android_log_print(ANDROID_LOG_WARN, TAG, "pass %d binds %d textures, over %d", i, bound[i], max_units < MAX_BINDS ? max_units : MAX_BINDS);
+                ok = 0;
+            }
         }
+    }
+    const int cached = ok && path != NULL && load_cache(c, n, path) == 0;
+    for (int i = 0; ok && !cached && i < n; i++) {
         jstring s = (jstring)(*env)->GetObjectArrayElement(env, sources, i);
         const char * text = s != NULL ? (*env)->GetStringUTFChars(env, s, NULL) : NULL;
         char label[32];
         snprintf(label, sizeof(label), "pass %d", i);
-        p->program = text != NULL ? link_program(text, label) : 0;
+        c->passes[i].program = text != NULL ? link_program(text, label) : 0;
         if (text != NULL) (*env)->ReleaseStringUTFChars(env, s, text);
         if (s != NULL) (*env)->DeleteLocalRef(env, s);
-        if (p->program == 0) {
-            ok = 0;
-            break;
-        }
-        glUseProgram(p->program);
-        p->out = glGetUniformLocation(p->program, "emanata_out");
-        p->target = glGetUniformLocation(p->program, "emanata_target");
-        p->input = glGetUniformLocation(p->program, "emanata_input");
-        for (int b = 0; b < p->binds; b++) {
-            char name[24];
-            snprintf(name, sizeof(name), "emanata_t%d", b);
-            glUniform1i(glGetUniformLocation(p->program, name), b);
-            snprintf(name, sizeof(name), "emanata_s%d", b);
-            p->size[b] = glGetUniformLocation(p->program, name);
-            snprintf(name, sizeof(name), "emanata_p%d", b);
-            p->pt[b] = glGetUniformLocation(p->program, name);
-        }
+        if (c->passes[i].program == 0) ok = 0;
+    }
+    for (int i = 0; ok && i < n; i++) {
+        glUseProgram(c->passes[i].program);
+        locate(&c->passes[i]);
     }
     if (ok && glGetError() != GL_NO_ERROR) ok = 0;
     glUseProgram(0);
+    if (ok && !cached && path != NULL) save_cache(c, n, path);
     if (!ok && c != NULL && sh_state == 1) {
         close_chain(c);
         c = NULL;
@@ -453,9 +548,12 @@ EXPORT jlong JNICALL Java_com_infinity_comicreader_ai_GlesShaders_nOpen(JNIEnv *
         }
         c = NULL;
     }
-    if (c != NULL) __android_log_print(ANDROID_LOG_INFO, TAG, "compiled %d passes in %.1f ms", n, (double)(now_ns() - t0) / 1e6);
+    if (c != NULL) {
+        __android_log_print(ANDROID_LOG_INFO, TAG, "%s %d passes in %.1f ms", cached ? "loaded" : "compiled", n, (double)(now_ns() - t0) / 1e6);
+    }
     sh_end(&w);
     pthread_mutex_unlock(&sh_lock);
+    if (path != NULL) (*env)->ReleaseStringUTFChars(env, cache, path);
     (*env)->ReleaseIntArrayElements(env, binds, bound, JNI_ABORT);
     return (jlong)(intptr_t)c;
 }

@@ -1070,19 +1070,24 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   192, 256, 384 and 512 px tiles where they fit (smallest first, in three
   rounds taken in turn, so speed drifting over minutes hits every size alike;
   each timed run follows an untimed one of its size, as a page's tiles follow
-  tiles of their shape) and takes the size whose tiles cost the least per
-  pixel kept, among those whose tiles ended within 150 ms at the median and
-  300 ms at worst (tiles are where a run stops for a cancel or a page turn)
-  and within the tile memory budget; costs within 5% go to the smaller size.
-  That size then passes the same check and is kept per GPU, precision and
-  model files. When pages later run fast enough that the next larger size
-  would end its tiles within 150 ms (a choice timed while the device was
-  slow), the sizes are timed again at the next open, three times at most in
-  all. A size that
-  fails to run (an allocation past the GPU's memory), at the check or on a
-  page, or that the app ended on while trying it first, is remembered as too
-  large: the model opens again in smaller tiles. Imported models keep the
-  192 px cap. A model no GPU setup
+  tiles of their shape, and the last size's buffers are freed first; runs
+  wait while the reader turns a page or zooms, and a run it interrupted is
+  timed again) and takes the size whose tiles cost the least per pixel kept,
+  among those whose tiles ended within 150 ms at the median and 300 ms at
+  worst (tiles are where a run stops for a cancel or a page turn) and within
+  the tile memory budget; costs within 5% go to the smaller size. That size
+  then passes the same check and is kept per GPU, precision, model files and
+  OS build; a precision where no size passes is kept as such, so it is not
+  timed again. When pages later run fast enough that a larger size left out
+  for its tiles' time would now end them within 150 ms (a choice timed while
+  the device was slow), or a size past 192 px runs past 300 ms a tile for
+  three pages in a row (the device runs slower now), the sizes are timed
+  again at the next open, three times at most in all. A size that fails to
+  run (an allocation past the GPU's memory), at the check or on a page, or
+  that the app ended on while trying it first, is remembered as too large:
+  the model opens again in smaller tiles. A failure of the default size too,
+  or of the CPU reference, is not blamed on the larger size. Imported models
+  keep the 192 px cap. A model no GPU setup
   passes, or every model without a usable Vulkan device, runs on the CPU: one
   thread per large core, in fp32 (the CPU's fp16 kernels differ by tile shape
   enough to show as seams). Opening is cancelable between runs. Between tiles a

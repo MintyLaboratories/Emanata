@@ -620,7 +620,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
             // Keep it simple hides the size slider: sizes set away from the defaults show here instead.
             val sizes = if (prefs.keepSimple) AiSizeText.changed(context, prefs.aiThresholds) else null
             val chains = ChainKind.entries.associateWith { AiChain.chosen(prefs, it) }
-            ai?.summary = if (prefs.aiEnabled) listOfNotNull(ModelText.chains(context, chains), sizes).joinToString("\n")
+            ai?.summary = if (prefs.aiEnabled) listOfNotNull(ModelText.chains(context, chains, loads), sizes).joinToString("\n")
             else getString(R.string.pref_ai_desc)
             manager?.summary = getString(R.string.ai_models_summary, installed.size, ModelText.size(context, used))
             for ((_, step, pref) in pickers) {

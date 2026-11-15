@@ -27,6 +27,7 @@ import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import com.infinity.comicreader.R
 import com.infinity.comicreader.ai.AiChain
+import com.infinity.comicreader.ai.AiLoad
 import com.infinity.comicreader.ai.AiModel
 import com.infinity.comicreader.ai.AiStep
 import com.infinity.comicreader.ai.CatalogModel
@@ -150,14 +151,19 @@ object ModelText {
 
     /**
      * AI processing's description, then the models each default chain of [chains] runs, in
-     * order, and a warning when together one's models would run past a page's time ([AiChain.slow]).
+     * order, and a warning when together one's models would run past a page's time
+     * ([AiChain.slow]) by its [loads] (its load bar's page time; else its catalog times).
      */
-    fun chains(context: Context, chains: Map<ChainKind, List<AiModel>>): String {
+    fun chains(
+        context: Context,
+        chains: Map<ChainKind, List<AiModel>>,
+        loads: Map<ChainKind, Long> = chains.mapValues { AiLoad.pageMs(it.value) }
+    ): String {
         val lines = listOf(context.getString(R.string.pref_ai_desc)) + chains.map { (kind, chain) ->
             val names = if (chain.isEmpty()) context.getString(R.string.ai_none) else chain.joinToString(" → ") { it.name }
             context.getString(R.string.ai_chain_of, kind(context, kind), names)
         }
-        return (if (chains.values.any(AiChain::slow)) lines + context.getString(R.string.ai_chain_slow) else lines).joinToString("\n")
+        return (if (loads.values.any(AiChain::slow)) lines + context.getString(R.string.ai_chain_slow) else lines).joinToString("\n")
     }
 
     /** Who made [m], from [source], its license, where it is from and where it downloads from; then, for a conversion made for the app, what it is. */

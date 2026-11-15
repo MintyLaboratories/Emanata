@@ -3915,8 +3915,9 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
             button.visibility = if (shown) View.VISIBLE else View.GONE
             aiLabels[step]?.let { view.findViewById<View>(it).visibility = button.visibility }
         }
+        val load = AiLoad.pageMs(picks.models, aiTimes::estimate)
         view.findViewById<AiLoadBar>(R.id.ai_load_bar).apply {
-            pageMs = AiLoad.pageMs(picks.models, aiTimes::estimate)
+            pageMs = load
             // Dimmed while the chain shown does not run, as in Settings.
             isEnabled = own != null || prefs.aiEnabled
         }
@@ -3937,7 +3938,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         val notes = listOfNotNull(
             hint,
             getString(R.string.ai_kind_auto_hint).takeIf { auto },
-            getString(R.string.ai_chain_slow).takeIf { running && AiChain.slow(picks.models) }
+            getString(R.string.ai_chain_slow).takeIf { running && AiChain.slow(load) }
         ) + if (running) refused(picks.models) else emptyList()
         view.findViewById<TextView>(R.id.sheet_ai_hint).text = notes.joinToString("\n")
     }

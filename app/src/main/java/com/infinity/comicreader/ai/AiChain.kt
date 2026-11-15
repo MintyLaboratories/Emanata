@@ -66,9 +66,10 @@ object AiChain {
     fun pageMs(models: List<AiModel>): Long = models.sumOf { it.pageMs }
 
     /**
-     * True when [models] together take longer than [ModelCatalog.MAX_PAGE_MS] on the reference
-     * tablet: each page takes long and costs battery, and a slower device may run past even the
-     * longer time the reader gives such a chain ([ReaderAi.limitsFor]) and show it without AI.
+     * True for a chain that takes [pageMs] a page, past [ModelCatalog.MAX_PAGE_MS] (where the
+     * load bar turns red, [AiLoad.HEAVY_MS]): each page takes long and costs battery, and the
+     * reader may run past even the longer time it gives such a chain ([ReaderAi.limitsFor]) and
+     * show it without AI.
      */
-    fun slow(models: List<AiModel>): Boolean = pageMs(models) > ModelCatalog.MAX_PAGE_MS
+    fun slow(pageMs: Long): Boolean = pageMs > ModelCatalog.MAX_PAGE_MS
 }

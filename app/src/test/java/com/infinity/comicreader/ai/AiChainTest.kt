@@ -81,11 +81,13 @@ class AiChainTest {
         val half = ModelCatalog.MAX_PAGE_MS / 2
         val rest = ModelCatalog.MAX_PAGE_MS - half
         assertEquals(0L, AiChain.pageMs(emptyList()))
-        assertFalse(AiChain.slow(emptyList()))
+        assertFalse(AiChain.slow(AiChain.pageMs(emptyList())))
         assertEquals(ModelCatalog.MAX_PAGE_MS, AiChain.pageMs(listOf(m.copy(pageMs = half), m.copy(pageMs = rest))))
-        assertFalse(AiChain.slow(listOf(m.copy(pageMs = half), m.copy(pageMs = rest))))
-        assertTrue(AiChain.slow(listOf(m.copy(pageMs = half), m.copy(pageMs = rest + 1))))
-        assertFalse(AiChain.slow(listOf(ModelCatalog.byId(ModelCatalog.DEFAULT_UPSCALE)!!)))
+        assertFalse(AiChain.slow(ModelCatalog.MAX_PAGE_MS))
+        // Slow where the load bar turns red.
+        assertEquals(AiLoad.HEAVY_MS, ModelCatalog.MAX_PAGE_MS)
+        assertTrue(AiChain.slow(AiChain.pageMs(listOf(m.copy(pageMs = half), m.copy(pageMs = rest + 1)))))
+        assertFalse(AiChain.slow(AiChain.pageMs(listOf(ModelCatalog.byId(ModelCatalog.DEFAULT_UPSCALE)!!))))
     }
 
     @Test

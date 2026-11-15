@@ -12,6 +12,8 @@ import androidx.preference.TwoStatePreference
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.R
 import com.infinity.comicreader.ai.AiChain
+import com.infinity.comicreader.ai.AiLoad
+import com.infinity.comicreader.ai.AiModel
 import com.infinity.comicreader.ai.AiStep
 import com.infinity.comicreader.ai.AiThresholds
 import com.infinity.comicreader.ai.CatalogModel
@@ -331,7 +333,7 @@ class SettingsAiTest {
         val slowest = AiStep.entries.map { step -> ModelCatalog.forStep(step).maxBy { it.pageMs } }
         val upscale = ModelCatalog.byId(ModelCatalog.DEFAULT_UPSCALE)!!
         for (m in slowest + upscale) install(m)
-        assertTrue(AiChain.slow(slowest))
+        assertTrue(AiChain.slow(AiChain.pageMs(slowest)))
         prefs.aiEnabled = true
         for (m in slowest) prefs.setAiModel(m.step, m.id)
         // The advanced steps show while Keep it simple hides their pickers.
@@ -435,6 +437,30 @@ class SettingsAiTest {
             val again = settings()
             awaitLoad(again.findPreference("ai_chain_other")!!, 1_234)
             awaitLoad(again.findPreference("ai_chain_manga")!!, Math.round(descreen.pageMs * 1_234.0 / upscale.pageMs) + 1_234)
+        } finally {
+            times.clear()
+        }
+    }
+
+    @Test
+    fun theSlowWarningFollowsTheTimesLearnedHereAsTheLoadBarDoes() {
+        val times = PageTimes.of(context)
+        times.clear()
+        try {
+            Prefs(context).aiEnabled = true
+            val upscale = ModelCatalog.byId(ModelCatalog.DEFAULT_UPSCALE)!!
+            val chains = ChainKind.entries.associateWith { listOf<AiModel>(upscale) }
+            val slow = context.getString(R.string.ai_chain_slow)
+            // Fast by the catalog; slow as learned on this device, its bar red.
+            assertFalse(ModelText.chains(context, chains).contains(slow))
+            val learned = AiLoad.HEAVY_MS + 1
+            times.keep(upscale, learned)
+            val fragment = settings()
+            awaitLoad(fragment.findPreference("ai_chain_other")!!, learned)
+            val ai = fragment.findPreference<Preference>(Prefs.KEY_AI)!!
+            awaitSummary(ai, ModelText.chains(context, chains, ChainKind.entries.associateWith { learned }))
+            assertTrue(ai.summary.toString().endsWith(slow))
+            assertEquals(AiLoad.Level.HEAVY, AiLoad.level(learned))
         } finally {
             times.clear()
         }

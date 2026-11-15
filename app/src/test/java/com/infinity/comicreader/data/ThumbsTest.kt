@@ -204,7 +204,7 @@ class ThumbsTest {
     @Test
     fun focusesOfOtherVersionsAreDeleted() {
         val old = File(context.cacheDir, Thumbs.focusFile("${SmartCrop.RULES - 1}-${TextDetector.ID}")).apply { writeText("") }
-        val gone = File(context.cacheDir, Thumbs.focusFile("${SmartCrop.RULES - 1}-mlkit-latin-v2-lines1")).apply { writeText("") }
+        val gone = File(context.cacheDir, Thumbs.focusFile("${SmartCrop.RULES - 1}-other-detector")).apply { writeText("") }
         textAt(0.85, 0.92, id = TextDetector.ID)
         Thumbs.load(context, cover(), "UTF-8", 120, 60, CoverStyle(ThumbFit.FILL, CropAnchor.SMART))!!
         assertFalse(old.exists())

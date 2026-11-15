@@ -865,7 +865,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   reader's sheet and Models alike. Artifact removal and descreen are advanced settings;
   the switch's summary shows both chains, hidden steps included, and warns
   when one's models together may run past a page's time. A chosen model
-  downloads at once, and one cut short with the app resumes as Settings open
+  downloads at once (a slider's level as the picker closes, levels passed
+  over on the way and fetched for the pages shown deleted), and one cut
+  short with the app resumes as Settings open
   (Models shows each with its size, license and progress, and deletes them;
   models an update drops are deleted at the next start). **Import a model…**
   in Models takes your own ncnn model (a `.param` and its `.bin`, converted

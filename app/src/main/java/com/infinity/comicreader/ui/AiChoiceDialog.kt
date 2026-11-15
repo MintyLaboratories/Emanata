@@ -12,12 +12,21 @@ import com.infinity.comicreader.data.Prefs
 /**
  * A Settings AI step's picker ([ModelPicker]) for its [ListPreference]: a tap on a row picks
  * and closes, as in [androidx.preference.ListPreferenceDialogFragmentCompat]; a level picked
- * on a slider is stored at once, the picker kept open. Rebuilt (on rotation or a window
+ * on a slider is stored at once, the picker kept open, and stored again as the picker closes,
+ * so only the level picked last downloads ([settling]). Rebuilt (on rotation or a window
  * resize), it keeps its open info panels and scroll position.
  */
 class AiChoiceDialog : PreferenceDialogFragmentCompat() {
     private var picked: String? = null
     private var picker: ModelPicker? = null
+
+    /** The value a slider stored last, stored again as the picker closes; null: none. */
+    private var slid: String? = null
+
+    /** True while a slider's pick is stored: the preference's listener leaves its download for the picker closing. */
+    var settling: Boolean = false
+        private set
+
     private var saved: Bundle? = null
 
     private val list get() = preference as ListPreference
@@ -25,6 +34,7 @@ class AiChoiceDialog : PreferenceDialogFragmentCompat() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         saved = savedInstanceState
+        slid = savedInstanceState?.getString(STATE_SLID)
     }
 
     override fun onPrepareDialogBuilder(builder: AlertDialog.Builder) {
@@ -42,7 +52,13 @@ class AiChoiceDialog : PreferenceDialogFragmentCompat() {
                 // Closes as the positive button would, so onDialogClosed takes the pick.
                 dialog?.let { onClick(it, DialogInterface.BUTTON_POSITIVE); it.dismiss() }
             } else {
-                store(value)
+                settling = true
+                try {
+                    store(value)
+                } finally {
+                    settling = false
+                }
+                slid = value
             }
         }
         picker = p
@@ -57,13 +73,13 @@ class AiChoiceDialog : PreferenceDialogFragmentCompat() {
             outState.putStringArrayList(STATE_OPEN, it.expandedKeys)
             outState.putInt(STATE_Y, it.scrollY)
         }
+        outState.putString(STATE_SLID, slid)
     }
 
     override fun onDialogClosed(positiveResult: Boolean) {
         // A level still settling on a slider is picked as the picker closes.
         picker?.flush()
-        if (!positiveResult) return
-        picked?.let(::store)
+        (if (positiveResult) picked else slid)?.let(::store)
     }
 
     private fun store(value: String) {
@@ -76,6 +92,7 @@ class AiChoiceDialog : PreferenceDialogFragmentCompat() {
         private const val ARG_STEP = "step"
         private const val STATE_OPEN = "open"
         private const val STATE_Y = "y"
+        private const val STATE_SLID = "slid"
 
         /** The picker of [step]'s models for the [ListPreference] keyed [key]. */
         fun of(key: String, step: AiStep) = AiChoiceDialog().apply {

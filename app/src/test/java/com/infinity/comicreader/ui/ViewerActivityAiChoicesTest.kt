@@ -14,6 +14,7 @@ import com.infinity.comicreader.R
 import com.infinity.comicreader.ai.AiStep
 import com.infinity.comicreader.ai.ChainKind
 import com.infinity.comicreader.ai.ModelCatalog
+import com.infinity.comicreader.ai.ModelDownloads
 import com.infinity.comicreader.ai.ModelStore
 import com.infinity.comicreader.ai.OfflineDownloads
 import com.infinity.comicreader.ai.PageTimes
@@ -139,6 +140,20 @@ class ViewerActivityAiChoicesTest {
         val shown = again.first { ModelPickerTest.name(it) == "Anime4K B (clean) 2×" }
         assertEquals(3f, ModelPickerTest.slider(shown).value)
         assertTrue(ModelPickerTest.checked(shown))
+    }
+
+    @Test
+    fun theLevelPickedLastDownloadsAsThePickerCloses() {
+        val viewer = open()
+        val (dialog, rows) = upscaleChoices(viewer)
+        val family = rows.first { ModelPickerTest.name(it) == "Anime4K B (clean) 2×" }
+        ModelPickerTest.slide(family, 1)
+        ModelPickerTest.slide(family, 3)
+        idle()
+        assertEquals("anime4k-b-vl", Prefs(context).aiModel(AiStep.UPSCALE))
+        dialog.dismiss()
+        idle()
+        assertTrue(ModelDownloads.state.value.states.containsKey("anime4k-b-vl"))
     }
 
     private fun kindShown(sheet: ReaderSheet) = sheet.view<MaterialButtonToggleGroup>(R.id.sheet_ai_kind).checkedButtonId

@@ -14,7 +14,7 @@ class OfflineDownloads : ExternalResource() {
     }
 
     override fun after() {
-        for (m in ModelCatalog.all) ModelDownloads.cancel(m.id)
+        for (m in ModelCatalog.sets) ModelDownloads.cancel(m.id)
         ModelDownloads.client = { ModelDownloader.defaultClient }
     }
 

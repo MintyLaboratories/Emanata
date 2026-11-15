@@ -584,7 +584,8 @@ class SettingsFragment : PreferenceFragmentCompat() {
             pref.setOnPreferenceChangeListener { _, value ->
                 // Picking the shown default stores it: ListPreference skips an unchanged value.
                 if (value == pref.value) prefs.setAiModel(step, value as String, kind)
-                if (prefs.aiEnabled) (chosen(step, value) as? FileSet)?.let { ModelDownloads.start(store, it) }
+                val settling = (parentFragmentManager.findFragmentByTag(AiChoiceDialog.TAG) as? AiChoiceDialog)?.settling == true
+                if (prefs.aiEnabled && !settling) (chosen(step, value) as? FileSet)?.let { ModelDownloads.start(store, it) }
                 refreshAi()
                 true
             }

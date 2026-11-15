@@ -3997,29 +3997,43 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
      * The models [step] can run ([ModelPicker]), the one this book runs checked; slow ones only
      * while Keep it simple is off, or when running; imported ones too
      * ([com.infinity.comicreader.ai.Models.offered]). A row tap picks and closes; a level slider
-     * picks as it is let go or rests, or as the picker closes, and stays open.
+     * picks as it is let go or rests, or as the picker closes, and stays open. As the picker
+     * closes, the model picked last downloads; levels passed over on the way and downloaded
+     * for the pick (by the pages shown) are deleted ([PickerDownloads]).
      */
     private fun showAiChoices(step: AiStep) {
         var dialog: AlertDialog? = null
+        val picks = PickerDownloads(aiModels::installed)
         val picker = ModelPicker.of(this, step, prefs.keepSimple, aiShown().id(step)) { id, done ->
             if (done) dialog?.dismiss()
-            pickAi(step, id)
+            picks.picked(id)
+            pickAi(step, id, download = done)
         }
         dialog = AlertDialog.Builder(this)
             .setTitle(ModelText.step(this, step))
             .setView(picker.view)
             .setNegativeButton(R.string.close, null)
-            .setOnDismissListener { picker.flush() }
+            .setOnDismissListener {
+                picker.flush()
+                if (!picks.any) return@setOnDismissListener
+                for (m in picks.passedOver(picker.picked, aiChosenIds())) ModelDownloads.delete(aiModels, m)
+                (Models.byId(picker.picked) as? FileSet)?.let { m -> if (!aiModels.installed(m)) ModelDownloads.start(aiModels, m) }
+                followDownloads.run()
+            }
             .showKeepingFullscreen()
     }
+
+    /** The ids of the models both default chains and this book's own picks run. */
+    private fun aiChosenIds(): Set<String> =
+        (ChainKind.entries.map { AiPicks.of(prefs, it) } + listOfNotNull(aiOwn())).flatMap { it.ids.values }.filterNotNull().toSet()
 
     /**
      * Runs model [id] (null: none) at [step]: for this book when it has its own picks, else in
      * the default chain it runs. Picking a model while AI processing is off turns it on for
      * both default chains, the other steps' picks kept; leaving no model in either default
-     * chain turns it off. A model not downloaded starts downloading.
+     * chain turns it off. With [download], a model not downloaded starts downloading.
      */
-    private fun pickAi(step: AiStep, id: String?) {
+    private fun pickAi(step: AiStep, id: String?, download: Boolean) {
         val own = aiOwn()
         val book = book()
         if (own != null && book != null) {
@@ -4032,7 +4046,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
                 prefs.aiEnabled = false
             }
         }
-        (Models.byId(id) as? FileSet)?.let { m -> if (!aiModels.installed(m)) ModelDownloads.start(aiModels, m) }
+        if (download) (Models.byId(id) as? FileSet)?.let { m -> if (!aiModels.installed(m)) ModelDownloads.start(aiModels, m) }
         aiChanged()
         followDownloads.run()
     }

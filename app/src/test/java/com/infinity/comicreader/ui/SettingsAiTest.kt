@@ -19,6 +19,7 @@ import com.infinity.comicreader.ai.ChainKind
 import com.infinity.comicreader.ai.DownloadFailure
 import com.infinity.comicreader.ai.DownloadState
 import com.infinity.comicreader.ai.ModelCatalog
+import com.infinity.comicreader.ai.ModelDownloads
 import com.infinity.comicreader.ai.ModelStore
 import com.infinity.comicreader.ai.Models
 import com.infinity.comicreader.ai.OfflineDownloads
@@ -211,6 +212,29 @@ class SettingsAiTest {
         assertFalse(dialog.isShowing)
         assertEquals("anime4k-b-l", pref.value)
         assertEquals("anime4k-b-l", Prefs(context).aiModel(AiStep.UPSCALE))
+    }
+
+    @Test
+    fun onlyTheLevelPickedLastDownloadsAsThePickerCloses() {
+        Prefs(context).aiEnabled = true
+        val fragment = settings()
+        val pref = fragment.findPreference<ListPreference>(Prefs.aiKey(AiStep.UPSCALE))!!
+        val dialog = openUpscalePicker(fragment)
+        val rows = PickerRows.of(AiStep.UPSCALE, keepSimple = true, current = pref.value, noneName = context.getString(R.string.ai_none))
+        val at = rows.indexOfFirst { it.models.firstOrNull()?.id == "anime4k-a-s" }
+        fun asked(id: String) = ModelDownloads.state.value.states.containsKey(id)
+        // Let go at M, then at L: each is stored, neither downloads while the picker is open.
+        ModelPickerTest.slide(ModelPickerTest.rows(dialog)[at], 1)
+        ModelPickerTest.slide(ModelPickerTest.rows(dialog)[at], 2)
+        idle()
+        assertEquals("anime4k-a-l", pref.value)
+        assertFalse(asked("anime4k-a-m"))
+        assertFalse(asked("anime4k-a-l"))
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE).performClick()
+        idle()
+        assertEquals("anime4k-a-l", Prefs(context).aiModel(AiStep.UPSCALE))
+        assertTrue(asked("anime4k-a-l"))
+        assertFalse(asked("anime4k-a-m"))
     }
 
     @Test

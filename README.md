@@ -837,7 +837,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   models' page times (this device's as the reader measured them, each page
   moving a model's time a quarter of the way; a model not run yet takes the
   reference tablet's time scaled by how the measured ones of its engine,
-  ncnn or GPU shaders, compare with theirs, and an imported model its own
+  ncnn or GPU shaders, compare with theirs, or before any of its engine by
+  the other's, corrected for the shader times being warm upper bounds; an imported model its own
   time, measured on this device) on a scale to 30 s: green below 10 s, yellow to 20 s,
   red past it, with no unit or numbers; TalkBack reads it as light, moderate
   or heavy. Upscaling also offers Anime4K's GPU

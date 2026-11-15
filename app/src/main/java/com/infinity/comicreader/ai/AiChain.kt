@@ -51,10 +51,6 @@ object AiChain {
     /** True when no default chain picks a model, so AI processing has nothing to run without a book's own. */
     fun noneChosen(prefs: Prefs): Boolean = ChainKind.entries.all { AiPicks.of(prefs, it).models.isEmpty() }
 
-    /** The [chosen] models of [kind] that [store] holds, with their files; one not downloaded yet is left out. */
-    fun ready(prefs: Prefs, store: ModelStore, kind: ChainKind = ChainKind.OTHER): List<Pair<AiModel, ModelFiles>> =
-        chosen(prefs, kind).mapNotNull { m -> store.files(m)?.let { m to it } }
-
     /**
      * What identifies [models]' output: the [ENGINE], then each model's id and its files'
      * checksums ([AiModel.fingerprint]), so a model replaced never shows pages its old files made.

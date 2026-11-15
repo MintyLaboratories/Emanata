@@ -129,7 +129,6 @@ class UserModelsTest {
         prefs.setAiModel(AiStep.UPSCALE, m.id)
         assertEquals(listOf<AiModel>(m), AiChain.chosen(prefs))
         assertEquals(listOf<AiModel>(m), AiPicks(mapOf(AiStep.UPSCALE to m.id)).models)
-        assertEquals(listOf(m to store.files(m)!!), AiChain.ready(prefs, store))
         // Picked at a step it was not imported for: none.
         assertEquals(emptyList<AiModel>(), AiPicks(mapOf(AiStep.DESCREEN to m.id)).models)
         store.delete(m)

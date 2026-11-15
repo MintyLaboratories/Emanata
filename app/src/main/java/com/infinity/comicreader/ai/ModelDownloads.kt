@@ -106,18 +106,20 @@ object ModelDownloads {
         }
     }
 
-    /** Stops [model]'s download and deletes it from [store]. */
+    /**
+     * Stops [model]'s download at once (one still waiting never starts; one running stops at
+     * its next chunk) and deletes it from [store] once it has stopped.
+     */
     fun delete(store: ModelStore, model: FileSet) {
-        val job = synchronized(jobs) { jobs.remove(model.id) }
+        val job = synchronized(jobs) {
+            _state.update { it.copy(states = it.states - model.id) }
+            jobs.remove(model.id)?.also { it.cancel() }
+        }
         scope.launch {
-            job?.cancel()
             job?.join()
             store.delete(model)
-            synchronized(jobs) {
-                // A download asked for since then owns the state.
-                val asked = jobs.containsKey(model.id)
-                _state.update { it.copy(states = if (asked) it.states else it.states - model.id, generation = it.generation + 1) }
-            }
+            // A download asked for since then owns the state.
+            _state.update { it.copy(generation = it.generation + 1) }
         }
     }
 

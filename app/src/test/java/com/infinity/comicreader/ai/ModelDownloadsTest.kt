@@ -23,6 +23,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.io.IOException
 import java.security.MessageDigest
+import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -47,11 +48,15 @@ class ModelDownloadsTest {
     private val requests = AtomicInteger()
     private val holds = ArrayList<CountDownLatch>()
 
+    /** Paths requested, in order. */
+    private val paths: MutableList<String> = Collections.synchronizedList(ArrayList())
+
     @Before
     fun setUp() {
         server = MockWebServer()
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
+                paths += request.path.orEmpty()
                 holds.getOrNull(requests.getAndIncrement())?.await(10, TimeUnit.SECONDS)
                 gate.await(10, TimeUnit.SECONDS)
                 val data = files[request.path] ?: return MockResponse().setResponseCode(404)
@@ -208,6 +213,47 @@ class ModelDownloadsTest {
         waitFor("delete") { it.generation > generation }
         assertFalse(store.installed(m))
         assertFalse(store.dir(m).exists())
+    }
+
+    @Test
+    fun deleteDropsAWaitingDownloadBeforeItRuns() {
+        val running = model("dl-ahead")
+        val waiting = model("dl-waiting")
+        val first = CountDownLatch(1)
+        holds += first
+        ModelDownloads.start(store, running)
+        waitForRequests(1)
+        ModelDownloads.start(store, waiting)
+        ModelDownloads.delete(store, waiting)
+        assertFalse("cleared at once", waiting.id in ModelDownloads.state.value.states)
+        first.countDown()
+        afterQueued()
+        assertTrue(store.installed(running))
+        assertFalse(store.dir(waiting).exists())
+        assertFalse(waiting.id in ModelDownloads.state.value.states)
+        assertTrue("never asked: $paths", paths.none { it.contains(waiting.id) })
+    }
+
+    @Test
+    fun deleteStopsARunningDownloadAtOnce() {
+        val m = model("dl-delete-running")
+        val first = CountDownLatch(1)
+        holds += first
+        ModelDownloads.start(store, m)
+        waitForRequests(1)
+        ModelDownloads.delete(store, m)
+        assertFalse("cleared at once", m.id in ModelDownloads.state.value.states)
+        first.countDown()
+        afterQueued()
+        assertFalse(m.id in ModelDownloads.state.value.states)
+        assertFalse(store.dir(m).exists())
+    }
+
+    /** Returns once everything queued so far ran: downloads run one at a time in the order asked. */
+    private fun afterQueued() {
+        val last = model("dl-last-${System.nanoTime()}")
+        ModelDownloads.start(store, last)
+        waitFor("queue") { last.id !in it.states && store.installed(last) }
     }
 
     @Test

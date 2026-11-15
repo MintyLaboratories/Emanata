@@ -10,6 +10,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.io.File
+import kotlin.math.roundToLong
 
 /** Page times learned on this device: kept by model and its files, blended page by page, written only on a real change, read back by a new instance; unlearned ones scaled alike. */
 @RunWith(RobolectricTestRunner::class)
@@ -98,16 +99,26 @@ class PageTimesTest {
         val times = PageTimes(File(tmp.root, "times"))
         val chain = ShaderCatalog.byId("anime4k-a-s")!!
         val other = ShaderCatalog.byId("anime4k-c-l")!!
-        // One engine learned: the other scales by it, a device's speed counting for both.
+        // One engine learned: the other scales by it, a device's speed counting for both, less the shader times' warmth.
         times.keep(upscale, upscale.pageMs * 2)
-        assertEquals(2.0, times.ratio(PageTimes.Engine.SHADER), 0.001)
-        assertEquals(other.pageMs * 2, times.estimate(other))
-        // Shader chains' catalog times are warm upper bounds: learned at half of theirs, they scale apart.
+        assertEquals(2.0 / ShaderCatalog.WARM, times.ratio(PageTimes.Engine.SHADER), 0.001)
+        assertEquals((other.pageMs * (2.0 / ShaderCatalog.WARM)).roundToLong(), times.estimate(other))
+        // Once learned, each engine scales by its own.
         times.keep(chain, chain.pageMs / 2)
         assertEquals(0.5, times.ratio(PageTimes.Engine.SHADER), 0.001)
         assertEquals(2.0, times.ratio(PageTimes.Engine.NCNN), 0.001)
         assertEquals(other.pageMs / 2, times.estimate(other))
         assertEquals(descreen.pageMs * 2, times.estimate(descreen))
+    }
+
+    @Test
+    fun onlyShaderChainsLearnedScaleNcnnModelsByTheirWarmth() {
+        val times = PageTimes(File(tmp.root, "times"))
+        val chain = ShaderCatalog.byId("anime4k-a-ul")!!
+        // Ran cool at its catalog time over the warmth: this device is the reference tablet.
+        times.keep(chain, (chain.pageMs / ShaderCatalog.WARM).roundToLong())
+        assertEquals(1.0, times.ratio(PageTimes.Engine.NCNN), 0.01)
+        assertEquals(descreen.pageMs.toDouble(), times.estimate(descreen).toDouble(), descreen.pageMs * 0.01)
     }
 
     @Test

@@ -83,11 +83,16 @@ object ShaderCatalog {
     private class Family(val id: String, val name: String, val blurb: ModelBlurb, val files: (Int) -> List<ModelFile>, val pageMs: LongArray)
 
     /**
-     * Page times: a synthetic 1000 x 1500 page in 512-pixel tiles on the reference tablet's GPU
-     * (Adreno 730), from one batch of all 25 chains run back to back, so warm rather than
-     * started cool as [AiModel.pageMs] asks (A UL about 1.7 times its cool time): upper bounds
-     * until a cool session measures them again.
+     * How many times its cool time a chain's page time here is ([PageTimes] corrects by it when
+     * scaling one engine by the other's): the times are a synthetic 1000 x 1500 page in
+     * 512-pixel tiles on the reference tablet's GPU (Adreno 730), from one batch of all 25
+     * chains run back to back, so warm rather than started cool as [AiModel.pageMs] asks (A UL
+     * about 1.7 times its cool time); upper bounds until a cool session measures them again,
+     * when this becomes 1.
      */
+    const val WARM = 1.7
+
+    /** Page times, as [WARM] describes them. */
     private val FAMILIES = listOf(
         Family("anime4k-a", "Anime4K A (sharp) 2×", ModelBlurb.ANIME4K_A, { l -> listOf(CLAMP, RESTORE[l], UPSCALE[l]) }, longArrayOf(180, 300, 470, 590, 840)),
         Family("anime4k-b", "Anime4K B (clean) 2×", ModelBlurb.ANIME4K_B, { l -> listOf(CLAMP, RESTORE_SOFT[l], UPSCALE[l]) }, longArrayOf(250, 340, 490, 760, 830)),

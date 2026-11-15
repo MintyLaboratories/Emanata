@@ -21,8 +21,11 @@ import kotlin.math.roundToLong
 class PageTimes(private val file: File) {
     private class Kept(val fingerprint: String, val ms: Double, val catalogMs: Long, val writtenMs: Double)
 
-    /** What runs a model, as its catalog times were measured: ncnn ([CatalogModel]) or GLES shaders ([ShaderModel]). */
-    enum class Engine { NCNN, SHADER }
+    /**
+     * What runs a model, as its catalog times were measured: ncnn ([CatalogModel]) or GLES
+     * shaders ([ShaderModel]); [warm]: how many times their cool time its catalog times are.
+     */
+    enum class Engine(val warm: Double) { NCNN(1.0), SHADER(ShaderCatalog.WARM) }
 
     private var kept: MutableMap<String, Kept>? = null
 
@@ -39,12 +42,16 @@ class PageTimes(private val file: File) {
 
     /**
      * How much longer than their catalog times the catalog models of [engine] learned here take:
-     * the median of their ratios; the other engine's when none of [engine] is learned (a device's
-     * speed counts for both); 1 before any.
+     * the median of their ratios; when none of [engine] is learned, the other engine's (a
+     * device's speed counts for both), corrected for how warm each engine's catalog times are
+     * ([Engine.warm]); 1 before any.
      */
     @Synchronized
-    fun ratio(engine: Engine = Engine.NCNN): Double =
-        median(ratios(engine)) ?: median(ratios(Engine.entries.first { it != engine })) ?: 1.0
+    fun ratio(engine: Engine = Engine.NCNN): Double {
+        median(ratios(engine))?.let { return it }
+        val other = Engine.entries.first { it != engine }
+        return median(ratios(other))?.let { it * other.warm / engine.warm } ?: 1.0
+    }
 
     private fun ratios(engine: Engine): List<Double> =
         all().filter { (id, k) -> k.catalogMs > 0 && engineOf(id) == engine }.values.map { it.ms / it.catalogMs }

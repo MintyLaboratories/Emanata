@@ -3998,17 +3998,19 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
      * The models [step] can run ([ModelPicker]), the one this book runs checked; slow ones only
      * while Keep it simple is off, or when running; imported ones too
      * ([com.infinity.comicreader.ai.Models.offered]). A row tap picks and closes; a level slider
-     * picks as it is let go or rests, or as the picker closes, and stays open. As the picker
-     * closes, the model picked last downloads; levels passed over on the way and downloaded
-     * for the pick (by the pages shown) are deleted ([PickerDownloads]).
+     * picks as it is let go or rests, or as the picker closes, and stays open. A level passed
+     * over stops the download its pick brought (by the pages shown); as the picker closes, the
+     * model picked last downloads and the levels passed over that came with their picks are
+     * deleted ([PickerDownloads]).
      */
     private fun showAiChoices(step: AiStep) {
         var dialog: AlertDialog? = null
-        val picks = PickerDownloads(aiModels::installed)
+        val picks = PickerDownloads.of(aiModels)
         val picker = ModelPicker.of(this, step, prefs.keepSimple, aiShown().id(step)) { id, done ->
             if (done) dialog?.dismiss()
             picks.picked(id)
             pickAi(step, id, download = done)
+            for (m in picks.passedOver(id, aiChosenIds())) ModelDownloads.cancel(m.id)
         }
         dialog = AlertDialog.Builder(this)
             .setTitle(ModelText.step(this, step))

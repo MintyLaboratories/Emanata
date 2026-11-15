@@ -1,11 +1,19 @@
 package com.infinity.comicreader.ui
 
+import com.infinity.comicreader.ai.FileSet
+import com.infinity.comicreader.ai.ModelStore
+import com.infinity.comicreader.ai.Models
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 
 class PickerDownloadsTest {
+    @get:Rule
+    val tmp = TemporaryFolder()
+
     private fun ids(p: PickerDownloads, last: String?, chosen: Set<String> = emptySet()) = p.passedOver(last, chosen).map { it.id }
 
     @Test
@@ -39,6 +47,17 @@ class PickerDownloadsTest {
         p.picked("anime4k-a-m")
         p.picked("anime4k-a-l")
         assertEquals(listOf("anime4k-a-m"), ids(p, "anime4k-a-l"))
+    }
+
+    @Test
+    fun modelsPartlyDownloadedBeforeTheirPickStay() {
+        val store = ModelStore(tmp.newFolder("models"))
+        val m = Models.byId("anime4k-a-m") as FileSet
+        store.dir(m).mkdirs()
+        store.part(m, m.files.first()).writeBytes(ByteArray(8))
+        val p = PickerDownloads.of(store)
+        for (id in listOf("anime4k-a-s", "anime4k-a-m", "anime4k-a-l")) p.picked(id)
+        assertEquals(listOf("anime4k-a-s"), ids(p, "anime4k-a-l"))
     }
 
     @Test

@@ -13,9 +13,12 @@ import com.google.android.material.materialswitch.MaterialSwitch
 import com.infinity.comicreader.R
 import com.infinity.comicreader.ai.AiStep
 import com.infinity.comicreader.ai.ChainKind
+import com.infinity.comicreader.ai.DownloadState
+import com.infinity.comicreader.ai.FileSet
 import com.infinity.comicreader.ai.ModelCatalog
 import com.infinity.comicreader.ai.ModelDownloads
 import com.infinity.comicreader.ai.ModelStore
+import com.infinity.comicreader.ai.Models
 import com.infinity.comicreader.ai.OfflineDownloads
 import com.infinity.comicreader.ai.PageTimes
 import com.infinity.comicreader.data.BookIds
@@ -37,6 +40,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.io.File
+import java.io.RandomAccessFile
 
 /** The reader sheet's AI pickers: each model with what it does, slow ones only with advanced settings shown. */
 @RunWith(RobolectricTestRunner::class)
@@ -142,18 +146,85 @@ class ViewerActivityAiChoicesTest {
         assertTrue(ModelPickerTest.checked(shown))
     }
 
-    @Test
-    fun theLevelPickedLastDownloadsAsThePickerCloses() {
-        val viewer = open()
-        val (dialog, rows) = upscaleChoices(viewer)
+    private val store get() = ModelStore.of(context)
+
+    private fun level(id: String) = Models.byId(id) as FileSet
+
+    /** Puts [id]'s files in the store as a finished download would. */
+    private fun install(id: String) {
+        val m = level(id)
+        store.dir(m).mkdirs()
+        for (f in m.files) {
+            RandomAccessFile(File(store.dir(m), f.name), "rw").use { it.setLength(f.bytes) }
+            File(store.dir(m), f.name + ModelStore.STAMP).writeText(f.sha256)
+        }
+    }
+
+    private fun asked(id: String) = ModelDownloads.state.value.states.containsKey(id)
+
+    /**
+     * Opens the upscale picker, lets the Anime4K B slider go at M, does [between], lets it go
+     * at VL, does [atVl] and closes it; returns once the downloads queued as it closed ran
+     * (deletes first, then VL's, which fails offline).
+     */
+    private fun slideMThenVl(between: () -> Unit = {}, atVl: () -> Unit = {}) {
+        val (dialog, rows) = upscaleChoices(open())
         val family = rows.first { ModelPickerTest.name(it) == "Anime4K B (clean) 2×" }
         ModelPickerTest.slide(family, 1)
+        idle()
+        between()
         ModelPickerTest.slide(family, 3)
         idle()
         assertEquals("anime4k-b-vl", Prefs(context).aiModel(AiStep.UPSCALE))
+        atVl()
         dialog.dismiss()
         idle()
-        assertTrue(ModelDownloads.state.value.states.containsKey("anime4k-b-vl"))
+        val deadline = System.currentTimeMillis() + 5_000
+        while (ModelDownloads.state.value.states["anime4k-b-vl"] !is DownloadState.Failed && System.currentTimeMillis() < deadline) Thread.sleep(10)
+        assertTrue(ModelDownloads.state.value.states["anime4k-b-vl"] is DownloadState.Failed)
+    }
+
+    @Test
+    fun theLevelPickedLastDownloadsAsThePickerCloses() {
+        slideMThenVl(atVl = { assertFalse(asked("anime4k-b-m")) })
+        assertFalse(asked("anime4k-b-m"))
+        assertEquals(0L, store.bytesHeld(level("anime4k-b-m")))
+    }
+
+    @Test
+    fun aLevelPassedOverStopsTheDownloadItsPickBroughtAtOnce() {
+        slideMThenVl(
+            // The pages shown ask for M, as the reader does for a model its chain runs.
+            between = {
+                ModelDownloads.start(store, level("anime4k-b-m"), optional = true)
+                assertTrue(asked("anime4k-b-m"))
+            },
+            atVl = { assertFalse(asked("anime4k-b-m")) }
+        )
+        assertFalse(asked("anime4k-b-m"))
+    }
+
+    @Test
+    fun aLevelPassedOverIsDeletedWhenItsPickDownloadedIt() {
+        slideMThenVl(between = { install("anime4k-b-m") })
+        assertFalse(store.dir(level("anime4k-b-m")).exists())
+    }
+
+    @Test
+    fun aLevelPassedOverStaysWhenTheOtherDefaultChainRunsIt() {
+        prefs.setAiModel(AiStep.UPSCALE, "anime4k-b-m", ChainKind.MANGA)
+        slideMThenVl(between = { install("anime4k-b-m") })
+        assertTrue(store.installed(level("anime4k-b-m")))
+    }
+
+    @Test
+    fun aLevelPassedOverKeepsTheDownloadStartedBeforeThePicker() {
+        // Parts of a download the user started before, cut short.
+        val m = level("anime4k-b-m")
+        store.dir(m).mkdirs()
+        store.part(m, m.files.first()).writeBytes(ByteArray(16))
+        slideMThenVl()
+        assertEquals(16L, store.bytesHeld(m))
     }
 
     private fun kindShown(sheet: ReaderSheet) = sheet.view<MaterialButtonToggleGroup>(R.id.sheet_ai_kind).checkedButtonId

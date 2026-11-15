@@ -155,7 +155,7 @@ object ModelCatalog {
 
     /** The repository of conversions made for the app, with their sources, and the revision they are fetched at. */
     const val HOSTED_REPOSITORY = "https://huggingface.co/MadameMinty/Emanata"
-    const val HOSTED_REVISION = "fdc7f69cbfa9e9b134970ce675259d114e1cb31b"
+    const val HOSTED_REVISION = "d76a75bdeaa118dd6a9cb9189c3c7978baa62b88"
     const val HOSTED_BASE = "$HOSTED_REPOSITORY/resolve/$HOSTED_REVISION/"
 
     private fun file(path: String, bytes: Long, sha256: String) = ModelFile(path.substringAfterLast('/'), BASE + path, bytes, sha256)

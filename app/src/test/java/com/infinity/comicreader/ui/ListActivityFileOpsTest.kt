@@ -18,6 +18,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.tabs.TabLayout
 import com.infinity.comicreader.R
+import com.infinity.comicreader.testing.idleUntil
 import com.infinity.comicreader.compact.OutputMarks
 import com.infinity.comicreader.data.BookIds
 import com.infinity.comicreader.data.Bookmark
@@ -55,7 +56,6 @@ import org.robolectric.shadows.ShadowDialog
 import org.robolectric.shadows.ShadowToast
 import java.io.File
 import java.util.concurrent.Semaphore
-import java.util.concurrent.TimeUnit
 import javax.crypto.spec.SecretKeySpec
 
 /** Selecting items, the selection bar's file operations, the Paste button, and the library following what they change. */
@@ -107,19 +107,19 @@ class ListActivityFileOpsTest {
         Remotes.serve(emptyList()) { throw AssertionError("no shares") }
     }
 
-    private fun idle() = repeat(10) {
-        shadowOf(Looper.getMainLooper()).idle()
-        Thread.sleep(20)
-    }
+    /** True once the screen waits on nothing but the test: listed, favorites classified, facts read, presence asked, its menu looked into. */
+    private fun ListActivity.quiet() =
+        listJob?.isCompleted == true && listOf(classifyJob, factsJob, presenceJob, moreLook).none { it?.isActive == true }
 
-    /** Waits until [done], then for the file operation under way to end and its outcome to be shown. */
-    private fun settle(done: () -> Boolean = { true }) {
-        repeat(300) {
-            idle()
-            if (done() && FileWork.operations.value.isEmpty()) return
-        }
-        throw AssertionError("still running: ${FileWork.operations.value}, toast ${ShadowToast.getTextOfLatestToast()}")
-    }
+    /** True once the screen launched last, if any, is quiet. */
+    private fun quiet() = launched.lastOrNull()?.get()?.quiet() != false
+
+    /** Runs the main looper until the screen launched last is quiet. */
+    private fun idle() = idleUntil("the library screen quiet") { quiet() }
+
+    /** Waits until [done], then for the file operation under way to end, its outcome to be shown and the screen to list what it changed. */
+    private fun settle(done: () -> Boolean = { true }) =
+        idleUntil("the operation done and its outcome shown") { done() && FileWork.operations.value.isEmpty() && quiet() }
 
     private fun AlertDialog.title(): String = findViewById<android.widget.TextView>(androidx.appcompat.R.id.alertTitle)!!.text.toString()
 
@@ -140,26 +140,25 @@ class ListActivityFileOpsTest {
 
     /** The row of [path], waiting for a listing under way to show it. */
     private fun ListActivity.row(path: String): View {
-        repeat(300) {
+        fun find(): View? {
             val recycler = recycler()
             val adapter = recycler.adapter as BookAdapter
-            recycler.findViewHolderForAdapterPosition(adapter.positionOf(path))?.let { return it.itemView }
-            idle()
+            return recycler.findViewHolderForAdapterPosition(adapter.positionOf(path))?.itemView
         }
-        throw AssertionError("no row for $path")
+        idleUntil("the row of $path") { find() != null }
+        return find()!!
     }
 
-    /** Clicks Paste and waits for the dialog it asks with. */
+    /** Clicks Paste and waits for the dialog it asks with, once the names taken are looked up. */
     private fun ListActivity.pasteAsking(): AlertDialog {
         val before = ShadowDialog.getLatestDialog()
         paste().performClick()
-        repeat(300) {
-            idle()
-            val now = ShadowDialog.getLatestDialog()
-            if (now !== before && now.isShowing) return now as AlertDialog
-        }
-        throw AssertionError("nothing asked")
+        idleUntil("asked about names taken") { ShadowDialog.getLatestDialog().let { it != null && it !== before && it.isShowing } }
+        return ShadowDialog.getLatestDialog() as AlertDialog
     }
+
+    /** Waits until a dialog shows, as one asked once a search or a plan off the main thread is done. */
+    private fun awaitDialog(what: String) = idleUntil(what) { ShadowDialog.getLatestDialog()?.isShowing == true }
 
     /** Long-presses the row of [path]: it is selected, or let go while selecting. */
     private fun ListActivity.select(path: String) {
@@ -342,10 +341,10 @@ class ListActivityFileOpsTest {
         activity.moreItems()
         activity.moreRow(MoreAction.CONTINUE_READING).performClick()
         var started: android.content.Intent? = null
-        repeat(100) {
-            idle()
+        // The next book is found off the main thread.
+        idleUntil("the next book opened") {
             started = started ?: shadowOf(activity).nextStartedActivity
-            if (started != null) return@repeat
+            started != null
         }
         assertEquals(inside.absolutePath, started!!.getStringExtra(ViewerActivity.EXTRA_PATH))
         assertFalse(activity.selection.active)
@@ -358,7 +357,7 @@ class ListActivityFileOpsTest {
         activity.select(other.absolutePath)
         activity.moreItems()
         activity.moreRow(MoreAction.COMPACT).performClick()
-        idle()
+        awaitDialog("the folder searched and Compact asked")
         val dialog = latest()
         // The books among those selected; the warning; Skip hidden pages off each time.
         assertEquals(context.getString(R.string.compact_title_one, book.name), dialog.title())
@@ -389,7 +388,7 @@ class ListActivityFileOpsTest {
         activity.select(other.absolutePath)
         activity.moreItems()
         activity.moreRow(MoreAction.MAKE_COMPATIBLE).performClick()
-        repeat(50) { if (ShadowDialog.getLatestDialog()?.isShowing != true) idle() }
+        awaitDialog("the folder searched and Make compatible asked")
         assertEquals(context.resources.getQuantityString(R.plurals.compatible_title, 2, 2), latest().title())
         latest().getButton(DialogInterface.BUTTON_NEGATIVE).performClick()
         idle()
@@ -409,7 +408,7 @@ class ListActivityFileOpsTest {
         tap()
         assertEquals(View.VISIBLE, spinner.visibility)
         tap()
-        repeat(50) { if (ShadowDialog.getLatestDialog()?.isShowing != true) idle() }
+        awaitDialog("the folder searched and Compact asked")
         idle()
         assertEquals(View.GONE, spinner.visibility)
         assertEquals(1, ShadowDialog.getShownDialogs().count { it.isShowing })
@@ -457,7 +456,7 @@ class ListActivityFileOpsTest {
         activity.moreItem(MoreAction.PACK).performClick()
         idle()
         latest().getButton(DialogInterface.BUTTON_POSITIVE).performClick()
-        repeat(50) { if (latest().title() != activity.getString(R.string.pack_unusual_title)) idle() }
+        idleUntil("asked about unusual files") { latest().title() == activity.getString(R.string.pack_unusual_title) }
         assertEquals(activity.getString(R.string.pack_unusual_title), latest().title())
         val listed = activity.getString(R.string.pack_unusual_hidden, ".cover.png") + ", " + activity.getString(R.string.pack_unusual_folder, ".thumbs") +
             ", " + activity.getString(R.string.pack_unusual_empty, "0.png")
@@ -568,7 +567,7 @@ class ListActivityFileOpsTest {
         activity.moreItem(MoreAction.PACK).performClick()
         idle()
         latest().getButton(DialogInterface.BUTTON_POSITIVE).performClick()
-        repeat(50) { if (latest().title() != activity.getString(R.string.clash_title, "Other.cbz")) idle() }
+        idleUntil("asked about the name taken") { latest().title() == activity.getString(R.string.clash_title, "Other.cbz") }
         assertEquals(activity.getString(R.string.clash_title, "Other.cbz"), latest().title())
         latest().getButton(DialogInterface.BUTTON_NEUTRAL).performClick()
         val kept = File(shelf, "Other (2).cbz")
@@ -727,7 +726,8 @@ class ListActivityFileOpsTest {
         dialog.findViewById<View>(R.id.share_file_row)!!.performClick()
         assertTrue(dialog.check(R.id.share_file_check).isChecked)
         dialog.getButton(DialogInterface.BUTTON_POSITIVE).performClick()
-        settle { !dialog.isShowing }
+        // The dialog closes, then the file's URI is made off the main thread and the chooser starts.
+        settle { !dialog.isShowing && shadowOf(context).peekNextStartedActivity() != null }
 
         val chooser = shadowOf(context).nextStartedActivity
         assertEquals(android.content.Intent.ACTION_CHOOSER, chooser.action)
@@ -797,7 +797,7 @@ class ListActivityFileOpsTest {
     fun aCoverThatCannotBeMadeIsLeftOutAndSaid() {
         // Sent before the cover is found missing: each cover waits for its Share tap.
         val taps = Semaphore(0)
-        BookShare.coverHold = { taps.tryAcquire(10, TimeUnit.SECONDS) }
+        BookShare.coverHold = { taps.acquire() }
         try {
             Prefs(context).shareChoice = com.infinity.comicreader.data.ShareChoice(title = true, cover = false, file = false)
             val activity = launch()
@@ -824,6 +824,7 @@ class ListActivityFileOpsTest {
             assertNull(shadowOf(context).nextStartedActivity)
         } finally {
             BookShare.coverHold = {}
+            taps.release(2)
         }
     }
 

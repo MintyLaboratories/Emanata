@@ -79,7 +79,7 @@ class ModelsCoverTextTest {
     }
 
     @Test
-    fun ppOcrWithoutItsModelSaysCoversCropAsTopAndOffersItsDownload() {
+    fun ppOcrWithoutItsModelSaysWraparoundsShowWholeAndOffersItsDownload() {
         val card = opened().findViewById<View>(R.id.cover_text_card)
         val texts = texts(card)
         val missing = context.getString(R.string.cover_text_ppocr_missing, ModelText.size(context, ModelCatalog.TEXT_DETECTOR.bytes))

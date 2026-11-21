@@ -1125,11 +1125,11 @@
     <string name="ai_models_title">AI models</string>
     <string name="cover_text_section">Cover text</string>
     <string name="cover_text_ppocr">PP-OCRv5 mobile text detector</string>
-    <string name="cover_text_details_ppocr">Finds where text is on covers for the Smart crop and for a wraparound cover\'s front and reading direction · runs on this device · Apache-2.0</string>
+    <string name="cover_text_details_ppocr">Finds where text is on covers to tell a wraparound cover\'s front and reading direction · runs on this device · Apache-2.0</string>
     <string name="cover_text_in_use">In use</string>
-    <string name="cover_text_ppocr_missing">Not downloaded yet (%1$s): it downloads the first time a cover needs it (Smart crop, or telling a wraparound cover\'s front or reading direction). Until then, Smart crop crops as Top does</string>
-    <string name="cover_text_ppocr_downloading">Downloading, %1$d%%. Until it is done, Smart crop crops as Top does</string>
-    <string name="cover_text_ppocr_failed">%1$s. Until it is downloaded, Smart crop crops as Top does</string>
+    <string name="cover_text_ppocr_missing">Not downloaded yet (%1$s): it downloads the first time a wraparound cover needs it to tell its front or reading direction. Until then, a wraparound cover without a barcode shows whole</string>
+    <string name="cover_text_ppocr_downloading">Downloading, %1$d%%. Until it is done, a wraparound cover without a barcode shows whole</string>
+    <string name="cover_text_ppocr_failed">%1$s. Until it is downloaded, a wraparound cover without a barcode shows whole</string>
     <string name="ai_models_intro">Models download when chosen in Settings or here, and run on this device only.</string>
     <string name="ai_step_artifacts">Artifact removal</string>
     <string name="ai_step_descreen">Descreen</string>

@@ -124,10 +124,15 @@ class NoticesTest {
         assertTrue(paddle.note!!.contains(repository))
         assertTrue(paddle.note!!.contains("third party"))
         assertTrue(File("../README.md").readText().lines().single { it.contains("PP-OCRv5 mobile text detector") }.contains("]($repository)"))
-        // Every cover that looks for text may download it, not only the Smart crop's.
-        assertTrue(paddle.note!!.contains("the first time a cover needs it (the Smart crop anchor, or telling a wraparound cover's front or reading direction)"))
+        // Wraparound covers download it, whatever the crop anchor.
+        assertTrue(paddle.note!!.contains("the first time a cover needs it (telling a wraparound cover's front or reading direction)"))
         val flat = File("../README.md").readText().replace(Regex("\\s+"), " ")
-        assertTrue(flat.contains("the first time a cover needs it, the 2.4 MB cover text detector (for the Smart crop anchor, or to tell a wraparound cover's front or a book's reading direction)"))
+        assertTrue(flat.contains("the first time a cover needs it, the 2.4 MB cover text detector (to tell a wraparound cover's front or a book's reading direction)"))
+        // The Smart crop anchor is gone: no text names it.
+        val smart = Regex("\\bSmart\\b")
+        assertFalse(smart.containsMatchIn(paddle.note!!))
+        assertFalse(smart.containsMatchIn(flat))
+        assertFalse(smart.containsMatchIn(File("src/main/res/values/strings.xml").readText()))
     }
 
     @Test

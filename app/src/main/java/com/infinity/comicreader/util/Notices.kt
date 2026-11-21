@@ -192,8 +192,8 @@ object Notices {
         Notice(
             "PaddleOCR text detector", APACHE_2, "https://github.com/PaddlePaddle/PaddleOCR", APACHE,
             note = "PP-OCRv5 mobile text detection model by the PaddlePaddle authors, not bundled: downloaded, " +
-                "unchanged, the first time a cover needs it (the Smart crop anchor, or telling a wraparound cover's " +
-                "front or reading direction), as a third party's ncnn conversion with fp16 weights from a pinned " +
+                "unchanged, the first time a cover needs it (telling a wraparound cover's front or reading " +
+                "direction), as a third party's ncnn conversion with fp16 weights from a pinned " +
                 "Hugging Face repository (Apache-2.0, ${ModelCatalog.DETECTOR_REPOSITORY}); its weights file is " +
                 "from the PaddleOCR-ncnn-CPP v0.3.0 release archive (MIT), as the repository's manifest states. Finds where text " +
                 "is on covers, on this device only."

@@ -14,9 +14,8 @@ features and customizability.
   network shares you add, while the app shows something on them: a folder, a
   book, a cover, a favorite, or a share's free space in the Locations sheet;
   to download the AI models you choose and, the first time a cover needs it,
-  the 2.4 MB cover text detector (for the Smart crop anchor, or to tell a
-  wraparound cover's front or a book's reading direction). The app sends
-  nothing else on its own.
+  the 2.4 MB cover text detector (to tell a wraparound cover's front or a
+  book's reading direction). The app sends nothing else on its own.
 
 Based on [ComicReader by infinity6901](https://github.com/infinity6901/ComicReader) (MIT).
 
@@ -85,23 +84,19 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - **Thumbnail fit:** Fill crops the cover to its box; Fit shows the whole cover
   over a blurred, filled copy of itself; Auto (default) fills when the cover's
   shape is within 10% of the box's, else fits. **Crop anchor** keeps the top
-  (default) or the center of a cover cropped for height, or (Smart,
-  experimental) its tallest text (below).
-- **Smart crop:** a text detector, PaddleOCR's PP-OCRv5 mobile detector on
-  ncnn, run on the device, marks the lines of text on a cover (where text is,
-  not what it says). When the top (centered across) would cut the tallest
-  text's line, the crop moves just enough to keep every line of about its
-  size, or at least that line. Only title-sized text counts (a letter size of
-  at least 12% of the cover's shorter side, the height of its line's box,
-  which it grows around the text): credits alone never move a crop. A cover
-  without such text keeps its most detailed part when far more detailed than
-  its top. Found once per cover and kept. The detector is not in the app: its
-  2.4 MB model downloads the first time a cover needs it (the Smart crop, or
-  a wraparound cover's front or reading direction, below), as an automatic
-  download that the **Skip on metered connections** setting can hold back.
-  Until it is there, covers crop as Top does and are made again once it
-  arrives. Settings → AI processing → **Models** shows whether its model is
-  there or downloading (with a Download button while it is not).
+  (default) or the center of a cover cropped for height.
+- **Cover text detector:** PaddleOCR's PP-OCRv5 mobile detector on ncnn, run
+  on the device, marks the lines of text on a cover (where text is, not what
+  it says), to tell a wraparound cover's front and reading direction (below).
+  Only title-sized text counts (a letter size of at least 12% of the shorter
+  side of the half searched, the height of its line's box, which it grows
+  around the text). Found once per cover and kept. The detector is not in the
+  app: its 2.4 MB model downloads the first time a cover needs it, as an
+  automatic download that the **Skip on metered connections** setting can
+  hold back. Until it is there, a wraparound cover without a barcode shows
+  whole and is made again once it arrives. Settings → AI processing →
+  **Models** shows whether its model is there or downloading (with a Download
+  button while it is not).
 - **Bookmarks** show the book's cover with the bookmarked page in front, at 80%
   of the tile, in the bottom right corner.
 - **Wraparound covers** (front and back side by side, about twice as wide as
@@ -1250,8 +1245,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   checks its size and SHA-256 (and prints both for new files). The covers' text detector
   (`ModelCatalog.TEXT_DETECTOR`) is stored and downloaded the same way, from a
   pinned Hugging Face revision; `DetectorModel` starts its download when a
-  cover first needs it (`CoverArt.focusOf`: a Smart crop, or the text of a
-  wraparound cover, to pick its front in the library when it has no readable
+  cover first needs it (`CoverArt.focusOf`: the text of a wraparound cover,
+  to pick its front in the library when it has no readable
   barcode and to confirm its barcode's front when the book's direction is
   settled, in the library and the reader), as optional work (`NetPolicy`), never twice at
   once, at most every 15 minutes, and not after 3 failed downloads until the
@@ -1299,8 +1294,8 @@ app/src/main/java/com/infinity/comicreader/
   ai/                        AI page processing: LibNcnn (JNI), TilePlan,
                              ModelProbe, TileEngine, Sessions, AiPages; models:
                              ModelCatalog, ModelStore + ModelDownloader,
-                             ModelDownloads; TextDetector (covers' Smart
-                             crop anchor; PP-OCR) + DetectorModel (its
+                             ModelDownloads; TextDetector (wraparound
+                             covers' text; PP-OCR) + DetectorModel (its
                              download), CoverTextDetectors (its model's
                              arrivals), AiThresholds, GrayPages
   reader/                    PageSource implementations + factory, Filters,

@@ -14,6 +14,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.tabs.TabLayout
 import com.infinity.comicreader.R
+import com.infinity.comicreader.testing.idleUntil
 import com.infinity.comicreader.data.BookId
 import com.infinity.comicreader.data.Bookmark
 import com.infinity.comicreader.data.DetailDisplay
@@ -77,10 +78,18 @@ class ListActivityMissingTest {
         prefs.lastPath = dir.absolutePath
     }
 
-    private fun idle() = repeat(15) {
-        shadowOf(Looper.getMainLooper()).idle()
-        Thread.sleep(20)
-    }
+    /** True once the screen waits on nothing but the test: listed, favorites classified, facts read, presence asked, its menu looked into. */
+    private fun ListActivity.quiet() =
+        listJob?.isCompleted == true && listOf(classifyJob, factsJob, presenceJob, moreLook).none { it?.isActive == true }
+
+    /** Runs the main looper until the screen is quiet. */
+    private fun ListActivity.settle() = idleUntil("the library screen quiet") { quiet() }
+
+    /** The screen [start] started last. */
+    private lateinit var shown: ListActivity
+
+    /** Runs the main looper until the screen started last is quiet. */
+    private fun idle() = shown.settle()
 
     private fun history(file: File, id: BookId = bookId(file), time: Long = 1L) =
         library.addHistory(HistoryItem(file.absolutePath, file.name, 1, 10, time, id))
@@ -100,6 +109,7 @@ class ListActivityMissingTest {
     /** The library started on [tab]. */
     private fun start(tab: Int = 2): ActivityController<ListActivity> {
         val controller = Robolectric.buildActivity(ListActivity::class.java).setup()
+        shown = controller.get()
         idle()
         controller.get().findViewById<TabLayout>(R.id.tabs).getTabAt(tab)!!.select()
         idle()

@@ -803,8 +803,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   spacing, direction and toggles **persist across chapters and app restarts**.
 
 ### Settings
-- **Search** (toolbar) finds settings by title or description, ignoring case
-  and accents, title matches first; each result shows its section (an AI step
+- **Search** (toolbar) finds settings by title, description or any of a list's
+  options, ignoring case and accents, title matches first; each result shows
+  its section (an AI step
   also its chain). Tapping one expands its section, scrolls to it and tints it
   briefly. With Keep it simple on, matching advanced settings are listed,
   tagged Advanced, and the one opened shows without turning anything on.

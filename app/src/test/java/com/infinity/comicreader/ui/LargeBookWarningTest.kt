@@ -15,6 +15,7 @@ import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.net.FakeRemoteFs
 import com.infinity.comicreader.net.Metered
 import com.infinity.comicreader.net.Remotes
+import com.infinity.comicreader.testing.idleUntil
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -86,18 +87,15 @@ class LargeBookWarningTest {
         Metered.forget()
     }
 
-    private fun idle() {
-        repeat(50) {
-            shadowOf(Looper.getMainLooper()).idle()
-            if (opened > 0 || ShadowDialog.getLatestDialog()?.isShowing == true) return
-            Thread.sleep(10)
-        }
-    }
+    /** Runs what is due on the main thread: what a dialog's button or a recreate posts there. */
+    private fun idle() = shadowOf(Looper.getMainLooper()).idle()
 
+    /** Checks the book at [path], and waits until it opened or asked: at once, or once its share told its size. */
     private fun check(path: String, askNetwork: Boolean = true) {
         ShadowDialog.reset()
+        val before = opened
         LargeBookWarning.check(activity, Remotes.file(path, askNetwork), 3)
-        idle()
+        idleUntil("$path opened or asked about") { opened > before || shown() != null }
     }
 
     private fun shown(): AlertDialog? = (ShadowDialog.getLatestDialog() as? AlertDialog)?.takeIf { it.isShowing }
@@ -144,7 +142,8 @@ class LargeBookWarningTest {
         // Two taps before the size is known open the small book once.
         LargeBookWarning.check(activity, Remotes.file("/net/s1/Small.cbz", askNetwork = false), 0)
         LargeBookWarning.check(activity, Remotes.file("/net/s1/Small.cbz", askNetwork = false), 0)
-        repeat(30) { shadowOf(Looper.getMainLooper()).idle(); Thread.sleep(10) }
+        // The second tap asked nothing as it came; the first opens the book once its size is known.
+        idleUntil("the small book opened") { opened > 0 }
         assertEquals(1, opened)
     }
 

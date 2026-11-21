@@ -26,6 +26,8 @@ import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ResumeMode
 import com.infinity.comicreader.reader.Fixtures
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -179,9 +181,8 @@ class ViewerActivityAiChoicesTest {
         atVl()
         dialog.dismiss()
         idle()
-        val deadline = System.currentTimeMillis() + 5_000
-        while (ModelDownloads.state.value.states["anime4k-b-vl"] !is DownloadState.Failed && System.currentTimeMillis() < deadline) Thread.sleep(10)
-        assertTrue(ModelDownloads.state.value.states["anime4k-b-vl"] is DownloadState.Failed)
+        // Waits for VL's download to fail offline, its turn on the one app-wide download worker coming whenever it comes.
+        runBlocking { ModelDownloads.state.first { it.states["anime4k-b-vl"] is DownloadState.Failed } }
     }
 
     @Test

@@ -1142,6 +1142,7 @@
     <string name="ai_step_descreen">Descreen</string>
     <string name="ai_step_upscale">Upscale</string>
     <string name="ai_model_details">%1$d× · %2$s · %3$s</string>
+    <string name="ai_model_scale">%1$d×</string>
     <string name="ai_blurb_waifu2x">Faithful, fast and reliable clarity improvement; does little for blurry art or jagged lines</string>
     <string name="ai_blurb_waifu2x_denoise">A balance between faithful and enhanced, sharpening detail; may mildly blur textures</string>
     <string name="ai_blurb_opencomic_upscale">Sharper; may remove noise, ringing and similar flaws in the original; slower than waifu2x</string>
@@ -1225,6 +1226,7 @@
     <string name="ai_import_failed_space">Not enough free space</string>
     <string name="ai_import_failed_storage">The app couldn\'t store the files</string>
     <string name="ai_model_details_imported">%1$d× · %2$s · imported</string>
+    <string name="ai_model_scale_imported">%1$d× · imported</string>
     <string name="ai_model_info_imported">%1$s\n\nImported by you; no source or license is known. About %2$d s per page on this device when imported.</string>
     <string name="ai_model_delete_imported">Delete %1$s? To use it again, import its files again.</string>
     <string name="pref_page_spacing">Page gap</string>

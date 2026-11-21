@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- A catalog model: name, what it does, scale, size and license, its download state, and an action. -->
+<!-- A model: name, what it does, scale, its download state, and an action; tapped, its size, license and source. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
@@ -39,7 +39,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:textAppearance="@style/TextAppearance.ComicReader.ItemSubtitle"
-            tools:text="2× · 1.2 MB · CC BY 4.0" />
+            tools:text="2×" />
 
         <TextView
             android:id="@+id/status"
@@ -56,6 +56,29 @@
             android:layout_marginTop="@dimen/space_1"
             android:max="100"
             android:visibility="gone" />
+
+        <LinearLayout
+            android:id="@+id/model_info"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_1"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/model_info_text"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textAppearance="@style/TextAppearance.ComicReader.ItemSubtitle"
+                tools:text="2× · 1.2 MB · CC BY 4.0" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/model_info_link"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/about_project_page" />
+        </LinearLayout>
     </LinearLayout>
 
     <com.google.android.material.button.MaterialButton

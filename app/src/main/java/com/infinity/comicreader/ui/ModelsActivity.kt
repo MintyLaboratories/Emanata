@@ -14,6 +14,8 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
 import androidx.core.view.isVisible
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
@@ -75,6 +77,17 @@ object ModelText {
         is CatalogModel -> context.getString(R.string.ai_model_details, m.scale, size(context, m.bytes), m.source.license)
         is ShaderModel -> context.getString(R.string.ai_model_details, m.scale, size(context, m.bytes), m.source.license)
         is UserModel -> context.getString(R.string.ai_model_details_imported, m.scale, size(context, m.bytes))
+    }
+
+    /** What a model manager's row says of [m] before it is tapped: its scale, and for an imported model that it is imported. */
+    fun scale(context: Context, m: AiModel): String =
+        if (m is UserModel) context.getString(R.string.ai_model_scale_imported, m.scale) else context.getString(R.string.ai_model_scale, m.scale)
+
+    /** Everything known of [m]: its details and attribution ([attribution]), or for an imported model [imported]. */
+    fun info(context: Context, m: AiModel): String = when (m) {
+        is CatalogModel -> attribution(context, m, m.source)
+        is ShaderModel -> attribution(context, m, m.source)
+        is UserModel -> imported(context, m)
     }
 
     /**
@@ -243,19 +256,23 @@ object ModelText {
 }
 
 /**
- * The AI model manager: every model by step. Catalog models with what they do, their size and
- * license, downloaded or not; downloads (with progress, resumed when cut short), cancels and
+ * The AI model manager: every model by step. Catalog models with what they do and their scale,
+ * downloaded or not; downloads (with progress, resumed when cut short), cancels and
  * deletes. With Keep it simple on, slow catalog models show only once downloaded or
  * downloading. Imported models (marked so, no license) after them, deleted after asking.
  * "Import a model…" takes the user's own: its two files picked ([ModelImports]), copied and
  * checked with progress, then named and given a step, or refused with the reason; a slow
  * model is imported only once the user picks "Import anyway" (Cancel, or Back, drops it). A
- * model's row opens what is known of it.
+ * tap on a model's row shows what is known of it under it (its size, license and source), as
+ * a picker's info button does ([ModelPicker]); another tap hides it.
  */
 class ModelsActivity : AppCompatActivity() {
     private lateinit var store: ModelStore
     private lateinit var prefs: Prefs
     private val rows = HashMap<String, View>()
+
+    /** The ids of the models whose rows show what is known of them. */
+    private val opened = HashSet<String>()
 
     /** The cover text detector's row ([showCoverText]). */
     private var coverTextRow: View? = null
@@ -286,6 +303,7 @@ class ModelsActivity : AppCompatActivity() {
         toolbar.setNavigationOnClickListener { finish() }
         store = ModelStore.of(this)
         prefs = Prefs(this)
+        savedInstanceState?.getStringArrayList(OPENED)?.let(opened::addAll)
         findViewById<MaterialButton>(R.id.models_import).setOnClickListener { pickFiles() }
         build()
 
@@ -303,6 +321,11 @@ class ModelsActivity : AppCompatActivity() {
                 .setPositiveButton(R.string.ok, null)
                 .show()
         }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putStringArrayList(OPENED, ArrayList(opened))
     }
 
     override fun onDestroy() {
@@ -341,10 +364,20 @@ class ModelsActivity : AppCompatActivity() {
                     text = ModelText.blurb(this@ModelsActivity, m)
                     isVisible = text.isNotEmpty()
                 }
-                row.findViewById<TextView>(R.id.subtitle).text = ModelText.details(this, m)
+                row.findViewById<TextView>(R.id.subtitle).text = ModelText.scale(this, m)
+                row.findViewById<TextView>(R.id.model_info_text).text = ModelText.info(this, m)
+                row.findViewById<MaterialButton>(R.id.model_info_link).apply {
+                    val source = (m as? CatalogModel)?.source ?: (m as? ShaderModel)?.source
+                    isVisible = source != null
+                    if (source != null) setOnClickListener { open(source.url) }
+                }
                 // Shown once the store says whether it is downloaded.
                 row.isVisible = m is UserModel || !m.slow
-                row.setOnClickListener { showInfo(m) }
+                row.setOnClickListener {
+                    if (!opened.remove(m.id)) opened += m.id
+                    bindInfo(row, m)
+                }
+                bindInfo(row, m)
                 rowsBox.addView(row)
                 rows[m.id] = row
             }
@@ -561,25 +594,12 @@ class ModelsActivity : AppCompatActivity() {
         return dialog
     }
 
-    private fun showInfo(m: AiModel) {
-        when (m) {
-            is CatalogModel -> sourceInfo(m, m.source)
-            is ShaderModel -> sourceInfo(m, m.source)
-            is UserModel -> AlertDialog.Builder(this)
-                .setTitle(m.name)
-                .setMessage(ModelText.imported(this, m))
-                .setPositiveButton(R.string.ok, null)
-                .show()
-        }
-    }
-
-    private fun sourceInfo(m: AiModel, source: ModelSource) {
-        AlertDialog.Builder(this)
-            .setTitle(m.name)
-            .setMessage(ModelText.attribution(this, m, source))
-            .setPositiveButton(R.string.ok, null)
-            .setNeutralButton(R.string.about_project_page) { _, _ -> open(source.url) }
-            .show()
+    /** Shows what is known of [m] under its [row] while it is opened; a screen reader hears what a tap does. */
+    private fun bindInfo(row: View, m: AiModel) {
+        val shown = m.id in opened
+        row.findViewById<View>(R.id.model_info).isVisible = shown
+        val label = getString(if (shown) R.string.ai_model_less_info else R.string.ai_model_more_info, m.name)
+        ViewCompat.replaceAccessibilityAction(row, AccessibilityNodeInfoCompat.AccessibilityActionCompat.ACTION_CLICK, label, null)
     }
 
     private fun open(url: String) {
@@ -588,5 +608,10 @@ class ModelsActivity : AppCompatActivity() {
         } catch (_: ActivityNotFoundException) {
             Toast.makeText(this, R.string.op_failed, Toast.LENGTH_SHORT).show()
         }
+    }
+
+    private companion object {
+        /** The saved state's ids of the rows showing what is known of their models. */
+        const val OPENED = "opened"
     }
 }

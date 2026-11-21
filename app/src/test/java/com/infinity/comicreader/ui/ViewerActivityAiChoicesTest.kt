@@ -148,6 +148,26 @@ class ViewerActivityAiChoicesTest {
         assertTrue(ModelPickerTest.checked(shown))
     }
 
+    @Test
+    fun aPickerKeepsTheChainItOpenedOnWhenTheDirectionTurnsMeanwhile() {
+        val manga = prefs.aiModel(AiStep.UPSCALE, ChainKind.MANGA)
+        val viewer = open()
+        val sheet = ReaderSheet(viewer).tap(R.id.sheet_ai_upscale)
+        val dialog = latestDialogOf(viewer) as AlertDialog
+        val family = ModelPickerTest.rows(dialog).first { ModelPickerTest.name(it) == "Anime4K B (clean) 2×" }
+        ModelPickerTest.slide(family, 1)
+        idle()
+        // The book turns right to left (as a late direction detection does) while the picker shows Other's picks.
+        sheet.tap(R.id.btn_dir_rtl)
+        assertEquals(ChainKind.MANGA, viewer.aiKindRun())
+        ModelPickerTest.slide(family, 3)
+        idle()
+        dialog.dismiss()
+        idle()
+        assertEquals("anime4k-b-vl", Prefs(context).aiModel(AiStep.UPSCALE, ChainKind.OTHER))
+        assertEquals(manga, Prefs(context).aiModel(AiStep.UPSCALE, ChainKind.MANGA))
+    }
+
     private val store get() = ModelStore.of(context)
 
     private fun level(id: String) = Models.byId(id) as FileSet

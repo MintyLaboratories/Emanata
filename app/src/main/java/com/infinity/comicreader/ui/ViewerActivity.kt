@@ -4159,16 +4159,18 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
      * picks as it is let go or rests, or as the picker closes, and stays open. A level passed
      * over stops the download its pick brought (by the pages shown); as the picker closes, the
      * model picked last downloads and the levels passed over that came with their picks are
-     * deleted ([PickerDownloads]).
+     * deleted ([PickerDownloads]). Every pick goes to the chain shown as it opened ([aiTarget]),
+     * even when the book's direction or ID arrives meanwhile.
      */
     private fun showAiChoices(step: AiStep) {
         var dialog: AlertDialog? = null
         val picks = PickerDownloads.of(aiModels)
+        val target = aiTarget()
         val picker = ModelPicker.of(this, step, prefs.keepSimple, aiShown().id(step)) { id, done ->
             if (done) dialog?.dismiss()
             picks.picked(id)
-            pickAi(step, id, download = done)
-            for (m in picks.passedOver(id, aiChosenIds())) ModelDownloads.cancel(m.id)
+            pickAi(step, id, target, download = done)
+            for (m in picks.passedOver(id, aiChosenIds(target))) ModelDownloads.cancel(m.id)
         }
         dialog = AlertDialog.Builder(this)
             .setTitle(ModelText.step(this, step))
@@ -4177,30 +4179,37 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
             .setOnDismissListener {
                 picker.flush()
                 if (!picks.any) return@setOnDismissListener
-                for (m in picks.passedOver(picker.picked, aiChosenIds())) ModelDownloads.delete(aiModels, m)
+                for (m in picks.passedOver(picker.picked, aiChosenIds(target))) ModelDownloads.delete(aiModels, m)
                 (Models.byId(picker.picked) as? FileSet)?.let { m -> if (!aiModels.installed(m)) ModelDownloads.start(aiModels, m) }
                 followDownloads.run()
             }
             .showKeepingFullscreen()
     }
 
-    /** The ids of the models both default chains and this book's own picks run. */
-    private fun aiChosenIds(): Set<String> =
-        (ChainKind.entries.map { AiPicks.of(prefs, it) } + listOfNotNull(aiOwn())).flatMap { it.ids.values }.filterNotNull().toSet()
+    /** The ids of the models both default chains, this book's own picks and [target]'s book's run. */
+    private fun aiChosenIds(target: AiTarget): Set<String> =
+        (ChainKind.entries.map { AiPicks.of(prefs, it) } + listOfNotNull(aiOwn(), target.own?.let { library.aiPicks(it.id) }))
+            .flatMap { it.ids.values }.filterNotNull().toSet()
+
+    /** Where picks go: book [own]'s own picks, else [kind]'s default chain. */
+    private data class AiTarget(val own: BookRef?, val kind: ChainKind)
+
+    /** Where picks made now go: this book's own picks while it has them, else the default chain it runs. */
+    private fun aiTarget(): AiTarget = AiTarget(book()?.takeIf { aiOwn() != null }, aiKind())
 
     /**
-     * Runs model [id] (null: none) at [step]: for this book when it has its own picks, else in
-     * the default chain it runs. Picking a model while AI processing is off turns it on for
-     * both default chains, the other steps' picks kept; leaving no model in either default
-     * chain turns it off. With [download], a model not downloaded starts downloading.
+     * Runs model [id] (null: none) at [step] in [target]: its book's own picks, else its default
+     * chain. Picking a model while AI processing is off turns it on for both default chains,
+     * the other steps' picks kept; leaving no model in either default chain turns it off. With
+     * [download], a model not downloaded starts downloading.
      */
-    private fun pickAi(step: AiStep, id: String?, download: Boolean) {
-        val own = aiOwn()
-        val book = book()
-        if (own != null && book != null) {
+    private fun pickAi(step: AiStep, id: String?, target: AiTarget, download: Boolean) {
+        val book = target.own
+        val own = book?.let { library.aiPicks(it.id) }
+        if (book != null && own != null) {
             library.setAiPicks(book, own.with(step, id))
         } else {
-            prefs.setAiModel(step, id, aiKind())
+            prefs.setAiModel(step, id, target.kind)
             if (id != null) {
                 prefs.aiEnabled = true
             } else if (prefs.aiEnabled && AiChain.noneChosen(prefs)) {

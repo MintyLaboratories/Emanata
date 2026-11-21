@@ -19,6 +19,7 @@ import com.infinity.comicreader.data.ResumeMode
 import com.infinity.comicreader.data.WidePages
 import com.infinity.comicreader.reader.Fixtures
 import com.infinity.comicreader.reader.TestImages
+import com.infinity.comicreader.testing.idleUntil
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -85,14 +86,6 @@ class ViewerActivityWideImageTest {
 
     private fun idleFor(ms: Long) = shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(ms))
 
-    private fun waitUntil(condition: () -> Boolean) {
-        val deadline = System.currentTimeMillis() + 5_000
-        do {
-            Thread.sleep(10)
-            idle()
-        } while (!condition() && System.currentTimeMillis() < deadline)
-    }
-
     private fun intent() = Intent(context, ViewerActivity::class.java).putExtra(ViewerActivity.EXTRA_PATH, book().absolutePath)
 
     private fun launch(): ViewerActivity {
@@ -101,12 +94,16 @@ class ViewerActivityWideImageTest {
         return viewer
     }
 
-    /** Waits for [viewer] to show the book, with its page sizes read and stored. */
+    /** Waits for [viewer] to show the book. */
+    private fun shown(viewer: ViewerActivity) =
+        idleUntil("the book open") { viewer.findViewById<View>(R.id.viewer_progress).visibility != View.VISIBLE }
+
+    /** Waits for [viewer] to show the book, with its page sizes read, stored and laid out. */
     private fun ready(viewer: ViewerActivity) {
-        val progress = viewer.findViewById<View>(R.id.viewer_progress)
-        waitUntil { progress.visibility != View.VISIBLE }
-        waitUntil { File(context.cacheDir, "page-sizes-by-id").listFiles()?.any { it.name.endsWith(".bin") } == true }
-        repeat(5) { Thread.sleep(10); idle() }
+        shown(viewer)
+        idleUntil("the page sizes read and laid out") {
+            File(context.cacheDir, "page-sizes-by-id").listFiles()?.any { it.name.endsWith(".bin") } == true && viewer.openSettled()
+        }
     }
 
     private fun ViewerActivity.pager() = findViewById<ViewPager2>(R.id.viewer_pager)
@@ -336,7 +333,7 @@ class ViewerActivityWideImageTest {
         val broken = File(dir, "Tale 004.cbz").apply { writeBytes(ByteArray(64) { it.toByte() }) }
         controller.newIntent(Intent(context, ViewerActivity::class.java).putExtra(ViewerActivity.EXTRA_PATH, broken.absolutePath))
         assertEquals(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED, viewer.requestedOrientation)
-        waitUntil { viewer.findViewById<View>(R.id.viewer_progress).visibility != View.VISIBLE }
+        shown(viewer)
         assertEquals(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED, viewer.requestedOrientation)
     }
 
@@ -386,13 +383,9 @@ class ViewerActivityWideImageTest {
     fun aPageFoundWideAfterItShowsTurnsWithTheLock() {
         val intent = Intent(context, ViewerActivity::class.java).putExtra(ViewerActivity.EXTRA_PATH, solidBook().absolutePath).putExtra(ViewerActivity.EXTRA_PAGE, 2)
         val viewer = Robolectric.buildActivity(ViewerActivity::class.java, intent).setup().get()
-        ready(viewer)
+        shown(viewer)
         // Sizes learned are laid out after a wait.
-        val deadline = System.currentTimeMillis() + 5_000
-        while (viewer.requestedOrientation != ActivityInfo.SCREEN_ORIENTATION_LOCKED && System.currentTimeMillis() < deadline) {
-            Thread.sleep(10)
-            idleFor(50)
-        }
+        idleUntil("the screen locked", step = { idleFor(50) }) { viewer.requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_LOCKED }
         idleFor(100)
         assertEquals("3 / 6", viewer.indicator())
         assertEquals(ActivityInfo.SCREEN_ORIENTATION_LOCKED, viewer.requestedOrientation)

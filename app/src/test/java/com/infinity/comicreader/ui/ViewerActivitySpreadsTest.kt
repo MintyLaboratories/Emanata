@@ -1,6 +1,7 @@
 package com.infinity.comicreader.ui
 
 import com.infinity.comicreader.testing.bookId
+import com.infinity.comicreader.testing.idleUntil
 import android.app.Application
 import android.content.Context
 import android.content.Intent
@@ -84,22 +85,13 @@ class ViewerActivitySpreadsTest {
         val intent = Intent(context, ViewerActivity::class.java).putExtra(ViewerActivity.EXTRA_PATH, book.absolutePath)
         val viewer = Robolectric.buildActivity(ViewerActivity::class.java, intent).setup().get()
         val progress = viewer.findViewById<View>(R.id.viewer_progress)
-        waitUntil { progress.visibility != View.VISIBLE }
+        idleUntil("the book open") { progress.visibility != View.VISIBLE }
         return viewer
     }
 
-    private fun waitUntil(condition: () -> Boolean) {
-        val deadline = System.currentTimeMillis() + 5_000
-        do {
-            Thread.sleep(10)
-            idle()
-        } while (!condition() && System.currentTimeMillis() < deadline)
-    }
-
-    /** Waits for the reader to have read and stored the open book's page sizes. */
-    private fun sizesRead() {
-        waitUntil { File(context.cacheDir, "page-sizes-by-id").listFiles()?.any { it.name.endsWith(".bin") } == true }
-        repeat(5) { Thread.sleep(10); idle() }
+    /** Waits for the reader to have read and stored the open book's page sizes, and laid the book out with them. */
+    private fun ViewerActivity.sizesRead() = idleUntil("the page sizes read and laid out") {
+        File(context.cacheDir, "page-sizes-by-id").listFiles()?.any { it.name.endsWith(".bin") } == true && openSettled()
     }
 
     private fun ViewerActivity.items() = findViewById<ViewPager2>(R.id.viewer_pager).adapter!!.itemCount
@@ -146,8 +138,7 @@ class ViewerActivitySpreadsTest {
         val intent = Intent(context, ViewerActivity::class.java).putExtra(ViewerActivity.EXTRA_PATH, book.absolutePath).putExtra(ViewerActivity.EXTRA_PAGE, 4)
         val viewer = Robolectric.buildActivity(ViewerActivity::class.java, intent).setup().get()
         val pager = viewer.findViewById<ViewPager2>(R.id.viewer_pager)
-        waitUntil { pager.adapter != null }
-        repeat(20) { Thread.sleep(10); idle() }
+        idleUntil("the first layout") { pager.adapter != null && viewer.findViewById<View>(R.id.viewer_progress).visibility != View.VISIBLE }
         assertEquals(11, viewer.items())
         assertEquals("5 / 11", viewer.indicator())
     }
@@ -178,8 +169,7 @@ class ViewerActivitySpreadsTest {
         val intent = Intent(context, ViewerActivity::class.java).putExtra(ViewerActivity.EXTRA_PATH, book.absolutePath).putExtra(ViewerActivity.EXTRA_PAGE, page)
         val viewer = Robolectric.buildActivity(ViewerActivity::class.java, intent).setup().get()
         val pager = viewer.findViewById<ViewPager2>(R.id.viewer_pager)
-        waitUntil { pager.adapter != null }
-        repeat(20) { Thread.sleep(10); idle() }
+        idleUntil("the first layout") { pager.adapter != null && viewer.findViewById<View>(R.id.viewer_progress).visibility != View.VISIBLE }
         return viewer
     }
 
@@ -188,7 +178,7 @@ class ViewerActivitySpreadsTest {
         prefs.spreads = SpreadDisplay.SPLIT
         val viewer = launch(book(numbered(1, 10), setOf("Tale 001-005")))
         // The sizes are read after the book shows, then the wide page takes two screens.
-        waitUntil { viewer.items() == 11 }
+        idleUntil("the wide page split") { viewer.items() == 11 }
         assertEquals(11, viewer.items())
         repeat(4) { viewer.next() }
         assertEquals("5 / 11", viewer.indicator())
@@ -202,7 +192,7 @@ class ViewerActivitySpreadsTest {
     fun mergeShowsAWidePageWhole() {
         prefs.spreads = SpreadDisplay.MERGE
         val viewer = launch(book(numbered(1, 10), setOf("Tale 001-005")))
-        sizesRead()
+        viewer.sizesRead()
         assertEquals(10, viewer.items())
     }
 
@@ -210,7 +200,7 @@ class ViewerActivitySpreadsTest {
     fun theSheetSwitchesSpreadsBetweenSplitAndMerge() {
         val viewer = launch(book(numbered(1, 10), setOf("Tale 001-005")))
         ReaderSheet(viewer).tap(R.id.btn_spreads_split)
-        waitUntil { viewer.items() == 11 }
+        idleUntil("the wide page split") { viewer.items() == 11 }
         assertEquals(SpreadDisplay.SPLIT, prefs.spreads)
         assertEquals(11, viewer.items())
         ReaderSheet(viewer).tap(R.id.btn_spreads_merge)
@@ -238,7 +228,7 @@ class ViewerActivitySpreadsTest {
     fun aWidePageTurnsTheScreenToLandscapeUntilTheNextPage() {
         val viewer = launch(book(numbered(1, 6), setOf("Tale 001-003")))
         // The wide page is known once the sizes are read.
-        sizesRead()
+        viewer.sizesRead()
         viewer.next()
         assertEquals(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED, viewer.requestedOrientation)
         viewer.next()
@@ -250,7 +240,7 @@ class ViewerActivitySpreadsTest {
     @Test
     fun aSwipeToAWidePageTurnsTheScreenOnceItSettles() {
         val viewer = launch(book(numbered(1, 6), setOf("Tale 001-003")))
-        sizesRead()
+        viewer.sizesRead()
         viewer.next()
         val pager = viewer.findViewById<ViewPager2>(R.id.viewer_pager)
         var selected: Pair<Int, Int>? = null
@@ -274,7 +264,7 @@ class ViewerActivitySpreadsTest {
     fun widePagesDoingNothingLeaveTheScreenAlone() {
         prefs.widePages = WidePages.NOTHING
         val viewer = launch(book(numbered(1, 6), setOf("Tale 001-003")))
-        sizesRead()
+        viewer.sizesRead()
         repeat(2) { viewer.next() }
         assertEquals(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED, viewer.requestedOrientation)
     }
@@ -283,7 +273,7 @@ class ViewerActivitySpreadsTest {
     fun splitHalvesNeedNoTurn() {
         prefs.spreads = SpreadDisplay.SPLIT
         val viewer = launch(book(numbered(1, 6), setOf("Tale 001-003")))
-        waitUntil { viewer.items() == 7 }
+        idleUntil("the wide page split") { viewer.items() == 7 }
         repeat(3) {
             viewer.next()
             assertEquals(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED, viewer.requestedOrientation)
@@ -293,7 +283,7 @@ class ViewerActivitySpreadsTest {
     @Test
     fun aWideFirstPageTurnsTheScreenOnceItsSizeIsRead() {
         val viewer = launch(book(numbered(1, 6), setOf("Tale 001-001")))
-        sizesRead()
+        viewer.sizesRead()
         assertEquals(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE, viewer.requestedOrientation)
         viewer.next()
         assertEquals(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED, viewer.requestedOrientation)
@@ -328,7 +318,7 @@ class ViewerActivitySpreadsTest {
     fun lyingFlatThePortraitTurnedFromComesBackAndStaysUntilPickedUp() {
         val sensors = accelerometer()
         val viewer = launch(book(numbered(1, 6), setOf("Tale 001-003")))
-        sizesRead()
+        viewer.sizesRead()
         repeat(2) { viewer.next() }
         assertEquals(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE, viewer.requestedOrientation)
         assertEquals(1, sensors.listeners.size)
@@ -353,7 +343,7 @@ class ViewerActivitySpreadsTest {
     fun aPortraitKeptLyingFlatDoesNotUndoALaterRotateImageLock() {
         val sensors = accelerometer()
         val viewer = launch(book(numbered(1, 6), setOf("Tale 001-003")))
-        sizesRead()
+        viewer.sizesRead()
         repeat(2) { viewer.next() }
         sensors.gravity(0f, 0f, 9.8f)
         viewer.turn("land")
@@ -378,7 +368,7 @@ class ViewerActivitySpreadsTest {
     fun heldUpTheSensorTakesOverAtOnce() {
         val sensors = accelerometer()
         val viewer = launch(book(numbered(1, 6), setOf("Tale 001-003")))
-        sizesRead()
+        viewer.sizesRead()
         repeat(2) { viewer.next() }
         // Held in landscape for the spread.
         sensors.gravity(9.8f, 0f, 0f)
@@ -397,8 +387,8 @@ class ViewerActivitySpreadsTest {
             Intent(context, ViewerActivity::class.java).putExtra(ViewerActivity.EXTRA_PATH, book(numbered(1, 6), setOf("Tale 001-002")).absolutePath)
         ).setup()
         val viewer = controller.get()
-        waitUntil { viewer.findViewById<View>(R.id.viewer_progress).visibility != View.VISIBLE }
-        sizesRead()
+        idleUntil("the book open") { viewer.findViewById<View>(R.id.viewer_progress).visibility != View.VISIBLE }
+        viewer.sizesRead()
         assertTrue(sensors.listeners.isEmpty())
         viewer.next()
         assertEquals(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE, viewer.requestedOrientation)
@@ -417,8 +407,8 @@ class ViewerActivitySpreadsTest {
             Intent(context, ViewerActivity::class.java).putExtra(ViewerActivity.EXTRA_PATH, book(numbered(1, 6), setOf("Tale 001-002")).absolutePath)
         ).setup()
         val viewer = controller.get()
-        waitUntil { viewer.findViewById<View>(R.id.viewer_progress).visibility != View.VISIBLE }
-        sizesRead()
+        idleUntil("the book open") { viewer.findViewById<View>(R.id.viewer_progress).visibility != View.VISIBLE }
+        viewer.sizesRead()
         viewer.next()
         // Standing still in landscape for the spread.
         sensors.gravity(9.8f, 0f, 0f)
@@ -442,8 +432,8 @@ class ViewerActivitySpreadsTest {
             Intent(context, ViewerActivity::class.java).putExtra(ViewerActivity.EXTRA_PATH, book(numbered(1, 6), setOf("Tale 001-002")).absolutePath)
         ).setup()
         val viewer = controller.get()
-        waitUntil { viewer.findViewById<View>(R.id.viewer_progress).visibility != View.VISIBLE }
-        sizesRead()
+        idleUntil("the book open") { viewer.findViewById<View>(R.id.viewer_progress).visibility != View.VISIBLE }
+        viewer.sizesRead()
         viewer.next()
         sensors.gravity(0f, 0f, 9.8f)
         viewer.turn("land")
@@ -463,7 +453,7 @@ class ViewerActivitySpreadsTest {
     fun reclinedAsFarAsTheSystemStillTurnsTheSensorTakesOver() {
         val sensors = accelerometer()
         val viewer = launch(book(numbered(1, 6), setOf("Tale 001-003")))
-        sizesRead()
+        viewer.sizesRead()
         repeat(2) { viewer.next() }
         // Lying back 64 degrees from upright, in landscape: past where orientation events give up.
         sensors.gravity(9.8f * 0.438f, 0f, 9.8f * 0.899f)
@@ -478,7 +468,7 @@ class ViewerActivitySpreadsTest {
         android.provider.Settings.System.putInt(context.contentResolver, android.provider.Settings.System.ACCELEROMETER_ROTATION, 0)
         val sensors = accelerometer()
         val viewer = launch(book(numbered(1, 6), setOf("Tale 001-003")))
-        sizesRead()
+        viewer.sizesRead()
         repeat(2) { viewer.next() }
         assertEquals(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE, viewer.requestedOrientation)
         assertTrue(sensors.listeners.isEmpty())
@@ -495,7 +485,7 @@ class ViewerActivitySpreadsTest {
         shadowOf(display).setRotation(android.view.Surface.ROTATION_180)
         val sensors = accelerometer()
         val viewer = launch(book(numbered(1, 6), setOf("Tale 001-003")))
-        sizesRead()
+        viewer.sizesRead()
         repeat(2) { viewer.next() }
         sensors.gravity(0f, 0f, 9.8f)
         shadowOf(display).setRotation(android.view.Surface.ROTATION_90)
@@ -508,7 +498,7 @@ class ViewerActivitySpreadsTest {
     fun landscapeOnlyKeepsOnePageAScreenWhileTurnedForAWidePage() {
         prefs.twoPage = TwoPage.LANDSCAPE
         val viewer = launch(book(numbered(1, 8), setOf("Tale 001-003")))
-        sizesRead()
+        viewer.sizesRead()
         assertEquals(8, viewer.items())
         repeat(2) { viewer.next() }
         assertEquals(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE, viewer.requestedOrientation)
@@ -529,7 +519,7 @@ class ViewerActivitySpreadsTest {
     fun landscapeOnlyPairsAfterATurnTheReaderMakes() {
         prefs.twoPage = TwoPage.LANDSCAPE
         val viewer = launch(book(numbered(1, 8)))
-        sizesRead()
+        viewer.sizesRead()
         viewer.turn("land")
         assertTrue(viewer.items() < 8)
         viewer.turn("port")
@@ -539,11 +529,11 @@ class ViewerActivitySpreadsTest {
     fun aRecreatedReaderKeepsTheOrientationTheReaderPicked() {
         val intent = Intent(context, ViewerActivity::class.java).putExtra(ViewerActivity.EXTRA_PATH, book(numbered(1, 6)).absolutePath)
         val controller = Robolectric.buildActivity(ViewerActivity::class.java, intent).setup()
-        waitUntil { controller.get().findViewById<View>(R.id.viewer_progress).visibility != View.VISIBLE }
+        idleUntil("the book open") { controller.get().findViewById<View>(R.id.viewer_progress).visibility != View.VISIBLE }
         ReaderSheet(controller.get()).tap(R.id.btn_orient_portrait).dialog.dismiss()
         controller.recreate()
         val viewer = controller.get()
-        waitUntil { viewer.findViewById<View>(R.id.viewer_progress).visibility != View.VISIBLE }
+        idleUntil("the book open") { viewer.findViewById<View>(R.id.viewer_progress).visibility != View.VISIBLE }
         val group = ReaderSheet(viewer).view<MaterialButtonToggleGroup>(R.id.sheet_orientation)
         assertEquals(R.id.btn_orient_portrait, group.checkedButtonId)
     }
@@ -564,10 +554,7 @@ class ViewerActivitySpreadsTest {
         prefs.spreads = SpreadDisplay.SPLIT
         val viewer = launch(solidBook(numbered(1, 10), setOf("Tale 001-003")))
         // Nothing read ahead: the wide page is known once it loads, with the pages after the first.
-        waitUntil {
-            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(100))
-            viewer.items() == 11
-        }
+        idleUntil("the wide page learned", step = { idleFor(100) }) { viewer.items() == 11 }
         assertEquals(11, viewer.items())
     }
 }

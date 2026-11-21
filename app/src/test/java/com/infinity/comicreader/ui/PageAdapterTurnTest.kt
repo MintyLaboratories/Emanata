@@ -115,6 +115,43 @@ class PageAdapterTurnTest {
     }
 
     @Test
+    fun theOtherHandOrTheSameAnswerAgainDecodesNothing() {
+        val source = Recording(6)
+        val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false, preload = 0)
+        adapter.turnsImage = { it == 2 }
+        val rv = RecyclerView(context).apply {
+            layoutManager = LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false)
+            itemAnimator = null
+            this.adapter = adapter
+        }
+        layOut(rv, 1200, 1800)
+        rv.scrollToPosition(2)
+        settle(rv, 1200, 1800)
+        assertEquals(listOf(1800 to 1200), sizes(source.loads, 2))
+        val before = source.loads.size
+        val changed = ArrayList<Pair<Int, Int>>()
+        adapter.registerAdapterDataObserver(object : RecyclerView.AdapterDataObserver() {
+            override fun onItemRangeChanged(positionStart: Int, itemCount: Int, payload: Any?) {
+                changed += positionStart to itemCount
+            }
+        })
+        adapter.turnsImage = { it == 2 }
+        adapter.imageTurn = -1
+        adapter.refreshTurns()
+        settle(rv, 1200, 1800)
+        // Turned the other way at the same size, binding that item alone again.
+        assertEquals(-1, (rv.findViewHolderForAdapterPosition(2) as PageAdapter.PageHolder).turner!!.turn)
+        assertEquals(listOf(2 to 1), changed)
+        assertEquals(before, source.loads.size)
+        // Turning stops: the page is decoded upright.
+        adapter.turnsImage = null
+        settle(rv, 1200, 1800)
+        assertEquals(0, (rv.findViewHolderForAdapterPosition(2) as PageAdapter.PageHolder).turner!!.turn)
+        assertEquals(listOf(1800 to 1200, 1200 to 1800), sizes(source.loads, 2))
+        adapter.release()
+    }
+
+    @Test
     fun aScreenThatStaysTurnedShowsItsOwnSizeSoon() {
         val source = Recording(6)
         val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false, preload = 1)

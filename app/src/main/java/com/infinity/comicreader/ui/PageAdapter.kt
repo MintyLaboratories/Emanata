@@ -186,20 +186,21 @@ class PageAdapter(
     /**
      * Items whose picture is drawn turned a quarter to fill the screen ("Rotate image"), as
      * the reader decides; null for none. Their pages are decoded for the item's size swapped.
+     * Set to or from null, the pages are shown again at their new sizes ([rekey]); bound items
+     * follow other changes of the answer with [refreshTurns].
      */
     var turnsImage: ((Int) -> Boolean)? = null
         set(value) {
+            val changed = (field == null) != (value == null)
             field = value
-            rekey()
+            if (changed) rekey()
         }
 
-    /** The way a picture [turnsImage] names is turned: 1 clockwise (its top to the right), -1 counter-clockwise. */
+    /**
+     * The way a picture [turnsImage] names is turned: 1 clockwise (its top to the right), -1
+     * counter-clockwise. Bound items follow with [refreshTurns]; their decode size stays.
+     */
     var imageTurn = 1
-        set(value) {
-            if (field == value) return
-            field = value
-            rekey()
-        }
 
     /** Holders bound in paged reading, which [refreshTurns] checks. */
     private val turnable = HashSet<PageHolder>()

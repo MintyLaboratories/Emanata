@@ -401,9 +401,6 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
     /** Locks the screen while a wide page shows turned to fill it ("Rotate image"). */
     private val imageTurn = ImageTurn()
 
-    /** Whether the layout was landscape when the pages last learned which of them [imageTurn] turns. */
-    private var turnsLandscape = false
-
     /** True from a swipe's first move until the pager comes to rest. */
     private var swiping = false
 
@@ -618,7 +615,6 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         // A recreated reader (theme or language change) continues where it was, turned as it was.
         spreadRotation.restore(savedInstanceState?.getIntArray(STATE_ROTATION))
         imageTurn.restore(savedInstanceState?.getIntArray(STATE_IMAGE_TURN))
-        turnsLandscape = landscape()
         savedInstanceState?.getString(STATE_PATH)?.let {
             intent.putExtra(EXTRA_PATH, it).putExtra(EXTRA_PAGE, savedInstanceState.getInt(STATE_PAGE))
         }
@@ -2431,11 +2427,22 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         imageTurn.show(widePageShown(), prefs.widePages == WidePages.IMAGE, landscape(), spreadRotation.user)?.let { requestedOrientation = it }
     }
 
-    /** The wide-pages setting or the hand changed: pages are turned, and the screen turned or locked, as they now say. */
+    /**
+     * The wide-pages setting or the hand changed: pages are turned, and the screen turned or
+     * locked, as they now say. Pages are shown again at new sizes only as turning starts or stops.
+     */
     private fun applyWidePages() {
-        adapter?.imageTurn = ImageTurn.quarter(prefs.leftHanded)
+        adapter?.let {
+            it.imageTurn = ImageTurn.quarter(prefs.leftHanded)
+            it.turnsImage = imageTurns()
+        }
         updateSpreadRotation()
-        adapter?.rekey()
+    }
+
+    /** The items drawn turned in paged reading ([PageAdapter.turnsImage]): wide pages with "Rotate image"; null for none. */
+    private fun imageTurns(): ((Int) -> Boolean)? {
+        if (mode != MODE_PAGED || prefs.widePages != WidePages.IMAGE) return null
+        return { item -> imageTurn.turns(widePageOf(item), prefs.widePages == WidePages.IMAGE, landscape()) }
     }
 
     private fun upright(): UprightWatch = uprightWatch ?: UprightWatch(this) {
@@ -2546,7 +2553,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         if (mode == MODE_PAGED) {
             a.turnsFor = { item -> spreadRotation.turnsFor(widePageOf(item), prefs.widePages == WidePages.ORIENTATION) }
             // Decided as each item binds, so a wide page slides in already turned.
-            a.turnsImage = { item -> imageTurn.turns(widePageOf(item), prefs.widePages == WidePages.IMAGE, landscape()) }
+            a.turnsImage = imageTurns()
             a.imageTurn = ImageTurn.quarter(prefs.leftHanded)
         }
         a.turned = spreadRotation.held >= 0
@@ -2769,11 +2776,8 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         }
         // In landscape no page is drawn turned, so none locks the screen.
         if (source != null) updateImageLock()
-        if (landscape() != turnsLandscape) {
-            turnsLandscape = landscape()
-            // Pages are turned for one orientation only, also where the window keeps its size.
-            if (prefs.widePages == WidePages.IMAGE) adapter?.rekey()
-        }
+        // Pages turn in portrait only: a resize shows them again; a window that kept its size, here once laid out.
+        pager.post { adapter?.refreshTurns() }
         sheetDialog?.behavior?.peekHeight = sheetPeek()
     }
 

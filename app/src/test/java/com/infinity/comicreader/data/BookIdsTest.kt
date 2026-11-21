@@ -8,6 +8,7 @@ import com.infinity.comicreader.net.RemoteChannel
 import com.infinity.comicreader.net.RemoteFile
 import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.testing.Xxh3Port
+import com.infinity.comicreader.testing.awaitUntil
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -24,6 +25,8 @@ import org.robolectric.annotation.Config
 import java.io.File
 import java.nio.ByteBuffer
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.FutureTask
+import java.util.concurrent.locks.LockSupport
 import kotlin.random.Random
 
 @RunWith(RobolectricTestRunner::class)
@@ -148,9 +151,14 @@ class BookIdsTest {
         file.fresh()
         fake.slowReads = 0L..Long.MAX_VALUE
         fake.slow = gate
-        val opener = Thread { while (fake.held.get() < 2) Thread.sleep(5); gate.countDown() }.apply { start() }
-        val id = BookIds.of(file)
-        opener.join(5_000)
+        val hashing = FutureTask { BookIds.of(file) }.also { Thread(it).start() }
+        try {
+            awaitUntil("both ends of the file asked for at once") { fake.held.get() >= 2 }
+        } finally {
+            gate.countDown()
+        }
+        awaitUntil("the file's ID") { hashing.isDone }
+        val id = hashing.get()
         assertEquals(expected(bytes), id)
         assertEquals(65_536L, fake.bytesRead)
         fake.slow = null
@@ -181,10 +189,13 @@ class BookIdsTest {
         fake.slow = gate
         val ids = arrayOfNulls<BookId>(4)
         val threads = (0 until 4).map { i -> Thread { ids[i] = BookIds.of(file) }.apply { start() } }
-        while (fake.held.get() < 1) Thread.sleep(5)
-        Thread.sleep(50)
-        gate.countDown()
-        threads.forEach { it.join(5_000) }
+        // One reads, held; the other three wait on its hash (parked on its task) instead of reading again.
+        try {
+            awaitUntil("three askers to wait on the first one's hash") { threads.count { LockSupport.getBlocker(it) is FutureTask<*> } == 3 }
+        } finally {
+            gate.countDown()
+        }
+        awaitUntil("all four askers to get the ID") { threads.none { it.isAlive } }
         assertEquals(1, ids.toSet().size)
         assertEquals(65_536L, fake.bytesRead)
     }

@@ -223,7 +223,7 @@ class ModelImportPreviewTest {
         assertTrue(ImportPreviewZoom.shown(twice, 4) === twice)
     }
 
-    /** A test picture's row with a before and after of [side] px, measured [width] px wide; its pair. */
+    /** A test picture's row with a before and after of [side] px, laid out [width] px wide; its pair. */
     private fun measuredPair(side: Int, width: Int): ButtonRow {
         val item = LayoutInflater.from(context).inflate(R.layout.item_import_preview, null)
         for (id in listOf(R.id.import_preview_before, R.id.import_preview_after)) {
@@ -248,7 +248,7 @@ class ModelImportPreviewTest {
             assertTrue("${image.width}", image.width in 200 - gap..200)
             assertEquals(image.width, image.height)
         }
-        // Measured again wider, the same row goes side by side.
+        // Laid out again wider, the same row goes side by side.
         val row = narrow.parent as View
         row.measure(View.MeasureSpec.makeMeasureSpec(600, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
         assertEquals(LinearLayout.HORIZONTAL, narrow.orientation)

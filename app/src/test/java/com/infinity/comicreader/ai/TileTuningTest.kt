@@ -448,7 +448,7 @@ class TileTuningTest {
     fun eachPrecisionKeepsItsOwnChoice() {
         val dir = tmp.newFolder()
         val runtime = FakeRuntime(
-            gpu = GpuInfo("Test GPU", 2048, false, Long.MAX_VALUE),
+            gpu = GpuInfo("Test GPU", 2048, Fp16Modes.NONE, Long.MAX_VALUE),
             make = { onGpu, _ -> if (onGpu) Clocked(FakeModel(), now, ::lightMs) else FakeModel(onGpu = false) }
         )
         assertEquals(384, open(runtime, tuning(dir)).size)

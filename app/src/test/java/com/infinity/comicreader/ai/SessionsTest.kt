@@ -27,7 +27,8 @@ class SessionsTest {
     @get:Rule
     val tmp = TemporaryFolder()
 
-    private fun gpu(budgetMb: Int = 2048, fp16: Boolean = true, maxBuffer: Long = Long.MAX_VALUE) = GpuInfo("Test GPU", budgetMb, fp16, maxBuffer)
+    private fun gpu(budgetMb: Int = 2048, fp16: Boolean = true, maxBuffer: Long = Long.MAX_VALUE) =
+        GpuInfo("Test GPU", budgetMb, if (fp16) Fp16Modes.ALL else Fp16Modes.NONE, maxBuffer)
 
     @Test
     fun opensOnTheGpuAfterMeasuringOnTheCpu() {
@@ -122,6 +123,26 @@ class SessionsTest {
         assertTrue(s.model.onGpu)
         assertTrue(s.fp16)
         assertEquals(128, s.size)
+    }
+
+    @Test
+    fun aGpuWithPackedFp16OnlyTriesFp16() {
+        val packed = Fp16Modes(storage = false, packed = true, arithmetic = false)
+        val runtime = FakeRuntime(gpu = GpuInfo("Test GPU", 2048, packed, Long.MAX_VALUE))
+        val s = Sessions.open(runtime, fakeFiles(tmp.root), threads = 4)!!
+        assertTrue(s.model.onGpu)
+        assertTrue(s.fp16)
+        assertEquals(listOf(false, true), runtime.askedFp16)
+    }
+
+    @Test
+    fun aGpuWithFp16ArithmeticOnlyRunsInFp32() {
+        val arithmetic = Fp16Modes(storage = false, packed = false, arithmetic = true)
+        val runtime = FakeRuntime(gpu = GpuInfo("Test GPU", 2048, arithmetic, Long.MAX_VALUE))
+        val s = Sessions.open(runtime, fakeFiles(tmp.root), threads = 4)!!
+        assertTrue(s.model.onGpu)
+        assertFalse(s.fp16)
+        assertEquals(listOf(false, false), runtime.askedFp16)
     }
 
     @Test
@@ -265,12 +286,40 @@ class SessionsTest {
 
     @Test
     fun gpuInfoParsesNativeDescriptions() {
-        assertEquals(GpuInfo("Some GPU 1", 2048, true, 134217728), GpuInfo.parse("Some GPU 1\t2048\t1\t134217728"))
-        assertEquals(GpuInfo("x", 0, false, 1), GpuInfo.parse("x\t0\t0\t1"))
+        assertEquals(GpuInfo("Some GPU 1", 2048, Fp16Modes.ALL, 134217728), GpuInfo.parse("Some GPU 1\t2048\t7\t134217728"))
+        assertEquals(GpuInfo("x", 0, Fp16Modes.NONE, 1), GpuInfo.parse("x\t0\t0\t1"))
+        assertEquals(Fp16Modes(storage = false, packed = true, arithmetic = false), GpuInfo.parse("x\t0\t2\t1")!!.fp16Modes)
         assertNull(GpuInfo.parse(null))
         assertNull(GpuInfo.parse("x\tmany\t1\t1"))
         assertNull(GpuInfo.parse("x\t1\t1"))
         assertNull(GpuInfo.parse("x\t1\t1\t0"))
+        assertNull(GpuInfo.parse("x\t1\t8\t1"))
+        assertNull(GpuInfo.parse("x\t1\t-1\t1"))
+    }
+
+    @Test
+    fun fp16RunsWhereTheGpuStoresOrPacksIt() {
+        fun modes(storage: Boolean, packed: Boolean, arithmetic: Boolean) = Fp16Modes(storage, packed, arithmetic)
+        assertTrue(modes(storage = true, packed = false, arithmetic = false).usable)
+        assertTrue("packed alone", modes(storage = false, packed = true, arithmetic = false).usable)
+        assertTrue(modes(storage = true, packed = false, arithmetic = true).usable)
+        assertFalse("arithmetic alone has nothing to compute on", modes(storage = false, packed = false, arithmetic = true).usable)
+        assertFalse(Fp16Modes.NONE.usable)
+        assertTrue(GpuInfo("x", 0, modes(storage = false, packed = true, arithmetic = false), 1).fp16)
+        assertFalse(GpuInfo("x", 0, modes(storage = false, packed = false, arithmetic = true), 1).fp16)
+    }
+
+    @Test
+    fun fp16TurnsOnOnlyTheModesTheGpuSupports() {
+        assertEquals(Fp16Modes.PACKED, Fp16Modes(storage = false, packed = true, arithmetic = false).bits)
+        assertEquals(Fp16Modes.STORAGE or Fp16Modes.ARITHMETIC, Fp16Modes(storage = true, packed = false, arithmetic = true).bits)
+        assertEquals(Fp16Modes.PACKED or Fp16Modes.ARITHMETIC, Fp16Modes(storage = false, packed = true, arithmetic = true).bits)
+        assertEquals(7, Fp16Modes.ALL.bits)
+        assertEquals("arithmetic alone turns nothing on", 0, Fp16Modes(storage = false, packed = false, arithmetic = true).bits)
+        for (bits in 1..7) if (bits != Fp16Modes.ARITHMETIC) assertEquals(bits, Fp16Modes.of(bits)!!.bits)
+        val packedOnly = GpuInfo("x", 0, Fp16Modes(storage = false, packed = true, arithmetic = false), 1)
+        assertEquals(Fp16Modes.PACKED, packedOnly.fp16Bits(fp16 = true))
+        assertEquals("fp32 asked for", 0, packedOnly.fp16Bits(fp16 = false))
     }
 
     @Test

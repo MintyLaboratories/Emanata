@@ -1090,7 +1090,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   fits one GPU buffer (`maxStorageBufferRange`; past it the output comes back
   wrong without an error). On the GPU the model is then checked at that size: a
   page tiled two ways must agree within 2 codes, and must match the CPU's fp32
-  output apart from rounding noise. Seams from fp16 rounding widen the margin by
+  output apart from rounding noise. A GPU that supports fp16 storage or packed
+  fp16 (pairs in 32-bit words, computed in fp32) is checked in fp16 first, with
+  only the fp16 modes it supports turned on. Seams from fp16 rounding widen the margin by
   8 pixels (at most 3 times, while fp16 stays the cheaper per pixel), then fp32
   is tried; other failures try the next smaller size. Catalog models may take
   larger GPU tiles (`TileTuning`): at a model's first open each device times

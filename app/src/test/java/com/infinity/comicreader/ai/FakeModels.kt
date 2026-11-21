@@ -168,7 +168,7 @@ internal class FakeModel(
 
 /** A runtime handing out [FakeModel]s: [gpu] when set, opening on it only when [gpuOpens]. */
 internal class FakeRuntime(
-    val gpu: GpuInfo? = GpuInfo("Test GPU", 2048, true, Long.MAX_VALUE),
+    val gpu: GpuInfo? = GpuInfo("Test GPU", 2048, Fp16Modes.ALL, Long.MAX_VALUE),
     private val gpuOpens: Boolean = true,
     override val available: Boolean = true,
     private val make: (onGpu: Boolean, fp16: Boolean) -> TileModel? = { onGpu, _ -> FakeModel(onGpu = onGpu) }

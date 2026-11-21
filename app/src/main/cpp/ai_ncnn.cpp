@@ -245,6 +245,11 @@ constexpr jint FAILED_INPUT = -1;
 constexpr jint FAILED_RUN = -2;
 constexpr jint FAILED_OUTPUT = -3;
 
+// fp16 modes, as bits (GpuInfo's Fp16Modes on the Kotlin side).
+constexpr jint FP16_STORAGE = 1;
+constexpr jint FP16_PACKED = 2;
+constexpr jint FP16_ARITHMETIC = 4;
+
 /**
  * Places the calling thread and its OpenMP workers for [m]: on the large cores for a model on
  * the CPU, anywhere for one on the GPU. ncnn places only the calling thread's team, so what
@@ -268,9 +273,10 @@ JNIEXPORT jint JNI_OnLoad(JavaVM*, void*) {
 }
 
 /**
- * GPU name, heap budget in MB, fp16 support and the largest buffer one shader may address in
- * bytes (the lesser of maxStorageBufferRange and maxMemoryAllocationSize), as
- * "name\tbudget\tfp16\tbuffer"; null without a usable Vulkan device.
+ * GPU name, heap budget in MB, the fp16 modes it supports (bits: FP16_STORAGE, FP16_PACKED,
+ * FP16_ARITHMETIC) and the largest buffer one shader may address in bytes (the lesser of
+ * maxStorageBufferRange and maxMemoryAllocationSize), as "name\tbudget\tfp16\tbuffer"; null
+ * without a usable Vulkan device.
  */
 JNIEXPORT jstring JNICALL
 Java_com_infinity_comicreader_ai_LibNcnn_nGpu(JNIEnv* env, jclass) {
@@ -290,7 +296,9 @@ Java_com_infinity_comicreader_ai_LibNcnn_nGpu(JNIEnv* env, jclass) {
             if (m3.maxMemoryAllocationSize > 0) buffer = std::min<uint64_t>(buffer, m3.maxMemoryAllocationSize);
         }
         s = std::string(info.device_name()) + "\t" + std::to_string(vkdev ? vkdev->get_heap_budget() : 0) + "\t" +
-            (info.support_fp16_storage() && info.support_fp16_arithmetic() ? "1" : "0") + "\t" + std::to_string(buffer);
+            std::to_string((info.support_fp16_storage() ? FP16_STORAGE : 0) | (info.support_fp16_packed() ? FP16_PACKED : 0) |
+                           (info.support_fp16_arithmetic() ? FP16_ARITHMETIC : 0)) +
+            "\t" + std::to_string(buffer);
     }
     gpu_release();
     return env->NewStringUTF(s.c_str());
@@ -298,12 +306,13 @@ Java_com_infinity_comicreader_ai_LibNcnn_nGpu(JNIEnv* env, jclass) {
 
 /**
  * Opens a model on the GPU when [gpu] and one is usable, else on [threads] CPU threads of the
- * large cores; on the GPU, fp16 storage and arithmetic only when [fp16]. The CPU always computes
- * in fp32: its fp16 kernels differ by tile shape enough to show as seams. 0 when the files do not load.
+ * large cores; on the GPU, the fp16 modes in bits [fp16] (as nGpu reports them), fp32 for 0.
+ * The CPU always computes in fp32: its fp16 kernels differ by tile shape enough to show as
+ * seams. 0 when the files do not load.
  */
 JNIEXPORT jlong JNICALL
 Java_com_infinity_comicreader_ai_LibNcnn_nOpen(JNIEnv* env, jclass, jstring param, jstring bin, jboolean gpu, jint threads,
-                                               jboolean fp16) {
+                                               jint fp16) {
     auto* m = new Model();
     if (gpu && gpu_acquire()) {
         m->gpu = true;
@@ -320,13 +329,12 @@ Java_com_infinity_comicreader_ai_LibNcnn_nOpen(JNIEnv* env, jclass, jstring para
     m->net.opt.openmp_blocktime = 0;
     m->net.opt.blob_allocator = &m->blob;
     m->net.opt.workspace_allocator = &m->workspace;
-    if (!fp16 || !m->gpu) {
-        m->net.opt.use_fp16_packed = false;
-        m->net.opt.use_fp16_storage = false;
-        m->net.opt.use_fp16_arithmetic = false;
-        m->net.opt.use_bf16_packed = false;
-        m->net.opt.use_bf16_storage = false;
-    }
+    const jint modes = m->gpu ? fp16 : 0;
+    m->net.opt.use_fp16_storage = (modes & FP16_STORAGE) != 0;
+    m->net.opt.use_fp16_packed = (modes & FP16_PACKED) != 0;
+    m->net.opt.use_fp16_arithmetic = (modes & FP16_ARITHMETIC) != 0;
+    m->net.opt.use_bf16_packed = false;
+    m->net.opt.use_bf16_storage = false;
     std::string p = utf(env, param), b = utf(env, bin);
     // Other threads' allocations meanwhile count too: an upper bound.
     const int64_t heap0 = heapBytes();

@@ -23,18 +23,51 @@ class ScoreMap(val width: Int, val height: Int, val values: FloatArray) {
 }
 
 /**
- * The Vulkan device models run on: its [name], the memory it lets us use in MB, whether it
- * computes in fp16, and the largest buffer one shader may address ([maxBufferBytes]): a
- * feature map past it comes out wrong without an error.
+ * The fp16 modes a GPU supports, as Vulkan reports them: [storage] (fp16 buffers), [packed]
+ * (fp16 pairs in 32-bit words, computed in fp32) and [arithmetic] (computing in fp16).
  */
-data class GpuInfo(val name: String, val budgetMb: Int, val fp16: Boolean, val maxBufferBytes: Long) {
+data class Fp16Modes(val storage: Boolean, val packed: Boolean, val arithmetic: Boolean) {
+    /** Models may run in fp16: storage or packed halves the bytes moved; arithmetic needs one of them. */
+    val usable: Boolean get() = storage || packed
+
+    /** The modes a model in fp16 turns on, as [STORAGE], [PACKED] and [ARITHMETIC] bits: each one supported; none unless [usable]. */
+    val bits: Int
+        get() = if (!usable) 0 else (if (storage) STORAGE else 0) or (if (packed) PACKED else 0) or (if (arithmetic) ARITHMETIC else 0)
+
     companion object {
-        /** From native code's "name\tbudget\tfp16\tbuffer"; null for null or anything else. */
+        const val STORAGE = 1
+        const val PACKED = 2
+        const val ARITHMETIC = 4
+
+        val NONE = Fp16Modes(storage = false, packed = false, arithmetic = false)
+        val ALL = Fp16Modes(storage = true, packed = true, arithmetic = true)
+
+        /** From native code's bits ([STORAGE], [PACKED], [ARITHMETIC]); null for anything else. */
+        fun of(bits: Int): Fp16Modes? =
+            if (bits !in 0..7) null else Fp16Modes(bits and STORAGE != 0, bits and PACKED != 0, bits and ARITHMETIC != 0)
+    }
+}
+
+/**
+ * The Vulkan device models run on: its [name], the memory it lets us use in MB, the fp16 modes
+ * it supports ([fp16Modes]), and the largest buffer one shader may address ([maxBufferBytes]):
+ * a feature map past it comes out wrong without an error.
+ */
+data class GpuInfo(val name: String, val budgetMb: Int, val fp16Modes: Fp16Modes, val maxBufferBytes: Long) {
+    /** Models may run in fp16 on it ([Fp16Modes.usable]). */
+    val fp16: Boolean get() = fp16Modes.usable
+
+    /** The fp16 bits a model opened on it turns on: [Fp16Modes.bits] when [fp16] is asked for, else none (fp32). */
+    fun fp16Bits(fp16: Boolean): Int = if (fp16) fp16Modes.bits else 0
+
+    companion object {
+        /** From native code's "name\tbudget\tfp16 bits\tbuffer" ([Fp16Modes.of]); null for null or anything else. */
         fun parse(s: String?): GpuInfo? {
             val parts = s?.split('\t')?.takeIf { it.size == 4 } ?: return null
             val budget = parts[1].toIntOrNull() ?: return null
+            val modes = parts[2].toIntOrNull()?.let { Fp16Modes.of(it) } ?: return null
             val buffer = parts[3].toLongOrNull()?.takeIf { it > 0 } ?: return null
-            return GpuInfo(parts[0], budget, parts[2] == "1", buffer)
+            return GpuInfo(parts[0], budget, modes, buffer)
         }
     }
 }
@@ -94,7 +127,7 @@ internal interface InferenceRuntime {
 
     /**
      * [files] opened on the GPU when [gpu] and one is usable, else on [threads] CPU threads; on
-     * the GPU, fp16 storage and arithmetic only with [fp16] (the CPU always computes in fp32).
+     * the GPU, the fp16 modes it supports only with [fp16] (the CPU always computes in fp32).
      * Null when the files do not load.
      */
     fun open(files: ModelFiles, gpu: Boolean, threads: Int, fp16: Boolean = true): TileModel?
@@ -168,7 +201,8 @@ internal object LibNcnn : InferenceRuntime {
 
     private fun openOn(on: OneThread, files: ModelFiles, gpu: Boolean, threads: Int, fp16: Boolean): TileModel? {
         if (!available) return null
-        val handle = on.run { nOpen(files.param.path, files.bin.path, gpu && gpuInfo != null, threads, fp16) }
+        val info = gpuInfo?.takeIf { gpu }
+        val handle = on.run { nOpen(files.param.path, files.bin.path, info != null, threads, info?.fp16Bits(fp16) ?: 0) }
         return if (handle == 0L) null else Opened(handle, files, on)
     }
 
@@ -224,7 +258,7 @@ internal object LibNcnn : InferenceRuntime {
     private external fun nGpu(): String?
 
     @JvmStatic
-    private external fun nOpen(param: String, bin: String, gpu: Boolean, threads: Int, fp16: Boolean): Long
+    private external fun nOpen(param: String, bin: String, gpu: Boolean, threads: Int, fp16: Int): Long
 
     @JvmStatic
     private external fun nOnGpu(handle: Long): Boolean

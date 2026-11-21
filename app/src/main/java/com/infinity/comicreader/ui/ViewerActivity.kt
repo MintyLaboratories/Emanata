@@ -2417,6 +2417,8 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         if (swiping) return
         // With auto-rotate off, the system turns back to the reader's lock whatever the sensor.
         val unsure = spreadRotation.held >= 0 && autoRotate() && upright().unsure()
+        // Pages found wide since their items bound turn with the lock.
+        adapter?.refreshTurns()
         // A lock let go first: a turn to landscape asked for after it wins.
         updateImageLock()
         spreadRotation.show(widePageShown(), prefs.widePages == WidePages.ORIENTATION, landscape(), screenOrientation(), unsure)?.let { requestedOrientation = it }

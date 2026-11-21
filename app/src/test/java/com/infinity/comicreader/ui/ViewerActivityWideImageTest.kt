@@ -75,6 +75,12 @@ class ViewerActivityWideImageTest {
             *(1..6).map { Fixtures.entry("Tale 001-%03d.png".format(it), if (it == 3) wide else portrait) }.toTypedArray()
         )
 
+    /** The pages of [book] in a solid RAR, whose sizes are learned as pages load. */
+    private fun solidBook(): File =
+        File(dir, "Tale 002.cbr").apply {
+            writeBytes(Fixtures.rar4Bytes(*(1..6).map { Fixtures.entry("Tale 002-%03d.png".format(it), if (it == 3) wide else portrait) }.toTypedArray(), solid = true))
+        }
+
     private fun idle() = shadowOf(Looper.getMainLooper()).idle()
 
     private fun idleFor(ms: Long) = shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(ms))
@@ -269,6 +275,25 @@ class ViewerActivityWideImageTest {
         ready(viewer)
         assertEquals("3 / 6", viewer.indicator())
         assertTrue(viewer.requestedOrientation != ActivityInfo.SCREEN_ORIENTATION_LOCKED)
+    }
+
+    @Test
+    fun aPageFoundWideAfterItShowsTurnsWithTheLock() {
+        val intent = Intent(context, ViewerActivity::class.java).putExtra(ViewerActivity.EXTRA_PATH, solidBook().absolutePath).putExtra(ViewerActivity.EXTRA_PAGE, 2)
+        val viewer = Robolectric.buildActivity(ViewerActivity::class.java, intent).setup().get()
+        ready(viewer)
+        // Sizes learned are laid out after a wait.
+        val deadline = System.currentTimeMillis() + 5_000
+        while (viewer.requestedOrientation != ActivityInfo.SCREEN_ORIENTATION_LOCKED && System.currentTimeMillis() < deadline) {
+            Thread.sleep(10)
+            idleFor(50)
+        }
+        idleFor(100)
+        assertEquals("3 / 6", viewer.indicator())
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_LOCKED, viewer.requestedOrientation)
+        assertEquals(1, viewer.turnOf())
+        val holder = viewer.holder()!!
+        assertEquals(holder.turner!!.height, holder.container.width)
     }
 
     /** A tap at ([fx], [fy]), fractions of the pager, along the device's axes. */

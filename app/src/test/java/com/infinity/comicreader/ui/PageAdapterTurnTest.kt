@@ -83,6 +83,38 @@ class PageAdapterTurnTest {
     }
 
     @Test
+    fun aPageFoundWideAfterItsItemBoundTurnsAndDecodesTurned() {
+        val source = Recording(6)
+        val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false, preload = 0)
+        val wide = HashSet<Int>()
+        adapter.turnsImage = { it in wide }
+        val rv = RecyclerView(context).apply {
+            layoutManager = LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false)
+            itemAnimator = null
+            this.adapter = adapter
+        }
+        layOut(rv, 1200, 1800)
+        rv.scrollToPosition(2)
+        settle(rv, 1200, 1800)
+        val holder = rv.findViewHolderForAdapterPosition(2) as PageAdapter.PageHolder
+        assertEquals(0, holder.turner!!.turn)
+        assertEquals(listOf(1200 to 1800), sizes(source.loads, 2))
+        wide += 2
+        adapter.refreshTurns()
+        settle(rv, 1200, 1800)
+        val now = rv.findViewHolderForAdapterPosition(2) as PageAdapter.PageHolder
+        assertEquals(1, now.turner!!.turn)
+        assertEquals(1, now.images[0].turn)
+        assertEquals(listOf(1200 to 1800, 1800 to 1200), sizes(source.loads, 2))
+        // Nothing else changed: nothing else binds or decodes again.
+        val before = source.loads.size
+        adapter.refreshTurns()
+        settle(rv, 1200, 1800)
+        assertEquals(before, source.loads.size)
+        adapter.release()
+    }
+
+    @Test
     fun aScreenThatStaysTurnedShowsItsOwnSizeSoon() {
         val source = Recording(6)
         val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false, preload = 1)

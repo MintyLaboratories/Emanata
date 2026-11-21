@@ -201,6 +201,21 @@ class PageAdapter(
             rekey()
         }
 
+    /** Holders bound in paged reading, which [refreshTurns] checks. */
+    private val turnable = HashSet<PageHolder>()
+
+    /**
+     * Binds again the items bound at a turn [turnsImage] and [imageTurn] no longer give, as
+     * when a page is found wide after its item bound.
+     */
+    fun refreshTurns() {
+        if (recycler == null || released) return
+        for (holder in turnable.toList()) {
+            val position = holder.bindingAdapterPosition
+            if (position != RecyclerView.NO_POSITION && holder.turner?.turn != turnOf(position)) notifyItemChanged(position, RESIZE)
+        }
+    }
+
     /** Quarter turns item [position]'s picture shows at ([TurnFrame.turn]). */
     private fun turnOf(position: Int): Int = if (turnsImage?.invoke(position) == true) imageTurn else 0
 
@@ -780,6 +795,7 @@ class PageAdapter(
     override fun onBindViewHolder(holder: PageHolder, position: Int) {
         // Turned before it shows: a page slides in as it will stay.
         holder.turner?.let { turner ->
+            turnable.add(holder)
             turner.turn = turnOf(position)
             for (image in holder.images) image.turn = turner.turn
         }
@@ -858,6 +874,7 @@ class PageAdapter(
 
     override fun onViewRecycled(holder: PageHolder) {
         super.onViewRecycled(holder)
+        turnable.remove(holder)
         details.drop(detailKeys(holder))
         for (i in holder.images.indices) {
             stopWaiting(holder, i)

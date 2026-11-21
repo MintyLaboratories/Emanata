@@ -22,6 +22,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.io.File
+import java.time.Duration
 
 /** The reader's AI indicator follows its setting and the pages' AI work, clear of a rounded corner and above the bottom bar. */
 @RunWith(RobolectricTestRunner::class)
@@ -72,6 +73,21 @@ class ViewerActivityAiDotTest {
         Prefs(context).aiDot = false
         idle()
         assertEquals(View.GONE, dot.visibility)
+    }
+
+    @Test
+    fun theDotShowsWhileThePagesAdapterSaysModelsWork() {
+        val viewer = open()
+        val dot = viewer.findViewById<View>(R.id.ai_dot)
+        Prefs(context).aiDot = true
+        idle()
+        val busy = viewer.pageAdapter!!.onAiBusy!!
+        busy(true)
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(AiDot.SHOW_DELAY_MS + 50))
+        assertEquals(View.VISIBLE, dot.visibility)
+        busy(false)
+        idle()
+        assertEquals(View.INVISIBLE, dot.visibility)
     }
 
     @Test

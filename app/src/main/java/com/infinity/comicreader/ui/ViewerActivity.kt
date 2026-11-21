@@ -269,6 +269,9 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
     private var source: PageSource? = null
     private var adapter: PageAdapter? = null
 
+    /** The pages' adapter, for tests. */
+    internal val pageAdapter: PageAdapter? get() = adapter
+
     /** The book open; a rebuild leaves it alone meanwhile ([OpenBooks]). */
     private var file: File? = null
         set(value) {
@@ -2518,8 +2521,8 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         a.filter = filter
         a.adjustments = adjustments
         a.spacingPx = spacingPx()
-        a.adopt(decoded, processed)
         a.onAiBusy = { aiDot.busy = it }
+        a.adopt(decoded, processed)
         if (!started) a.pauseAi()
         adapter = a
 

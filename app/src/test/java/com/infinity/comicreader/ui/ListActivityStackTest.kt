@@ -3,7 +3,6 @@ package com.infinity.comicreader.ui
 import android.Manifest
 import android.app.Application
 import android.os.Environment
-import android.os.Looper
 import android.view.Gravity
 import android.view.View
 import android.widget.TextView
@@ -14,6 +13,7 @@ import com.google.android.material.color.MaterialColors
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.progressindicator.CircularProgressIndicator
 import com.infinity.comicreader.R
+import com.infinity.comicreader.testing.idleUntil
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.files.FileClipboard
 import com.infinity.comicreader.files.FileWork
@@ -68,23 +68,23 @@ class ListActivityStackTest {
         FileClipboard.clear()
     }
 
-    private fun idle() = repeat(10) {
-        shadowOf(Looper.getMainLooper()).idle()
-        Thread.sleep(10)
-    }
+    /** True once the screen waits on nothing but the test: listed, favorites classified, facts read, presence asked, its menu looked into. */
+    private fun ListActivity.quiet() =
+        listJob?.isCompleted == true && listOf(classifyJob, factsJob, presenceJob, moreLook).none { it?.isActive == true }
+
+    /** Runs the main looper until the screen is quiet. */
+    private fun ListActivity.settle() = idleUntil("the library screen quiet") { quiet() }
+
+    /** Runs the main looper until the screen launched last is quiet: operations' news reach it there. */
+    private fun idle() = controller!!.get().settle()
 
     private fun launch(): ListActivity =
         Robolectric.buildActivity(ListActivity::class.java).also { controller = it }.setup().get().also { idle() }
 
     private fun gravity(activity: ListActivity, id: Int) = (activity.findViewById<View>(id).layoutParams as CoordinatorLayout.LayoutParams).gravity
 
-    private fun waitFor(what: () -> Boolean) {
-        repeat(300) {
-            idle()
-            if (what()) return
-        }
-        throw AssertionError("never came: ${FileWork.operations.value}")
-    }
+    /** Waits until no operation is left, or one waits or runs that [settled] says may stay. */
+    private fun waitFor(what: String, settled: () -> Boolean) = idleUntil(what) { settled() && controller!!.get().quiet() }
 
     private fun pick(name: String) = FileClipboard.add(FileClipboard.Clip(listOf(FileClipboard.Item(File(shelf, name).absolutePath, false)), move = false))
 
@@ -153,7 +153,8 @@ class ListActivityStackTest {
         val activity = launch()
         val recycler = activity.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.recycler)
         var row: View? = null
-        repeat(300) { if (row == null) row = recycler.findViewHolderForAdapterPosition(0)?.itemView ?: run { idle(); null } }
+        idleUntil("the first row laid out") { recycler.findViewHolderForAdapterPosition(0) != null }
+        row = recycler.findViewHolderForAdapterPosition(0)!!.itemView
         row!!.performLongClick()
         idle()
         val fab = activity.findViewById<View>(R.id.fab)
@@ -202,7 +203,7 @@ class ListActivityStackTest {
         assertEquals(setOf(Bubble.Work::class, Bubble.Paste::class), activity.stack.buttons().map { it.first::class }.toSet())
         assertEquals(2, activity.findViewById<android.widget.LinearLayout>(R.id.operation_stack).childCount)
         go.release()
-        waitFor { FileWork.operations.value.isEmpty() }
+        waitFor("every operation done") { FileWork.operations.value.isEmpty() }
     }
 
     @Test
@@ -219,15 +220,15 @@ class ListActivityStackTest {
         idle()
         fun tapPaste(clip: FileClipboard.Clip) = activity.stack.buttons().first { (it.first as? Bubble.Paste)?.clip?.id == clip.id }.second.performClick()
         tapPaste(b)
-        waitFor { FileWork.operations.value.size == 2 }
+        waitFor("b's paste queued") { FileWork.operations.value.size == 2 }
         tapPaste(a)
-        waitFor { FileWork.operations.value.size == 3 }
+        waitFor("a's paste queued") { FileWork.operations.value.size == 3 }
         val shown = activity.stack.buttons().map { (it.first as Bubble.Work).status }
         assertEquals(FileWork.operations.value.map { it.id }, shown.map { it.id })
         assertEquals(listOf(first), shown.filter { it.running }.map { it.id })
         assertEquals(listOf(FileWork.Kind.COPY, FileWork.Kind.MOVE), shown.drop(1).map { it.kind })
         go.release()
-        waitFor { FileWork.operations.value.isEmpty() }
+        waitFor("every operation done") { FileWork.operations.value.isEmpty() }
     }
 
     @Test
@@ -235,34 +236,42 @@ class ListActivityStackTest {
         val activity = launch()
         val step = Semaphore(0)
         val reported = Semaphore(0)
-        FileWork.start(FileWork.Kind.MOVE, "a.cbz") { p ->
-            for (done in listOf(1L, 6L)) {
+        // Each report a second after the one before, so none is held back as too soon.
+        val now = java.util.concurrent.atomic.AtomicLong(1_000)
+        val clock = FileWork.clock
+        FileWork.clock = { now.get() }
+        try {
+            FileWork.start(FileWork.Kind.MOVE, "a.cbz") { p ->
+                for (done in listOf(1L, 6L)) {
+                    step.acquire()
+                    p.report(done, 10)
+                    reported.release()
+                    now.addAndGet(1_000)
+                }
                 step.acquire()
-                p.report(done, 10)
-                reported.release()
-                Thread.sleep(120)
+                FileWork.Outcome.Done(null)
             }
-            step.acquire()
-            FileWork.Outcome.Done(null)
+            step.release()
+            reported.acquire()
+            idle()
+            val button = activity.stack.buttons().single().second
+            val ring = (button.parent as View).findViewById<CircularProgressIndicator>(R.id.op_ring)
+            val tint = button.backgroundTintList
+            val described = button.contentDescription
+            assertEquals(100, ring.progress)
+            assertNotEquals(android.graphics.Color.TRANSPARENT, ring.trackColor)
+            assertEquals(com.google.android.material.shape.RelativeCornerSize(0.5f), button.shapeAppearanceModel.topLeftCornerSize)
+            step.release()
+            reported.acquire()
+            idle()
+            assertEquals(600, ring.progress)
+            assertTrue(tint === button.backgroundTintList)
+            assertNotEquals(described, button.contentDescription)
+            step.release()
+            waitFor("every operation done") { FileWork.operations.value.isEmpty() }
+        } finally {
+            FileWork.clock = clock
         }
-        step.release()
-        reported.acquire()
-        idle()
-        val button = activity.stack.buttons().single().second
-        val ring = (button.parent as View).findViewById<CircularProgressIndicator>(R.id.op_ring)
-        val tint = button.backgroundTintList
-        val described = button.contentDescription
-        assertEquals(100, ring.progress)
-        assertNotEquals(android.graphics.Color.TRANSPARENT, ring.trackColor)
-        assertEquals(com.google.android.material.shape.RelativeCornerSize(0.5f), button.shapeAppearanceModel.topLeftCornerSize)
-        step.release()
-        reported.acquire()
-        idle()
-        assertEquals(600, ring.progress)
-        assertTrue(tint === button.backgroundTintList)
-        assertNotEquals(described, button.contentDescription)
-        step.release()
-        waitFor { FileWork.operations.value.isEmpty() }
     }
 
     @Test
@@ -288,7 +297,7 @@ class ListActivityStackTest {
         assertEquals(View.VISIBLE, left.visibility)
         assertEquals(expected, left.text.toString())
         go.release()
-        waitFor { FileWork.operations.value.isEmpty() }
+        waitFor("every operation done") { FileWork.operations.value.isEmpty() }
     }
 
     @Test
@@ -301,7 +310,7 @@ class ListActivityStackTest {
         idle()
         assertEquals(View.GONE, activity.stack.cardView()!!.findViewById<TextView>(R.id.op_left).visibility)
         go.release()
-        waitFor { FileWork.operations.value.isEmpty() }
+        waitFor("every operation done") { FileWork.operations.value.isEmpty() }
     }
 
     @Test
@@ -336,7 +345,7 @@ class ListActivityStackTest {
         (activity.stack.buttons().first().second.parent as View).findViewById<TextView>(R.id.op_folded).performClick()
         idle()
         activity.stack.foldedView()!!.findViewById<android.widget.LinearLayout>(R.id.op_rows).getChildAt(0).performClick()
-        waitFor { FileWork.operations.value.isEmpty() && File(shelf, "1.cbz").exists() }
+        waitFor("the paste done") { FileWork.operations.value.isEmpty() && File(shelf, "1.cbz").exists() }
         assertTrue(FileClipboard[0] == null)
     }
 
@@ -384,7 +393,7 @@ class ListActivityStackTest {
         assertEquals(1, activity.stack.buttons().size)
 
         go.release()
-        waitFor { FileWork.operations.value.isEmpty() }
+        waitFor("every operation done") { FileWork.operations.value.isEmpty() }
         assertEquals(context.resources.getQuantityString(R.plurals.copied_count, 2, 2), ShadowToast.getTextOfLatestToast())
         assertTrue(activity.stack.buttons().isEmpty())
     }

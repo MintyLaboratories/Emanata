@@ -2,6 +2,7 @@ package com.infinity.comicreader.reader
 
 import com.infinity.comicreader.net.RemoteChannel
 import com.infinity.comicreader.net.RemoteInput
+import com.infinity.comicreader.testing.Waits
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -79,7 +80,7 @@ class ChannelZipReaderTest {
                     }
                     start.countDown()
                     for (job in jobs) {
-                        for ((path, got) in job.get(60, TimeUnit.SECONDS)) {
+                        for ((path, got) in job.get(Waits.LIVENESS_MS, TimeUnit.MILLISECONDS)) {
                             assertArrayEquals(path, contents.getValue(path), got.getOrElse { throw AssertionError("$path: $it", it) })
                         }
                     }

@@ -25,6 +25,8 @@ class ScoreMap(val width: Int, val height: Int, val values: FloatArray) {
 /**
  * The fp16 modes a GPU supports, as Vulkan reports them: [storage] (fp16 buffers), [packed]
  * (fp16 pairs in 32-bit words, computed in fp32) and [arithmetic] (computing in fp16).
+ * ncnn reports [packed] on every Vulkan device, so [usable] holds for any GPU it runs on; the
+ * other cases are kept for a runtime that does not.
  */
 data class Fp16Modes(val storage: Boolean, val packed: Boolean, val arithmetic: Boolean) {
     /** Models may run in fp16: storage or packed halves the bytes moved; arithmetic needs one of them. */
@@ -33,6 +35,11 @@ data class Fp16Modes(val storage: Boolean, val packed: Boolean, val arithmetic: 
     /** The modes a model in fp16 turns on, as [STORAGE], [PACKED] and [ARITHMETIC] bits: each one supported; none unless [usable]. */
     val bits: Int
         get() = if (!usable) 0 else (if (storage) STORAGE else 0) or (if (packed) PACKED else 0) or (if (arithmetic) ARITHMETIC else 0)
+
+    /** The modes [bits] turns on, by name, as "storage+packed+arithmetic"; "none" for none. */
+    fun names(): String =
+        listOf(STORAGE to "storage", PACKED to "packed", ARITHMETIC to "arithmetic").filter { bits and it.first != 0 }
+            .joinToString("+") { it.second }.ifEmpty { "none" }
 
     companion object {
         const val STORAGE = 1

@@ -384,7 +384,8 @@ internal object Sessions {
             try {
                 val weights = ModelMemory.weights(model.weightBytes(), files.bin.length(), gpu = true)
                 val work = memoryBytes - cpuWeights - weights
-                Log.i(TAG, "$name: weights take ${weights shr 20} MB on the GPU in $precision, ${max(0L, work) shr 20} MB left to check it")
+                val modes = if (half) " (${info.fp16Modes.names()})" else ""
+                Log.i(TAG, "$name: weights take ${weights shr 20} MB on the GPU in $precision$modes, ${max(0L, work) shr 20} MB left to check it")
                 if (work <= 0) continue
                 val budget = min(info.budgetMb.toLong() * (1L shl 20) / TileSizing.GPU_SHARE, work)
                 // The chosen size kept from an earlier open, when its check found it wrong now (not short of memory).

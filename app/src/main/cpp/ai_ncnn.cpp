@@ -276,7 +276,8 @@ JNIEXPORT jint JNI_OnLoad(JavaVM*, void*) {
  * GPU name, heap budget in MB, the fp16 modes it supports (bits: FP16_STORAGE, FP16_PACKED,
  * FP16_ARITHMETIC) and the largest buffer one shader may address in bytes (the lesser of
  * maxStorageBufferRange and maxMemoryAllocationSize), as "name\tbudget\tfp16\tbuffer"; null
- * without a usable Vulkan device.
+ * without a usable Vulkan device. ncnn reports packed fp16 on every Vulkan device (pairs in
+ * 32-bit words need no device feature), so FP16_PACKED is always set.
  */
 JNIEXPORT jstring JNICALL
 Java_com_infinity_comicreader_ai_LibNcnn_nGpu(JNIEnv* env, jclass) {

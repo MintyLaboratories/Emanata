@@ -337,6 +337,9 @@ class SessionsTest {
         val packedOnly = GpuInfo("x", 0, Fp16Modes(storage = false, packed = true, arithmetic = false), 1)
         assertEquals(Fp16Modes.PACKED, packedOnly.fp16Bits(fp16 = true))
         assertEquals("fp32 asked for", 0, packedOnly.fp16Bits(fp16 = false))
+        assertEquals("packed", packedOnly.fp16Modes.names())
+        assertEquals("storage+packed+arithmetic", Fp16Modes.ALL.names())
+        assertEquals("none", Fp16Modes(storage = false, packed = false, arithmetic = true).names())
     }
 
     @Test

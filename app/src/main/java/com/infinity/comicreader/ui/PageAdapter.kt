@@ -411,6 +411,9 @@ class PageAdapter(
     /** How many decodes have not completed yet; [decoding] also counts those not put away. */
     internal val running: Int get() = pending.values.count { it.deferred.isActive }
 
+    /** How many pages auto-crop is measuring now; measures are not decodes ([running]). */
+    internal val measures: Int get() = measuring.size
+
     /** Returns once no decode is under way ([decoding]): at once when none is, and once released. */
     internal suspend fun awaitIdle() {
         idle.first { it }

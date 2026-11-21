@@ -19,6 +19,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -46,6 +47,9 @@ class CoverPeekAdapter(
 
     private val appContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + AppDispatchers.main)
+
+    /** True while a cover is looked up or made, one told to stop included until it has; tests wait for none. */
+    internal val busy: Boolean get() = scope.coroutineContext.job.children.any { !it.isCompleted }
 
     /** Cache lookups are cheap: several at a time. */
     private val lookups = Semaphore(LOOKUPS)

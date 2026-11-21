@@ -346,11 +346,11 @@ class ListActivityPeekTest {
         Prefs(ApplicationProvider.getApplicationContext<Application>()).thumbnails = on
         val activity = launch()
         assertEquals(3, activity.peekedEntries(extras).size)
-        val covers = activity.peekCovers()
-        // Covers on are made in the background; off, none is asked for.
-        if (!on) return covers
+        activity.peekCovers()
         val grid = activity.peek().grid()
-        idleUntil("every cover made") { (0 until grid.childCount).all { grid.getChildAt(it).findViewById<android.widget.ImageView>(R.id.peek_cover).drawable != null } }
+        // Covers on are made in the background; off, none is asked for, so none lands later either.
+        if (on) idleUntil("every cover made") { (0 until grid.childCount).all { grid.getChildAt(it).findViewById<android.widget.ImageView>(R.id.peek_cover).drawable != null } }
+        else idleUntil("peek covers settled") { !(grid.adapter as CoverPeekAdapter).busy }
         return (0 until grid.childCount).map { grid.getChildAt(it).findViewById<android.widget.ImageView>(R.id.peek_cover).drawable }
     }
 

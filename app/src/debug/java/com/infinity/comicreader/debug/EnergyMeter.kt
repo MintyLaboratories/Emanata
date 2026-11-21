@@ -18,8 +18,8 @@ import kotlin.concurrent.thread
  * Energy per page on battery alone, for the check services: an idle baseline, then work,
  * sampling the battery current and voltage together every [everyMs] ([EnergyRuns]). Current
  * is BatteryManager's `CURRENT_NOW`; voltage is the battery's sysfs node where the app may
- * read it, else the battery broadcast, which refreshes only when the battery service posts
- * (`voltageSource`). Every second it reads the thermal status and the charger state (the
+ * read it, else the battery broadcast, read once a second with the charger state, which
+ * refreshes only when the battery service posts (`voltageSource`). Every second it reads the thermal status and the charger state (the
  * battery's own status other than discharging, or the plug): a charger seen at any check
  * refuses the estimate.
  * Valid only with the cable out (adb over Wi-Fi): under `dumpsys battery unplug` a charger
@@ -36,13 +36,18 @@ internal class EnergyMeter(private val context: Context, private val everyMs: Lo
 
     private fun sticky(): Intent? = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
 
-    private fun volts(): Double = node?.let { EnergyRuns.voltsFromNode(read(it)) }
-        ?: ((sticky()?.getIntExtra(BatteryManager.EXTRA_VOLTAGE, 0) ?: 0) / 1000.0)
+    /** The battery broadcast's voltage in V (0 when unknown) as [onCharger] last read it: once a second while sampling. */
+    @Volatile
+    private var broadcastVolts = 0.0
 
-    /** True while the battery reports a charger ([EnergyRuns.onCharger]). */
-    fun onCharger(): Boolean = EnergyRuns.onCharger(
-        battery.getIntProperty(BatteryManager.BATTERY_PROPERTY_STATUS), sticky()?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0
-    )
+    private fun volts(): Double = node?.let { EnergyRuns.voltsFromNode(read(it)) } ?: broadcastVolts
+
+    /** True while the battery reports a charger ([EnergyRuns.onCharger]); keeps the broadcast's voltage for [volts]. */
+    fun onCharger(): Boolean {
+        val b = sticky()
+        broadcastVolts = (b?.getIntExtra(BatteryManager.EXTRA_VOLTAGE, 0) ?: 0) / 1000.0
+        return EnergyRuns.onCharger(battery.getIntProperty(BatteryManager.BATTERY_PROPERTY_STATUS), b?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0)
+    }
 
     /** The thermal status now; -1 before Android 10. */
     fun thermal(): Int =

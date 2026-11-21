@@ -19,14 +19,18 @@ import kotlin.concurrent.thread
  * sampling the battery current and voltage together every [everyMs] ([EnergyRuns]). Current
  * is BatteryManager's `CURRENT_NOW`; voltage is the battery's sysfs node where the app may
  * read it, else the battery broadcast, read once a second with the charger state, which
- * refreshes only when the battery service posts (`voltageSource`). Every second it reads the thermal status and the charger state (the
- * battery's own status other than discharging, or the plug): a charger seen at any check
- * refuses the estimate.
+ * refreshes only when the battery service posts (`voltageSource`). Every second it reads
+ * the thermal status, the charger state (the battery's own status other than discharging,
+ * or the plug) and whether the screen is on: a charger or a screen off seen at any check
+ * refuses the estimate. A measurement holds a partial wake lock, so the sampler keeps
+ * running whatever the screen does.
  * Valid only with the cable out (adb over Wi-Fi): under `dumpsys battery unplug` a charger
- * still supplies power.
+ * still supplies power. Keep the screen on for the whole run: the app in front on a screen
+ * that keeps it on (the debug calibration screen), or a screen timeout longer than the run.
  */
 internal class EnergyMeter(private val context: Context, private val everyMs: Long = EVERY_MS) {
     private val battery = context.getSystemService(BatteryManager::class.java)
+    private val power = context.getSystemService(PowerManager::class.java)
     private val node: File? = VOLTS_NODE.takeIf { EnergyRuns.voltsFromNode(read(it)) != null }
 
     /** Where voltages come from: "sysfs" or "broadcast". */
@@ -50,8 +54,7 @@ internal class EnergyMeter(private val context: Context, private val everyMs: Lo
     }
 
     /** The thermal status now; -1 before Android 10. */
-    fun thermal(): Int =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) context.getSystemService(PowerManager::class.java).currentThermalStatus else -1
+    fun thermal(): Int = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) power.currentThermalStatus else -1
 
     /**
      * Samples while [work] runs, given its deadline [ms] from now, until it returns; [heat],
@@ -60,6 +63,7 @@ internal class EnergyMeter(private val context: Context, private val everyMs: Lo
     fun sample(ms: Long, heat: ResampleRuns.Heat? = null, work: (until: Long) -> Unit): EnergyRuns.Draw {
         val samples = ArrayList<EnergyRuns.Sample>()
         var charger = onCharger()
+        var screenOff = !power.isInteractive
         val t0 = SystemClock.elapsedRealtime()
         val until = t0 + ms
         val done = AtomicBoolean(false)
@@ -72,6 +76,7 @@ internal class EnergyMeter(private val context: Context, private val everyMs: Lo
                     if (n++ % CHECK_EVERY == 0) {
                         heat?.see(thermal())
                         if (onCharger()) charger = true
+                        if (!power.isInteractive) screenOff = true
                     }
                     // Microamperes, as on most devices.
                     val ua = battery.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
@@ -93,18 +98,28 @@ internal class EnergyMeter(private val context: Context, private val everyMs: Lo
             sampler.join()
         }
         if (onCharger()) charger = true
-        return synchronized(samples) { EnergyRuns.Draw(samples.toList(), charger, error) }
+        if (!power.isInteractive) screenOff = true
+        return synchronized(samples) { EnergyRuns.Draw(samples.toList(), charger, error, screenOff) }
     }
 
-    /** [idleS] s of rest sampled as the baseline, then [work] for [seconds] s, returning the pages it made. */
+    /**
+     * [idleS] s of rest sampled as the baseline, then [work] for [seconds] s, returning the
+     * pages it made; under a partial wake lock.
+     */
     fun measure(idleS: Int, seconds: Int, heat: ResampleRuns.Heat, work: (until: Long) -> Int): EnergyRuns.Run {
-        val idle = sample(idleS * 1000L, heat) { until -> SystemClock.sleep(until - SystemClock.elapsedRealtime()) }
-        var pages = 0
-        val t0 = SystemClock.elapsedRealtime()
-        val cpu0 = Process.getElapsedCpuTime()
-        val busy = sample(seconds * 1000L, heat) { until -> pages = work(until) }
-        val wall = (SystemClock.elapsedRealtime() - t0) / 1000.0
-        return EnergyRuns.Run(idle, busy, wall, pages, Process.getElapsedCpuTime() - cpu0)
+        val lock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, WAKE_TAG)
+        lock.acquire((idleS + seconds) * 1000L + WAKE_SLACK_MS)
+        try {
+            val idle = sample(idleS * 1000L, heat) { until -> SystemClock.sleep(until - SystemClock.elapsedRealtime()) }
+            var pages = 0
+            val t0 = SystemClock.elapsedRealtime()
+            val cpu0 = Process.getElapsedCpuTime()
+            val busy = sample(seconds * 1000L, heat) { until -> pages = work(until) }
+            val wall = (SystemClock.elapsedRealtime() - t0) / 1000.0
+            return EnergyRuns.Run(idle, busy, wall, pages, Process.getElapsedCpuTime() - cpu0)
+        } finally {
+            if (lock.isHeld) lock.release()
+        }
     }
 
     /** [run] as one result's fields: what it made, its draw, its voltages, the gauge's refresh and the energy per page. */
@@ -138,6 +153,11 @@ internal class EnergyMeter(private val context: Context, private val everyMs: Lo
 
     private companion object {
         const val EVERY_MS = 100L
+
+        const val WAKE_TAG = "emanata:energy"
+
+        /** Beyond a measurement's planned length, for a page still running at its deadline. */
+        const val WAKE_SLACK_MS = 10 * 60_000L
 
         /** Thermal and charger checks every this many samples: once a second. */
         const val CHECK_EVERY = 10

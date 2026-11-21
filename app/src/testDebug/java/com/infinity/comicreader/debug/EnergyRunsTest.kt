@@ -68,6 +68,16 @@ class EnergyRunsTest {
     }
 
     @Test
+    fun aScreenTurnedOffRefusesTheEstimate() {
+        val idle = draw(-400.0, -400.0)
+        val busy = draw(-900.0, -900.0)
+        // Off after an idle taken with the screen on: the busy draw lacks the display's.
+        assertEquals("the screen turned off", Run(idle, Draw(busy.samples, screenOff = true), 10.0, 20, 0).refused)
+        assertEquals("the screen turned off", Run(Draw(idle.samples, screenOff = true), busy, 10.0, 20, 0).refused)
+        assertNull(Run(idle, Draw(busy.samples, screenOff = true), 10.0, 20, 0).aboveIdleW)
+    }
+
+    @Test
     fun aChargerShowsByStatusOrPlug() {
         assertTrue(EnergyRuns.onCharger(BatteryManager.BATTERY_STATUS_CHARGING, 0))
         assertTrue(EnergyRuns.onCharger(BatteryManager.BATTERY_STATUS_FULL, 0))

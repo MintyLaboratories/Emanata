@@ -4,7 +4,6 @@ import android.app.Application
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.drawable.BitmapDrawable
-import android.os.Looper
 import android.view.View
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -12,6 +11,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.reader.Decoders
 import com.infinity.comicreader.reader.PageSource
 import com.infinity.comicreader.reader.Target
+import com.infinity.comicreader.testing.idleUntil
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -19,7 +19,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.io.ByteArrayOutputStream
@@ -52,17 +51,11 @@ class PageAdapterPairCropTest {
 
     private val context get() = ApplicationProvider.getApplicationContext<Application>()
 
-    /** Idles until [done], laying [rv] out again meanwhile, as a window would after items change. */
-    private fun idle(rv: RecyclerView, done: () -> Boolean = { false }) {
-        val deadline = System.currentTimeMillis() + 5_000
-        do {
-            Thread.sleep(10)
-            shadowOf(Looper.getMainLooper()).idle()
-            rv.measure(View.MeasureSpec.makeMeasureSpec(rv.width, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(rv.height, View.MeasureSpec.EXACTLY))
-            rv.layout(0, 0, rv.width, rv.height)
-        } while (!done() && System.currentTimeMillis() < deadline)
-        shadowOf(Looper.getMainLooper()).idle()
-    }
+    /** Idles until [done], laying [rv] out again meanwhile, as a window would after items change; throws naming [what] if it never holds. */
+    private fun idle(rv: RecyclerView, what: String, done: () -> Boolean) = idleUntil(what, step = {
+        rv.measure(View.MeasureSpec.makeMeasureSpec(rv.width, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(rv.height, View.MeasureSpec.EXACTLY))
+        rv.layout(0, 0, rv.width, rv.height)
+    }, done = done)
 
     private fun recycler(adapter: PageAdapter, w: Int, h: Int): RecyclerView =
         RecyclerView(context).apply {
@@ -85,7 +78,7 @@ class PageAdapterPairCropTest {
             twoPage = true, autoCrop = true, preload = 0
         )
         val rv = recycler(adapter, 1200, 800)
-        idle(rv) { source.requests.count { it.second.box != null } >= 2 && rv.images().all { it.bitmap() != null && it.bitmap()!!.width > 16 } }
+        idle(rv, "both pages shown cropped") { source.requests.count { it.second.box != null } >= 2 && rv.images().all { it.bitmap() != null && it.bitmap()!!.width > 16 } }
         val shown = source.requests.filter { it.second.box != null }.associate { it.first to it.second }
         val left = shown.getValue(0)
         val right = shown.getValue(1)
@@ -117,7 +110,7 @@ class PageAdapterPairCropTest {
             pageLayout = PageLayout.of(listOf(intArrayOf(0, 1)), spread = true, rtl = false, joined = setOf(0))
         )
         val rv = recycler(adapter, 1200, 800)
-        idle(rv) { source.requests.count { it.second.box != null } >= 2 && rv.images().all { it.bitmap() != null && it.bitmap()!!.width > 16 } }
+        idle(rv, "both pages shown cropped") { source.requests.count { it.second.box != null } >= 2 && rv.images().all { it.bitmap() != null && it.bitmap()!!.width > 16 } }
         val shown = source.requests.filter { it.second.box != null }.associate { it.first to it.second }
         val left = shown.getValue(0).box!!
         val right = shown.getValue(1).box!!
@@ -140,7 +133,7 @@ class PageAdapterPairCropTest {
         )
         adapter.turnsImage = { true }
         val rv = recycler(adapter, 800, 1200)
-        idle(rv) { source.requests.count { it.second.box != null } >= 2 && rv.images().all { it.bitmap() != null && it.bitmap()!!.width > 16 } }
+        idle(rv, "both pages shown cropped") { source.requests.count { it.second.box != null } >= 2 && rv.images().all { it.bitmap() != null && it.bitmap()!!.width > 16 } }
         val height = source.requests.last { it.second.box != null }.second.height
         // Drawn turned, the picture's box spans the screen's height, at the pair's one height.
         for (image in rv.images()) assertArrayEquals(intArrayOf(1200, height), image.fitBox)
@@ -152,7 +145,7 @@ class PageAdapterPairCropTest {
         val source = PngSource(listOf(page(40, 60, 360, 540), page(20, 120, 380, 480)))
         val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false, twoPage = true, preload = 0)
         val rv = recycler(adapter, 1200, 800)
-        idle(rv) { rv.images().all { it.bitmap() != null } }
+        idle(rv, "both pages shown") { rv.images().all { it.bitmap() != null } }
         assertEquals(listOf(0 to Target(600, 800, banded = true), 1 to Target(600, 800, banded = true)), source.requests.sortedBy { it.first })
         val (l, r) = rv.images()
         assertEquals(null, l.fitBox)
@@ -169,7 +162,7 @@ class PageAdapterPairCropTest {
             twoPage = true, autoCrop = true, preload = 0
         )
         val rv = recycler(adapter, 1200, 800)
-        idle(rv) { rv.images().first().bitmap() != null }
+        idle(rv, "the page shown") { rv.images().first().bitmap() != null }
         assertEquals(listOf(0 to Target(1200, 800, autoCrop = true, banded = true)), source.requests.toList())
         assertEquals(0.5f, rv.images().first().alignX)
         adapter.release()
@@ -185,7 +178,7 @@ class PageAdapterPairCropTest {
         )
         val rv = recycler(adapter, 1200, 800)
         // Only the first screen is bound; the pages of the next are decoded for the screen anyway.
-        idle(rv) { (0 until 4).all { p -> source.requests.any { it.first == p && it.second.box != null } } }
+        idle(rv, "all four pages decoded cropped") { (0 until 4).all { p -> source.requests.any { it.first == p && it.second.box != null } } }
         for (p in 0 until 4) assertTrue("page $p", source.requests.any { it.first == p && it.second.box != null })
         // A measure works on a sampled decode, never on the page at full size.
         val measures = source.requests.filter { it.second.width == 16 }
@@ -203,7 +196,7 @@ class PageAdapterPairCropTest {
             twoPage = true, rtl = true, autoCrop = true, preload = 0
         )
         val rv = recycler(adapter, 1200, 800)
-        idle(rv) { source.requests.count { it.second.box != null } >= 2 && rv.images().all { it.bitmap() != null && it.bitmap()!!.width > 16 } }
+        idle(rv, "both pages shown cropped") { source.requests.count { it.second.box != null } >= 2 && rv.images().all { it.bitmap() != null && it.bitmap()!!.width > 16 } }
         val shown = source.requests.filter { it.second.box != null }.associate { it.first to it.second }
         val first = shown.getValue(0)
         val second = shown.getValue(1)

@@ -877,11 +877,12 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   in Models takes your own ncnn model (a `.param` and its `.bin`, converted
   on a computer, e.g. with pnnx; nothing is converted on the device): the
   pair is copied into the app, checked as catalog models are and timed on a
-  test page, then named and given its step (1× models remove artifacts or
+  test page, then shows what it makes of three test pictures (clean art with
+  gradients, JPEG-compressed art, art with dot patterns), before and after,
+  both zoomed 2×, judging nothing: **Continue** or **Discard**; then it is
+  named and given its step (1× models remove artifacts or
   descreen, larger ones upscale), with a warning that heavy models may be too
-  slow to run live. A model taking over 30 s a page, or whose output differs
-  strongly from the page (a restyle such as sepia, a model expecting other
-  pixel scaling, or files that don't belong together), is imported only after
+  slow to run live. A model taking over 30 s a page goes on only after
   **Import anyway** (Cancel drops it); one past the reader's 120 s a page, or
   one the engine can't run safely, is refused with the reason. Imported
   models are marked as such (no license is claimed), are offered at their
@@ -1183,15 +1184,16 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - Imported models (`ModelImports`, `ModelCheck`, `UserModels`): the picked
   files are told apart by name (else by the `.param`'s first line), copied
   into a staging folder (at most 4 MB and 512 MB), opened as above within the
-  model memory, run on a small smooth picture whose output, averaged back down,
-  is compared with it, and timed on a synthetic 1000×1500 page (whole while it
+  model memory, run on the three test pictures (each cut to the middle square
+  that fits one tile, so each runs as one tile; gray output collapsed to gray
+  as in the reader), whose before and after the user sees, and timed on a
+  synthetic 1000×1500 page (whole while it
   takes at most 20 s, else from its first six tiles, the first counted once;
   one measurement at the device's heat then, its thermal headroom kept beside
   it). A page past 120 s (the most the reader gives one), or a check past 2
   minutes (counted once no reader page holds the engine), is refused; a page
-  past 30 s, or output over 24 codes from the picture on average (a restyle,
-  pixels scaled otherwise, or mismatched files), is warned of, imported only
-  on **Import anyway**.
+  past 30 s is warned of, going on only on **Import anyway**. How the output
+  looks is never judged.
   While a check runs a marker names the model, read at the next start before
   the model folder is cleaned, so a check that ends the app is reported.
   A taken-in model keeps its files and what was measured beside them; its
@@ -1648,6 +1650,8 @@ app shows each license and NOTICE text under Settings → About (files in
 | [MBassador](https://github.com/bennidi/mbassador) | MIT |
 | [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) PP-OCRv5 mobile text detector, not bundled: downloaded unchanged the first time a cover needs it, a third party's ncnn conversion from a [pinned Hugging Face repository](https://huggingface.co/qefro/pp-OCRv5-6-ncnn) (Apache-2.0; its weights file is from the [PaddleOCR-ncnn-CPP](https://github.com/Avafly/PaddleOCR-ncnn-CPP) v0.3.0 release archive, MIT, as the repository's manifest states) | Apache-2.0 |
 | Material Symbols | Apache-2.0 |
+| Test pictures of a model import's before and after: cutouts of "Portrait of Pepper" and "In Bloom" by David Revoy ([Pepper&Carrot](https://www.peppercarrot.com/)), scaled down, the second JPEG-compressed | CC BY 4.0 |
+| Test picture with dot patterns of a model import's before and after: a cutout of a [water conservation brochure, circa 1985](https://www.flickr.com/photos/seattlemunicipalarchives/44998418715/) by the Seattle Municipal Archives, scaled down | CC BY 2.0 |
 
 Dual-licensed components are used under Apache-2.0.
 

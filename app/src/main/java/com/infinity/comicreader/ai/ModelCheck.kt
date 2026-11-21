@@ -14,8 +14,9 @@ import java.util.concurrent.CancellationException
 /**
  * Checks a model the user imports before it is taken in: it opens as every model does
  * ([Sessions.attempt]: scale, edge trim, context, memory, the GPU against the CPU), then
- * - it runs on a small RGB picture, a smooth gradient with a few hard shapes; how its output
- *   looks is not judged;
+ * - it runs on the import's test pictures, each cut to one tile ([oneTile]), or without them on
+ *   a small RGB picture, a smooth gradient with a few hard shapes; how its output looks is not
+ *   judged: the pictures' before and after ([Preview]) are for the user to weigh;
  * - it is timed on a synthetic [PAGE_W] x [PAGE_H] page, the size catalog models are timed
  *   on: the whole page while its pace says it takes at most [FULL_PAGE_MS], else from its
  *   first [TIMED_TILES] tiles, the first (the GPU's warm-up) counted once and the rest at
@@ -47,12 +48,22 @@ internal object ModelCheck {
     /** The side of the picture it is first run on. */
     private const val PICTURE_SIDE = 96
 
+    /** A test picture [before], cut to one tile, and the model's output of it, [after]. */
+    data class Preview(val before: Bitmap, val after: Bitmap)
+
     sealed interface Result {
         /**
          * Fit to take in: [scale] times larger out than in, about [pageMs] for a page here, timed
-         * at thermal [headroom] (NaN: unknown); [warnings] for the user to weigh first.
+         * at thermal [headroom] (NaN: unknown); [warnings] for the user to weigh first; the
+         * [previews] of the test pictures it was given, in their order.
          */
-        data class Fit(val scale: Int, val pageMs: Long, val headroom: Float = Float.NaN, val warnings: Set<ImportWarning> = emptySet()) : Result
+        data class Fit(
+            val scale: Int,
+            val pageMs: Long,
+            val headroom: Float = Float.NaN,
+            val warnings: Set<ImportWarning> = emptySet(),
+            val previews: List<Preview> = emptyList()
+        ) : Result
 
         /**
          * Refused for [why]; for memory, the [bytes] it would need and the [limit] it would
@@ -64,8 +75,8 @@ internal object ModelCheck {
     /**
      * [files] checked through [runtime] on [threads] CPU threads, within [memoryBytes], holding
      * the engine throughout ([TileEngine.exclusive]): no page runs between its steps; the
-     * device's thermal [headroom] read as timing starts. Throws [CancellationException] once
-     * [canceled].
+     * device's thermal [headroom] read as timing starts; its [Preview]s of the test [pictures]
+     * (opaque ARGB_8888, left to the caller). Throws [CancellationException] once [canceled].
      */
     fun check(
         runtime: InferenceRuntime,
@@ -74,15 +85,16 @@ internal object ModelCheck {
         memoryBytes: Long,
         canceled: () -> Boolean = { false },
         clock: () -> Long = SystemClock::elapsedRealtime,
-        headroom: () -> Float = { Float.NaN }
+        headroom: () -> Float = { Float.NaN },
+        pictures: List<Bitmap> = emptyList()
     ): Result = TileEngine.exclusive(canceled) {
         // Timed from here: a page the reader is running is waited for, not counted.
-        checkAlone(runtime, files, threads, memoryBytes, canceled, clock, headroom)
+        checkAlone(runtime, files, threads, memoryBytes, canceled, clock, headroom, pictures)
     }
 
     private fun checkAlone(
         runtime: InferenceRuntime, files: ModelFiles, threads: Int, memoryBytes: Long, canceled: () -> Boolean, clock: () -> Long,
-        headroom: () -> Float
+        headroom: () -> Float, pictures: List<Bitmap>
     ): Result {
         val deadline = clock() + TIME_LIMIT_MS
         val late = { clock() > deadline }
@@ -91,11 +103,19 @@ internal object ModelCheck {
             val opening = Sessions.attempt(runtime, files, threads, memoryBytes = memoryBytes, canceled = stop)
             val session = opening.session ?: return Result.Refused(opening.refusal ?: ModelRefusal.NOT_LOADED, opening.bytes, opening.limit)
             session.use { s ->
-                if (!runs(s, stop)) return Result.Refused(ModelRefusal.DOES_NOT_RUN)
+                val previews = if (pictures.isEmpty()) {
+                    if (!runs(s, stop)) return Result.Refused(ModelRefusal.DOES_NOT_RUN)
+                    emptyList()
+                } else {
+                    previews(s, pictures, stop) ?: return Result.Refused(ModelRefusal.DOES_NOT_RUN)
+                }
                 val heat = headroom()
                 val ms = pageMs(s, stop, clock) ?: return Result.Refused(ModelRefusal.DOES_NOT_RUN)
                 Log.i(TAG, "${files.param.name}: about $ms ms for a ${PAGE_W}x$PAGE_H page, from thermal headroom $heat")
-                return judge(s.geometry.scale, ms, heat)
+                return when (val r = judge(s.geometry.scale, ms, heat)) {
+                    is Result.Fit -> r.copy(previews = previews)
+                    is Result.Refused -> r
+                }
             }
         } catch (e: CancellationException) {
             if (!canceled() && late()) return Result.Refused(ModelRefusal.TOO_SLOW)
@@ -123,6 +143,28 @@ internal object ModelCheck {
         } finally {
             src.recycle()
         }
+    }
+
+    /**
+     * [s]'s output of each of [pictures], cut to one tile first ([oneTile]), gray output
+     * collapsed to gray as the reader's is; null when one fails.
+     */
+    private fun previews(s: Session, pictures: List<Bitmap>, canceled: () -> Boolean): List<Preview>? = pictures.map { p ->
+        val before = oneTile(s, p)
+        val after = TileEngine.run(s, before, PageLimits(timeoutMs = TIME_LIMIT_MS), canceled, gray = null).bitmap ?: return null
+        Preview(before, after)
+    }
+
+    /** The middle of [p], cut to the largest square [s] runs in one tile; [p] itself when it fits whole. */
+    internal fun oneTile(s: Session, p: Bitmap): Bitmap {
+        var side = minOf(p.width, p.height)
+        while (true) {
+            val core = TilePlan.core(s.sizeFor(side, side), s.geometry)
+            if (side <= core) break
+            side = core
+        }
+        if (side == p.width && side == p.height) return p
+        return Bitmap.createBitmap(p, (p.width - side) / 2, (p.height - side) / 2, side, side)
     }
 
     /** An opaque [side] x [side] picture: a smooth two-way gradient with a few hard dark and light shapes, as line art has. */

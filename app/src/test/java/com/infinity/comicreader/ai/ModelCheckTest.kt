@@ -37,6 +37,40 @@ class ModelCheckTest {
     }
 
     @Test
+    fun eachTestPictureComesBackBeforeAndAfterInItsOrder() {
+        val wide = ModelCheck.picture(128)
+        val small = ModelCheck.picture(40).also { it.eraseColor(0xFF336699.toInt()) }
+        val r = ModelCheck.check(FakeRuntime(), fakeFiles(tmp.root), 4, Long.MAX_VALUE, pictures = listOf(wide, small)) as ModelCheck.Result.Fit
+        assertEquals(2, r.previews.size)
+        assertTrue(r.previews[0].before.sameAs(wide))
+        assertTrue(r.previews[1].before.sameAs(small))
+        for (p in r.previews) {
+            assertEquals(p.before.width * 2, p.after.width)
+            assertEquals(p.before.height * 2, p.after.height)
+        }
+        // A flat picture stays flat through the averaging model.
+        assertEquals(0xFF336699.toInt(), r.previews[1].after.getPixel(40, 40))
+        // Without test pictures, none.
+        assertTrue((check(FakeRuntime()) as ModelCheck.Result.Fit).previews.isEmpty())
+    }
+
+    @Test
+    fun aTestPictureLargerThanATileIsCutToOneTileAtItsMiddle() {
+        val s = Session(FakeModel(), Geometry(2, 0, 20), 64)
+        assertEquals(24, TilePlan.core(64, s.geometry))
+        val p = ModelCheck.picture(128)
+        val cut = ModelCheck.oneTile(s, p)
+        assertEquals(24, cut.width)
+        assertEquals(24, cut.height)
+        assertEquals(p.getPixel(52, 52), cut.getPixel(0, 0))
+        assertEquals(p.getPixel(75, 75), cut.getPixel(23, 23))
+        assertEquals(1, TilePlan.tiles(cut.width, cut.height, s.sizeFor(cut.width, cut.height), s.geometry).size)
+        // One that fits is run whole.
+        val small = ModelCheck.picture(20)
+        assertTrue(ModelCheck.oneTile(s, small) === small)
+    }
+
+    @Test
     fun outputUnlikeItsInputIsFitWithoutAWarning() {
         // Mid-gray whatever the input: how output looks is the user's to judge.
         val runtime = FakeRuntime(gpu = null, make = { onGpu, _ -> FakeModel(onGpu = onGpu, wrong = true) })

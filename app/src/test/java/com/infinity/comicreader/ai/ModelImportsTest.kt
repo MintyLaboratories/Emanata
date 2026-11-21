@@ -1,6 +1,7 @@
 package com.infinity.comicreader.ai
 
 import android.app.Application
+import android.graphics.Bitmap
 import android.net.Uri
 import android.os.SystemClock
 import androidx.test.core.app.ApplicationProvider
@@ -98,13 +99,53 @@ class ModelImportsTest {
         // Not saved while its warnings wait.
         ModelImports.save(context, "Slow lines", AiStep.UPSCALE)
         assertEquals(fit, ModelImports.state.value)
+        // Its before and after wait for its warnings.
+        ModelImports.previewed()
+        assertEquals(fit, ModelImports.state.value)
         ModelImports.accept()
         val accepted = ModelImports.state.value as ImportState.Fit
         assertFalse(accepted.warned)
         assertEquals(fit.copy(accepted = true), accepted)
+        // Not saved while its before and after wait.
+        assertTrue(accepted.previewing)
+        ModelImports.save(context, "Slow lines", AiStep.UPSCALE)
+        assertEquals(accepted, ModelImports.state.value)
+        ModelImports.previewed()
+        assertEquals(accepted.copy(seen = true), ModelImports.state.value)
         ModelImports.save(context, "Slow lines", AiStep.UPSCALE)
         while (ModelImports.state.value !is ImportState.Imported && System.currentTimeMillis() < until) Thread.sleep(10)
         assertEquals("Slow lines", (ModelImports.state.value as ImportState.Imported).model.name)
+    }
+
+    @Test
+    fun aFitModelComesWithItsBeforeAndAfterOnEachTestPicture() {
+        val fit = ModelImports.importNow(context, pair()) as ImportState.Fit
+        assertEquals(PreviewPicture.entries, fit.previews.map { it.picture })
+        for (p in fit.previews) {
+            assertTrue(p.picture.name, p.before.width in 16..128 && p.before.width == p.before.height)
+            assertEquals(p.before.width * fit.scale, p.after.width)
+            assertEquals(p.before.height * fit.scale, p.after.height)
+        }
+        assertTrue(fit.previewing)
+        assertFalse(fit.copy(seen = true).previewing)
+        assertFalse("its warnings first", fit.copy(warnings = setOf(ImportWarning.SLOW)).previewing)
+        assertFalse("none to show", fit.copy(previews = emptyList()).previewing)
+    }
+
+    @Test
+    fun theTestPicturesAreOpaqueTileSizedSquares() {
+        val pictures = PreviewPicture.load(context)
+        assertEquals(PreviewPicture.entries, pictures.map { it.first })
+        for ((p, b) in pictures) {
+            assertEquals(p.name, Bitmap.Config.ARGB_8888, b.config)
+            assertEquals(p.name, 128, b.width)
+            assertEquals(p.name, 128, b.height)
+            assertTrue(p.name, (0 until 128).all { x -> (b.getPixel(x, x) ushr 24) == 0xFF })
+        }
+        // The dot pattern is gray, the others in color.
+        assertTrue(GrayPages.isGray(pictures[2].second))
+        assertFalse(GrayPages.isGray(pictures[0].second))
+        assertFalse(GrayPages.isGray(pictures[1].second))
     }
 
     @Test
@@ -292,6 +333,7 @@ class ModelImportsTest {
         while (ModelImports.state.value !is ImportState.Fit && System.currentTimeMillis() < until) Thread.sleep(10)
         // A file where the imported models' folder goes: the move fails.
         store.userRoot.writeText("")
+        ModelImports.previewed()
         ModelImports.save(context, "Mine", AiStep.UPSCALE)
         while (ModelImports.state.value !is ImportState.Failed && System.currentTimeMillis() < until) Thread.sleep(10)
         assertEquals(ImportState.Failed(ImportFailure.STORAGE), ModelImports.state.value)

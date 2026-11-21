@@ -50,6 +50,9 @@ object Notices {
         "are owned by Alexander Roshal. The UnRAR code may not be used to develop a RAR (WinRAR) " +
         "compatible archiver."
 
+    /** Where the dot-pattern test picture of an import's before and after is from. */
+    const val PREVIEW_DOTS_URL = "https://www.flickr.com/photos/seattlemunicipalarchives/44998418715/"
+
     /** Folder under `assets/` holding the license and NOTICE files. */
     const val ASSET_DIR = "licenses"
 
@@ -199,6 +202,16 @@ object Notices {
                 "is on covers, on this device only."
         ),
         Notice("Material Symbols", APACHE_2, "https://github.com/google/material-design-icons", APACHE),
+        Notice(
+            "Pepper&Carrot artwork", "CC BY 4.0", "https://www.peppercarrot.com/", listOf("cc-by-4.0.txt"),
+            note = "By David Revoy. Small cutouts of \"Portrait of Pepper\" (2017) and \"In Bloom\" (2022), scaled " +
+                "down, the second JPEG-compressed, are two of the test pictures an imported model's before and after shows."
+        ),
+        Notice(
+            "Water conservation brochure, circa 1985", "CC BY 2.0", PREVIEW_DOTS_URL, listOf("cc-by-2.0.txt"),
+            note = "By the Seattle Municipal Archives. A small cutout, scaled down, is the test picture with dot " +
+                "patterns an imported model's before and after shows."
+        ),
     )
 
     /**

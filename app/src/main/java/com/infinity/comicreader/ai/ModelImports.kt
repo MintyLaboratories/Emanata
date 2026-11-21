@@ -1,6 +1,8 @@
 package com.infinity.comicreader.ai
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
@@ -49,6 +51,35 @@ enum class ImportWarning {
     SLOW
 }
 
+/** The test pictures an import shows a fit model's before and after on, in order; each an [asset], one AI tile or so square. */
+enum class PreviewPicture(val asset: String) {
+    /** Clean painted art with complex gradients. */
+    GRADIENTS("import-preview/gradients.png"),
+
+    /** Painted art JPEG-compressed until blocks and ringing show. */
+    JPEG("import-preview/jpeg.jpg"),
+
+    /** Black-and-white comic art with a dot screen, as manga screentone has. */
+    DOTS("import-preview/dots.png");
+
+    companion object {
+        /** Each picture that reads, opaque ARGB_8888 at its own size. Blocking. */
+        fun load(context: Context): List<Pair<PreviewPicture, Bitmap>> {
+            val options = BitmapFactory.Options().apply {
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+                inScaled = false
+            }
+            return entries.mapNotNull { p ->
+                runCatching { context.assets.open(p.asset).use { BitmapFactory.decodeStream(it, null, options) } }
+                    .getOrNull()?.takeIf { it.config == Bitmap.Config.ARGB_8888 }?.let { p to it }
+            }
+        }
+    }
+}
+
+/** Test [picture] before a fit model ran on it ([before], one tile's worth) and after ([after]). */
+data class ImportPreview(val picture: PreviewPicture, val before: Bitmap, val after: Bitmap)
+
 /** Where an import is. */
 sealed interface ImportState {
     /** Nothing under way. */
@@ -62,8 +93,10 @@ sealed interface ImportState {
 
     /**
      * Checked and fit: with [warnings] not yet [accepted] ([ModelImports.accept]), waits for the
-     * user to import it anyway or cancel; then for a name and a step ([ModelImports.save]).
-     * [suggested] is the file's name; [pageMs] timed at thermal [headroom].
+     * user to import it anyway or cancel; then, with [previews] not yet [seen]
+     * ([ModelImports.previewed]), for the user to look at them and go on or cancel; then for a
+     * name and a step ([ModelImports.save]). [suggested] is the file's name; [pageMs] timed at
+     * thermal [headroom].
      */
     data class Fit(
         val id: String,
@@ -72,10 +105,15 @@ sealed interface ImportState {
         val pageMs: Long,
         val headroom: Float = Float.NaN,
         val warnings: Set<ImportWarning> = emptySet(),
-        val accepted: Boolean = false
+        val accepted: Boolean = false,
+        val previews: List<ImportPreview> = emptyList(),
+        val seen: Boolean = false
     ) : ImportState {
         /** Waits for the user to weigh its [warnings]. */
         val warned: Boolean get() = warnings.isNotEmpty() && !accepted
+
+        /** Waits, its warnings weighed, for the user to look at its [previews]. */
+        val previewing: Boolean get() = !warned && previews.isNotEmpty() && !seen
     }
 
     /** The check refused it: [why]; for memory, the [bytes] it would need and the [limit] it would pass; for time, the [pageMs] a page would take (0: unknown). */
@@ -93,8 +131,9 @@ sealed interface ImportState {
  * `.bin` picked through the system's file picker, copied into the store's staging folder
  * (no conversion), then checked ([ModelCheck]) on this device's engine within its model
  * memory ([ModelMemory]). A fit model warned of as slow waits for the user to import it
- * anyway ([accept]) or cancel ([dismiss]); then every fit model waits for the user to name
- * it and pick its step, then
+ * anyway ([accept]) or cancel ([dismiss]); then each waits while the user looks at its before
+ * and after on the test pictures ([PreviewPicture], [previewed]), then to be named and given
+ * its step, then
  * moves among the imported models ([UserModels]). While a check runs, a marker names the
  * model, so a check that ends the app is told of next time ([crashed]).
  */
@@ -183,15 +222,20 @@ object ModelImports {
         }
     }
 
-    /** Takes the fit model's warnings as weighed: it goes on to be named. */
+    /** Takes the fit model's warnings as weighed: it goes on to its before and after, then to be named. */
     fun accept() {
         _state.update { s -> (s as? ImportState.Fit)?.copy(accepted = true) ?: s }
     }
 
-    /** Takes the fit model in as [name] at [step], once its warnings are accepted; it must suit its scale ([steps]). */
+    /** Takes the fit model's before and after as looked at, once its warnings are accepted: it goes on to be named. */
+    fun previewed() {
+        _state.update { s -> (s as? ImportState.Fit)?.takeIf { !it.warned }?.copy(seen = true) ?: s }
+    }
+
+    /** Takes the fit model in as [name] at [step], once its warnings are accepted and its before and after looked at; it must suit its scale ([steps]). */
     fun save(context: Context, name: String, step: AiStep) {
         val fit = _state.value as? ImportState.Fit ?: return
-        if (fit.warned) return
+        if (fit.warned || fit.previewing) return
         require(step in steps(fit.scale)) { "$step does not suit ${fit.scale}x" }
         val store = ModelStore.of(context)
         _state.value = ImportState.Working(name, checking = false)
@@ -302,15 +346,22 @@ object ModelImports {
             // A binary or broken .param: ncnn reads text ones only.
             if (!files.param.readText().trimStart().startsWith(MAGIC)) return ImportState.Refused(name, ModelRefusal.NOT_LOADED, 0, budget, 0)
             report(ImportState.Working(name, checking = true))
+            val pictures = PreviewPicture.load(context)
             val marker = File(store.root, CHECKING)
             marker.writeText(name)
             val result = try {
-                ModelCheck.check(runtime, files, NativeResampler.threads, budget, canceled, clock, headroom = { headroom(context) })
+                ModelCheck.check(
+                    runtime, files, NativeResampler.threads, budget, canceled, clock, headroom = { headroom(context) },
+                    pictures = pictures.map { it.second }
+                )
             } finally {
                 marker.delete()
             }
             return when (result) {
-                is ModelCheck.Result.Fit -> ImportState.Fit(id, name, result.scale, result.pageMs, result.headroom, result.warnings).also { kept = true }
+                is ModelCheck.Result.Fit -> {
+                    val previews = pictures.zip(result.previews) { (picture, _), p -> ImportPreview(picture, p.before, p.after) }
+                    ImportState.Fit(id, name, result.scale, result.pageMs, result.headroom, result.warnings, previews = previews).also { kept = true }
+                }
                 is ModelCheck.Result.Refused -> ImportState.Refused(name, result.why, result.bytes, result.limit, result.pageMs)
             }
         } finally {

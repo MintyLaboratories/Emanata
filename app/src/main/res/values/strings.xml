@@ -1206,6 +1206,15 @@
     <string name="ai_import_warn_slow">A page would take about %1$d s on this device, more than %2$d s: pages wait long for it, and it costs more battery and heat.</string>
     <string name="ai_import_anyway">Import anyway</string>
     <string name="ai_import_discard">Discard</string>
+    <string name="ai_import_preview_title">%1$s: before and after</string>
+    <string name="ai_import_preview_intro">What it makes of test pictures, both zoomed 2×.</string>
+    <string name="ai_import_preview_gradients">Clean art with gradients</string>
+    <string name="ai_import_preview_jpeg">JPEG-compressed art</string>
+    <string name="ai_import_preview_dots">Art with dot patterns</string>
+    <string name="ai_import_preview_before">Before</string>
+    <string name="ai_import_preview_after">After</string>
+    <string name="ai_import_preview_image">%1$s, %2$s</string>
+    <string name="ai_import_preview_next">Continue</string>
     <string name="ai_import_done">Imported %1$s</string>
     <string name="ai_import_refused">%1$s can\'t be used</string>
     <string name="ai_import_failed">Not imported</string>

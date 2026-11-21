@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- An imported model's before and after on the test pictures, zoomed 2×: a row per picture. -->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <LinearLayout
+        android:id="@+id/import_preview_list"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingHorizontal="24dp"
+        android:paddingTop="@dimen/space_2">
+
+        <TextView
+            android:id="@+id/import_preview_intro"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/ai_import_preview_intro"
+            android:textAppearance="?attr/textAppearanceBodyMedium" />
+    </LinearLayout>
+</ScrollView>

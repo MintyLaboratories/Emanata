@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One test picture of an import's preview: what it is, then before and after, side by side where they fit. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="@dimen/space_4"
+    android:orientation="vertical">
+
+    <TextView
+        android:id="@+id/import_preview_label"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textAppearance="?attr/textAppearanceTitleSmall"
+        tools:text="Clean art with gradients" />
+
+    <LinearLayout
+        android:id="@+id/import_preview_pair"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_1"
+            android:layout_marginEnd="@dimen/space_2"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:importantForAccessibility="no"
+                android:text="@string/ai_import_preview_before"
+                android:textAppearance="?attr/textAppearanceBodySmall" />
+
+            <ImageView
+                android:id="@+id/import_preview_before"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:scaleType="center" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_1"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:importantForAccessibility="no"
+                android:text="@string/ai_import_preview_after"
+                android:textAppearance="?attr/textAppearanceBodySmall" />
+
+            <ImageView
+                android:id="@+id/import_preview_after"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:scaleType="center" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

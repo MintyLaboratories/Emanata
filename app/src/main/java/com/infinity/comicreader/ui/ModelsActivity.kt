@@ -3,10 +3,12 @@ package com.infinity.comicreader.ui
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Bundle
 import android.text.format.Formatter
 import android.view.View
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.RadioGroup
 import android.widget.TextView
@@ -50,6 +52,7 @@ import com.infinity.comicreader.ai.ModelImports
 import com.infinity.comicreader.ai.ModelRefusal
 import com.infinity.comicreader.ai.ModelSource
 import com.infinity.comicreader.ai.ModelStore
+import com.infinity.comicreader.ai.PreviewPicture
 import com.infinity.comicreader.ai.Models
 import com.infinity.comicreader.ai.ReaderAi
 import com.infinity.comicreader.ai.ShaderModel
@@ -244,6 +247,15 @@ object ModelText {
         }
     }
 
+    /** What test picture [p] of an import's before and after shows. */
+    fun previewPicture(context: Context, p: PreviewPicture): String = context.getString(
+        when (p) {
+            PreviewPicture.GRADIENTS -> R.string.ai_import_preview_gradients
+            PreviewPicture.JPEG -> R.string.ai_import_preview_jpeg
+            PreviewPicture.DOTS -> R.string.ai_import_preview_dots
+        }
+    )
+
     /** Why picked files were not taken in, in a sentence. */
     fun failure(context: Context, f: ImportFailure): String = when (f) {
         ImportFailure.NOT_A_PAIR -> context.getString(R.string.ai_import_failed_pair)
@@ -255,14 +267,24 @@ object ModelText {
     }
 }
 
+/** How an import's before and after show: both [ZOOM] times the test picture's size, in screen pixels. */
+object ImportPreviewZoom {
+    const val ZOOM = 2
+
+    /** [b] at [side] x [side]: whole pixels repeated where it grows, so artifacts show as they are; filtered where it shrinks (a large upscale's after). */
+    fun shown(b: Bitmap, side: Int): Bitmap =
+        if (b.width == side && b.height == side) b else Bitmap.createScaledBitmap(b, side, side, b.width > side)
+}
+
 /**
  * The AI model manager: every model by step. Catalog models with what they do and their scale,
  * downloaded or not; downloads (with progress, resumed when cut short), cancels and
  * deletes. With Keep it simple on, slow catalog models show only once downloaded or
  * downloading. Imported models (marked so, no license) after them, deleted after asking.
  * "Import a model…" takes the user's own: its two files picked ([ModelImports]), copied and
- * checked with progress, then named and given a step, or refused with the reason; a slow
- * model is imported only once the user picks "Import anyway" (Cancel, or Back, drops it). A
+ * checked with progress, then shown before and after on test pictures, then named and given a
+ * step, or refused with the reason; a slow model goes on only once the user picks "Import
+ * anyway" (Cancel, or Back, drops it). A
  * tap on a model's row shows what is known of it under it (its size, license and source), as
  * a picker's info button does ([ModelPicker]); another tap hides it.
  */
@@ -521,7 +543,11 @@ class ModelsActivity : AppCompatActivity() {
                     .setCancelable(false)
                     .show()
             }
-            is ImportState.Fit -> if (s.warned) warningDialog(s) else fitDialog(s)
+            is ImportState.Fit -> when {
+                s.warned -> warningDialog(s)
+                s.previewing -> previewDialog(s)
+                else -> fitDialog(s)
+            }
             is ImportState.Refused -> AlertDialog.Builder(this)
                 .setTitle(getString(R.string.ai_import_refused, s.name))
                 .setMessage(ModelText.refusal(this, s))
@@ -554,6 +580,48 @@ class ModelsActivity : AppCompatActivity() {
             setCanceledOnTouchOutside(false)
             show()
         }
+
+    /**
+     * Shows a fit model's before and after on each test picture, both zoomed [ImportPreviewZoom.ZOOM]
+     * times ([ImportPreviewZoom.shown]), side by side where they fit, else one above the other;
+     * judging nothing: Continue goes on to naming it, Discard, or Back, drops it.
+     */
+    private fun previewDialog(s: ImportState.Fit): AlertDialog {
+        val view = layoutInflater.inflate(R.layout.dialog_import_preview, null)
+        val list = view.findViewById<LinearLayout>(R.id.import_preview_list)
+        val density = resources.displayMetrics.densityDpi
+        // The dialog's content width, less its padding: roughly, as the dialog is not laid out yet.
+        val room = (resources.displayMetrics.widthPixels * 0.8f).toInt() - list.paddingLeft - list.paddingRight
+        for (p in s.previews) {
+            val item = layoutInflater.inflate(R.layout.item_import_preview, list, false)
+            val label = ModelText.previewPicture(this, p.picture)
+            item.findViewById<TextView>(R.id.import_preview_label).text = label
+            val side = p.before.width * ImportPreviewZoom.ZOOM
+            val gap = resources.getDimensionPixelSize(R.dimen.space_2)
+            if (2 * side + gap > room) item.findViewById<LinearLayout>(R.id.import_preview_pair).orientation = LinearLayout.VERTICAL
+            for ((id, bitmap, said) in listOf(
+                Triple(R.id.import_preview_before, p.before, R.string.ai_import_preview_before),
+                Triple(R.id.import_preview_after, p.after, R.string.ai_import_preview_after)
+            )) {
+                item.findViewById<ImageView>(id).apply {
+                    setImageBitmap(ImportPreviewZoom.shown(bitmap, side).also { it.density = density })
+                    contentDescription = getString(R.string.ai_import_preview_image, label, getString(said))
+                }
+            }
+            list.addView(item)
+        }
+        return AlertDialog.Builder(this)
+            .setTitle(getString(R.string.ai_import_preview_title, s.suggested))
+            .setView(view)
+            .setPositiveButton(R.string.ai_import_preview_next) { _, _ -> ModelImports.previewed() }
+            .setNegativeButton(R.string.ai_import_discard) { _, _ -> ModelImports.dismiss(this) }
+            .setOnCancelListener { ModelImports.dismiss(this) }
+            .create()
+            .apply {
+                setCanceledOnTouchOutside(false)
+                show()
+            }
+    }
 
     /** Asks for a checked model's name and step, warning that heavy models may be too slow. */
     private fun fitDialog(s: ImportState.Fit): AlertDialog {

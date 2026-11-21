@@ -131,11 +131,16 @@ class ModelImportWarningTest {
     }
 
     @Test
-    fun importAnywayGoesOnToNamingIt() {
+    fun importAnywayGoesOnToItsBeforeAndAfterThenToNamingIt() {
         val (fit, dialog) = warned()
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
         idle()
         assertEquals(fit.copy(accepted = true), ModelImports.state.value)
+        val preview = ShadowDialog.getLatestDialog() as AlertDialog
+        assertTrue(preview.isShowing)
+        assertNotNull("the before and after", preview.findViewById(R.id.import_preview_list))
+        preview.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
+        idle()
         val named = ShadowDialog.getLatestDialog() as AlertDialog
         assertTrue(named.isShowing)
         assertNotNull("the naming dialog", named.findViewById(R.id.import_name))
@@ -178,18 +183,18 @@ class ModelImportWarningTest {
     }
 
     @Test
-    fun rotatingOnceAcceptedKeepsTheNamingAndTheModel() {
+    fun rotatingOnceAcceptedKeepsTheBeforeAndAfterAndTheModel() {
         val (fit, dialog) = warned()
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
         idle()
-        val named = ShadowDialog.getLatestDialog() as AlertDialog
+        val preview = ShadowDialog.getLatestDialog() as AlertDialog
         manager!!.recreate()
         idle()
         assertEquals(fit.copy(accepted = true), ModelImports.state.value)
         assertTrue(store.staging(fit.id).isDirectory)
         val again = ShadowDialog.getLatestDialog() as AlertDialog
-        assertTrue(again !== named && again.isShowing)
-        assertNotNull("the naming dialog", again.findViewById(R.id.import_name))
+        assertTrue(again !== preview && again.isShowing)
+        assertNotNull("the before and after", again.findViewById(R.id.import_preview_list))
     }
 
     @Test

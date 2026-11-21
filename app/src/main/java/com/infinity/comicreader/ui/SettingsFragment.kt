@@ -91,6 +91,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
     }
 
     private var searchItem: MenuItem? = null
+    private var foldItem: MenuItem? = null
     private var resultsView: View? = null
     private var resultsEmpty: View? = null
 
@@ -149,6 +150,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
     override fun onDestroyView() {
         flash.stop()
         searchItem = null
+        foldItem = null
         resultsView = null
         resultsEmpty = null
         super.onDestroyView()
@@ -160,6 +162,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
             inflater.inflate(R.menu.menu_settings, menu)
             val item = menu.findItem(R.id.settings_search)
             searchItem = item
+            foldItem = menu.findItem(R.id.settings_fold_all)
             val search = item.actionView as SettingsSearchView
             search.queryHint = getString(R.string.settings_search_hint)
             search.maxWidth = Int.MAX_VALUE
@@ -167,14 +170,14 @@ class SettingsFragment : PreferenceFragmentCompat() {
             item.setOnActionExpandListener(object : MenuItem.OnActionExpandListener {
                 override fun onMenuItemActionExpand(item: MenuItem): Boolean {
                     if (query == null) query = ""
-                    menu.findItem(R.id.settings_fold_all)?.isVisible = false
+                    refreshFoldItem()
                     return true
                 }
 
                 override fun onMenuItemActionCollapse(item: MenuItem): Boolean {
                     query = null
                     showResults()
-                    activity?.invalidateMenu()
+                    refreshFoldItem()
                     return true
                 }
             })
@@ -198,20 +201,25 @@ class SettingsFragment : PreferenceFragmentCompat() {
             }
         }
 
-        override fun onPrepareMenu(menu: Menu) {
-            val expanded = SettingsFolds.anyExpanded(preferenceScreen)
-            menu.findItem(R.id.settings_fold_all)?.apply {
-                isVisible = query == null
-                setTitle(if (expanded) R.string.settings_collapse_all else R.string.settings_expand_all)
-                setIcon(if (expanded) R.drawable.ic_unfold_less else R.drawable.ic_unfold_more)
-            }
-        }
+        override fun onPrepareMenu(menu: Menu) = refreshFoldItem()
 
         override fun onMenuItemSelected(item: MenuItem): Boolean {
             if (item.itemId != R.id.settings_fold_all) return false
             foldAll(SettingsFolds.anyExpanded(preferenceScreen))
             return true
         }
+    }
+
+    /**
+     * Sets the fold button, in place, to Collapse all while any section is expanded, else Expand all,
+     * and hides it while searching. Making the menu again instead would close and reopen the search.
+     */
+    private fun refreshFoldItem() {
+        val item = foldItem ?: return
+        val expanded = SettingsFolds.anyExpanded(preferenceScreen)
+        item.isVisible = query == null
+        item.setTitle(if (expanded) R.string.settings_collapse_all else R.string.settings_expand_all)
+        item.setIcon(if (expanded) R.drawable.ic_unfold_less else R.drawable.ic_unfold_more)
     }
 
     /** Lists the settings matching the search ([SettingsSearch]) over the settings, or nothing while it has no text. */
@@ -231,7 +239,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
         val prefs = Prefs(requireContext())
         prefs.collapsedSettings = SettingsFolds.setAll(preferenceScreen, collapse)
         AdvancedSettings.apply(preferenceScreen, prefs.keepSimple)
-        activity?.invalidateMenu()
+        refreshFoldItem()
     }
 
     /**
@@ -248,7 +256,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
             AdvancedSettings.apply(preferenceScreen, prefs.keepSimple)
         }
         pref.isVisible = true
-        activity?.invalidateMenu()
+        refreshFoldItem()
         val list = listView
         // The list takes the shown settings on its next pass.
         list.post {
@@ -602,7 +610,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 section.onToggle = { s ->
                     prefs.collapsedSettings = if (s.collapsed) prefs.collapsedSettings + s.key else prefs.collapsedSettings - s.key
                     AdvancedSettings.apply(screen, prefs.keepSimple)
-                    activity?.invalidateMenu()
+                    refreshFoldItem()
                 }
             }
             for (j in 0 until section.preferenceCount) {

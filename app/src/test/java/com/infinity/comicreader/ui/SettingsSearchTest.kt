@@ -15,6 +15,7 @@ import com.infinity.comicreader.data.Prefs
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -215,6 +216,21 @@ class SettingsSearchTest {
         activity.item(R.id.settings_search).collapseActionView()
         idle()
         assertTrue(activity.item(R.id.settings_fold_all).isVisible)
+    }
+
+    @Test
+    fun foldingASectionLeavesTheOpenSearchFieldAlone() {
+        val (controller, fragment) = open()
+        val activity = controller.get()
+        val item = activity.item(R.id.settings_search)
+        item.expandActionView()
+        idle()
+        val field = item.actionView
+        (fragment.pref("section_network") as CollapsibleCategory).performClick()
+        idle()
+        assertSame(field, activity.item(R.id.settings_search).actionView)
+        assertTrue(activity.item(R.id.settings_search).isActionViewExpanded)
+        assertFalse(activity.item(R.id.settings_fold_all).isVisible)
     }
 
     @Test

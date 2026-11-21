@@ -186,16 +186,17 @@ object Resampler {
      * it starts more workers on [Dispatchers.Default] until [wanted] of them run, so their
      * count can grow mid-job but never shrinks, and the first band is always its own. Polls [canceled] before each band and throws
      * [CancellationException] once it returns true or [work] stopped.
+     * [stopped] is set once any worker stops.
      */
     fun inBands(
         dstH: Int,
         threads: Int,
         canceled: () -> Boolean,
         wanted: () -> Int = { threads },
+        stopped: AtomicBoolean = AtomicBoolean(),
         work: (worker: Int, y0: Int, y1: Int) -> Boolean
     ) {
         val bands = bandsFor(dstH, threads)
-        val stopped = AtomicBoolean()
         val next = AtomicInteger()
         val loop = { worker: Int, before: () -> Unit ->
             try {

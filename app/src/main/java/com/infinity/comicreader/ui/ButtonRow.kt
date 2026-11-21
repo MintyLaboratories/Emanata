@@ -5,7 +5,7 @@ import android.util.AttributeSet
 import android.view.View
 import android.widget.LinearLayout
 
-/** Buttons side by side where they fit at their own widths, else stacked; gone ones take no room. */
+/** Buttons, or other views, side by side where they fit at their own widths, else stacked; gone ones take no room. */
 class ButtonRow @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null) : LinearLayout(context, attrs) {
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val available = MeasureSpec.getSize(widthMeasureSpec) - paddingLeft - paddingRight

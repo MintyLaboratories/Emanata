@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- An imported model's before and after on the test pictures, zoomed 2×: a row per picture. -->
+<!-- An imported model's before and after on the test pictures, at the same size: a row per picture. -->
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content">

@@ -18,7 +18,6 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
-import androidx.core.view.doOnLayout
 import androidx.core.view.isVisible
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
@@ -268,16 +267,22 @@ object ModelText {
     }
 }
 
-/** How an import's before and after show: both [ZOOM] times the test picture's size, in screen pixels. */
+/**
+ * How an import's before and after show, in screen pixels: at the same [side], the before zoomed
+ * [ZOOM] times, or to its after's size when that is larger (an upscaler's), the after never
+ * shrunk; a window narrower than that shows both fitted to it.
+ */
 object ImportPreviewZoom {
     const val ZOOM = 2
 
-    /** True when two pictures of [side] and a [gap] between them fit [room], all in pixels. */
-    fun sideBySide(side: Int, gap: Int, room: Int): Boolean = 2 * side + gap <= room
+    /** The side [before] and [after] both show at. */
+    fun side(before: Bitmap, after: Bitmap): Int = maxOf(before.width * ZOOM, before.height * ZOOM, after.width, after.height)
 
-    /** [b] at [side] x [side]: whole pixels repeated where it grows, so artifacts show as they are; filtered where it shrinks (a large upscale's after). */
-    fun shown(b: Bitmap, side: Int): Bitmap =
-        if (b.width == side && b.height == side) b else Bitmap.createScaledBitmap(b, side, side, b.width > side)
+    /** [b] at [side] x [side] ([side]), each pixel repeated, not blended, so artifacts show as they are; [b] itself at that size. */
+    fun shown(b: Bitmap, side: Int): Bitmap {
+        require(side >= b.width && side >= b.height) { "${b.width}x${b.height} would shrink to $side" }
+        return if (b.width == side && b.height == side) b else Bitmap.createScaledBitmap(b, side, side, false)
+    }
 }
 
 /**
@@ -586,26 +591,19 @@ class ModelsActivity : AppCompatActivity() {
         }
 
     /**
-     * Shows a fit model's before and after on each test picture, both zoomed [ImportPreviewZoom.ZOOM]
-     * times ([ImportPreviewZoom.shown]), side by side where they fit, else one above the other;
+     * Shows a fit model's before and after on each test picture at the same size
+     * ([ImportPreviewZoom]), side by side where they fit, else one above the other ([ButtonRow]);
      * judging nothing: Continue goes on to naming it, Discard, or Back, drops it.
      */
     private fun previewDialog(s: ImportState.Fit): AlertDialog {
         val view = layoutInflater.inflate(R.layout.dialog_import_preview, null)
         val list = view.findViewById<LinearLayout>(R.id.import_preview_list)
         val density = resources.displayMetrics.densityDpi
-        val gap = resources.getDimensionPixelSize(R.dimen.space_2)
         for (p in s.previews) {
             val item = layoutInflater.inflate(R.layout.item_import_preview, list, false)
             val label = ModelText.previewPicture(this, p.picture)
             item.findViewById<TextView>(R.id.import_preview_label).text = label
-            val side = p.before.width * ImportPreviewZoom.ZOOM
-            // One above the other once laid out too narrow for both: never cut.
-            val pair = item.findViewById<LinearLayout>(R.id.import_preview_pair)
-            list.doOnLayout {
-                val room = list.width - list.paddingLeft - list.paddingRight
-                pair.orientation = if (ImportPreviewZoom.sideBySide(side, gap, room)) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
-            }
+            val side = ImportPreviewZoom.side(p.before, p.after)
             for ((id, bitmap, said) in listOf(
                 Triple(R.id.import_preview_before, p.before, R.string.ai_import_preview_before),
                 Triple(R.id.import_preview_after, p.after, R.string.ai_import_preview_after)

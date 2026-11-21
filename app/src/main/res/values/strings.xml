@@ -1207,7 +1207,7 @@
     <string name="ai_import_anyway">Import anyway</string>
     <string name="ai_import_discard">Discard</string>
     <string name="ai_import_preview_title">%1$s: before and after</string>
-    <string name="ai_import_preview_intro">What it makes of test pictures, both zoomed 2×.</string>
+    <string name="ai_import_preview_intro">What it makes of test pictures, both at the same size: before zoomed 2× or more, after never shrunk.</string>
     <string name="ai_import_preview_gradients">Clean art with gradients</string>
     <string name="ai_import_preview_jpeg">JPEG-compressed art</string>
     <string name="ai_import_preview_dots">Art with dot patterns</string>

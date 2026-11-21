@@ -878,8 +878,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   on a computer, e.g. with pnnx; nothing is converted on the device): the
   pair is copied into the app, checked as catalog models are and timed on a
   test page, then shows what it makes of three test pictures (clean art with
-  gradients, JPEG-compressed art, art with dot patterns), before and after,
-  both zoomed 2×, judging nothing: **Continue** or **Discard**; then it is
+  gradients, JPEG-compressed art, art with dot patterns), before and after
+  at the same size (the before zoomed 2×, or to an upscaler's output; the
+  after never shrunk, pixels repeated, not blended), judging nothing: **Continue** or **Discard**; then it is
   named and given its step (1× models remove artifacts or
   descreen, larger ones upscale), with a warning that heavy models may be too
   slow to run live. A model taking over 30 s a page goes on only after

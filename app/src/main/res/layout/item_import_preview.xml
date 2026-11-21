@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- One test picture of an import's preview: what it is, then before and after, side by side where they fit. -->
+<!-- One test picture of an import's preview: what it is, then before and after, side by side where they fit, else stacked, fitted to a narrower window. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
@@ -14,7 +14,7 @@
         android:textAppearance="?attr/textAppearanceTitleSmall"
         tools:text="Clean art with gradients" />
 
-    <LinearLayout
+    <com.infinity.comicreader.ui.ButtonRow
         android:id="@+id/import_preview_pair"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -38,7 +38,8 @@
                 android:id="@+id/import_preview_before"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:scaleType="center" />
+                android:adjustViewBounds="true"
+                android:scaleType="fitCenter" />
         </LinearLayout>
 
         <LinearLayout
@@ -58,7 +59,8 @@
                 android:id="@+id/import_preview_after"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:scaleType="center" />
+                android:adjustViewBounds="true"
+                android:scaleType="fitCenter" />
         </LinearLayout>
-    </LinearLayout>
+    </com.infinity.comicreader.ui.ButtonRow>
 </LinearLayout>

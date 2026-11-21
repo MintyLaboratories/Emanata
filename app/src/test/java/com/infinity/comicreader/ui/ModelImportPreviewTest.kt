@@ -6,6 +6,8 @@ import android.graphics.Color
 import android.net.Uri
 import android.os.Looper
 import android.os.SystemClock
+import android.view.LayoutInflater
+import android.view.View
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -27,6 +29,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -188,6 +191,20 @@ class ModelImportPreviewTest {
     }
 
     @Test
+    fun bothShowAtTheBeforeZoomed2xOrTheUpscalersSize() {
+        val before = Bitmap.createBitmap(128, 128, Bitmap.Config.ARGB_8888)
+        fun after(scale: Int) = Bitmap.createBitmap(128 * scale, 128 * scale, Bitmap.Config.ARGB_8888)
+        assertEquals(256, ImportPreviewZoom.side(before, after(1)))
+        assertEquals(256, ImportPreviewZoom.side(before, after(2)))
+        assertEquals(512, ImportPreviewZoom.side(before, after(4)))
+        // A 4x model's after keeps every pixel; its before grows to match.
+        val four = after(4)
+        assertTrue(ImportPreviewZoom.shown(four, 512) === four)
+        assertEquals(512, ImportPreviewZoom.shown(before, 512).width)
+        assertThrows(IllegalArgumentException::class.java) { ImportPreviewZoom.shown(four, 256) }
+    }
+
+    @Test
     fun beforeShowsWholePixelsAfterFillsTheSameSquare() {
         val before = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888).apply {
             setPixel(0, 0, Color.BLACK)
@@ -201,15 +218,39 @@ class ModelImportPreviewTest {
         assertEquals(Color.BLACK, shown.getPixel(1, 1))
         assertEquals(Color.WHITE, shown.getPixel(2, 1))
         assertEquals(Color.WHITE, shown.getPixel(1, 2))
-        // A 2x model's after is shown as it is; a 4x one's made smaller.
+        // A 2x model's after is shown as it is.
         val twice = Bitmap.createBitmap(4, 4, Bitmap.Config.ARGB_8888)
         assertTrue(ImportPreviewZoom.shown(twice, 4) === twice)
-        assertEquals(4, ImportPreviewZoom.shown(Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888), 4).width)
+    }
+
+    /** A test picture's row with a before and after of [side] px, measured [width] px wide; its pair. */
+    private fun measuredPair(side: Int, width: Int): ButtonRow {
+        val item = LayoutInflater.from(context).inflate(R.layout.item_import_preview, null)
+        for (id in listOf(R.id.import_preview_before, R.id.import_preview_after)) {
+            val b = Bitmap.createBitmap(side, side, Bitmap.Config.ARGB_8888).also { it.density = context.resources.displayMetrics.densityDpi }
+            item.findViewById<ImageView>(id).setImageBitmap(b)
+        }
+        item.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+        item.layout(0, 0, item.measuredWidth, item.measuredHeight)
+        return item.findViewById(R.id.import_preview_pair)
     }
 
     @Test
-    fun beforeAndAfterGoSideBySideOnlyWhereBothFit() {
-        assertTrue(ImportPreviewZoom.sideBySide(256, 8, 520))
-        assertFalse(ImportPreviewZoom.sideBySide(256, 8, 519))
+    fun beforeAndAfterGoSideBySideWhereBothFitElseStackedNeverCut() {
+        val gap = context.resources.getDimensionPixelSize(R.dimen.space_2)
+        assertEquals(LinearLayout.HORIZONTAL, measuredPair(256, 2 * 256 + gap).orientation)
+        assertEquals(LinearLayout.VERTICAL, measuredPair(256, 2 * 256 + gap - 1).orientation)
+        // Narrower than one: both fitted whole to the room, square.
+        val narrow = measuredPair(256, 200)
+        assertEquals(LinearLayout.VERTICAL, narrow.orientation)
+        for (id in listOf(R.id.import_preview_before, R.id.import_preview_after)) {
+            val image = narrow.findViewById<ImageView>(id)
+            assertTrue("${image.width}", image.width in 200 - gap..200)
+            assertEquals(image.width, image.height)
+        }
+        // Measured again wider, the same row goes side by side.
+        val row = narrow.parent as View
+        row.measure(View.MeasureSpec.makeMeasureSpec(600, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+        assertEquals(LinearLayout.HORIZONTAL, narrow.orientation)
     }
 }

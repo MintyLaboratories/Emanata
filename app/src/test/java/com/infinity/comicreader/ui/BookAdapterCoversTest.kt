@@ -25,6 +25,8 @@ import com.infinity.comicreader.net.NetRules
 import com.infinity.comicreader.net.NetSkip
 import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.net.ShareSpeed
+import com.infinity.comicreader.testing.awaitUntil
+import com.infinity.comicreader.testing.idleUntil
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -39,7 +41,6 @@ import org.robolectric.annotation.Config
 import java.io.File
 import java.util.Collections
 import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 
 /** Switching away drops covers still loading, and covers made before show at once whatever is being made. */
 @RunWith(RobolectricTestRunner::class)
@@ -55,13 +56,19 @@ class BookAdapterCoversTest {
 
     /** Books whose covers are made slowly (named "slow…", until [release]), one whose cover was made before, and others made at once. */
     private inner class Fake : CoverSource {
+        /** Books whose covers made before were looked for: whether one is made next was decided as it was asked for. */
+        val looked: MutableList<String> = Collections.synchronizedList(ArrayList())
         val started: MutableList<String> = Collections.synchronizedList(ArrayList())
         val stops: MutableList<() -> Boolean> = Collections.synchronizedList(ArrayList())
+
+        /** Books whose covers were made, or given up. */
+        val ended: MutableList<String> = Collections.synchronizedList(ArrayList())
 
         override fun inMemory(context: Context, entry: BookEntry, width: Int, height: Int, style: CoverStyle): Bitmap? = null
 
         override fun cached(context: Context, entry: BookEntry, width: Int, height: Int, style: CoverStyle): Bitmap? {
-            if (entry.name.startsWith("late")) lookedUp.await(10, TimeUnit.SECONDS)
+            looked += entry.name
+            if (entry.name.startsWith("late")) lookedUp.await()
             return if (entry.name == "made.cbz") Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888) else null
         }
 
@@ -76,8 +83,8 @@ class BookAdapterCoversTest {
         ): Bitmap? {
             started += entry.name
             stops += canceled
-            if (entry.name.startsWith("slow")) release.await(10, TimeUnit.SECONDS)
-            return if (canceled()) null else Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            if (entry.name.startsWith("slow")) release.await()
+            return (if (canceled()) null else Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)).also { ended += entry.name }
         }
 
         override fun loadFirst(
@@ -91,8 +98,8 @@ class BookAdapterCoversTest {
         ): Thumbs.Cover? = load(context, entry, charset, width, height, style, canceled)?.let { Thumbs.Cover(it, full = true) }
     }
 
-    /** Layered covers: a red quick cover first, then the blue full one, each step logged. */
-    private class Layered : CoverSource {
+    /** Layered covers: a red quick cover first, then the blue full one, each step logged; [hold] runs before a first layer is given. */
+    private class Layered(private val hold: (BookEntry) -> Unit = {}) : CoverSource {
         val steps: MutableList<String> = Collections.synchronizedList(ArrayList())
 
         private fun colored(width: Int, height: Int, color: Int) =
@@ -125,12 +132,15 @@ class BookAdapterCoversTest {
             canceled: () -> Boolean
         ): Thumbs.Cover {
             steps += "first ${entry.name}"
-            Thread.sleep(30)
+            hold(entry)
             return Thumbs.Cover(colored(width, height, Color.RED), full = false)
         }
     }
 
     private val fake = Fake()
+
+    /** Holds the first layer of "1.cbz" until counted down. */
+    private val firstHeld = CountDownLatch(1)
 
     @Before
     fun setUp() {
@@ -149,6 +159,7 @@ class BookAdapterCoversTest {
     fun tearDown() {
         release.countDown()
         lookedUp.countDown()
+        firstHeld.countDown()
         adapter.release()
     }
 
@@ -162,14 +173,8 @@ class BookAdapterCoversTest {
         recycler.layout(0, 0, WIDTH, HEIGHT)
     }
 
-    /** Runs the main looper until [done], for up to two seconds. */
-    private fun until(done: () -> Boolean) {
-        val end = System.currentTimeMillis() + 2000
-        while (!done() && System.currentTimeMillis() < end) {
-            shadowOf(Looper.getMainLooper()).idle()
-            Thread.sleep(10)
-        }
-    }
+    /** Runs what is due on the main thread: the cover requests a layout posts there. */
+    private fun idle() = shadowOf(Looper.getMainLooper()).idle()
 
     private fun drawn(position: Int) = (recycler.findViewHolderForAdapterPosition(position) as BookAdapter.BookHolder?)?.thumb?.drawable
 
@@ -183,15 +188,17 @@ class BookAdapterCoversTest {
         try {
             adapter.submit(listOf(shareBook("a.cbz"), shareBook("made.cbz"), book("device.cbz")))
             layout()
-            until { fake.started.isNotEmpty() && drawn(1) != null }
-            repeat(10) { shadowOf(Looper.getMainLooper()).idle(); Thread.sleep(10) }
+            // A share book's cover is made or not as decided when asked for, before the look for one made before.
+            idleUntil("device.cbz's cover started, made.cbz's drawn, a.cbz's looked for") {
+                fake.started.isNotEmpty() && drawn(1) != null && "a.cbz" in fake.looked
+            }
             assertEquals(listOf("device.cbz"), fake.started.toList())
             assertNotNull(drawn(1))
             // With covers not skipped on metered connections they are made.
             NetPolicy.rules = NetRules(metered = emptySet())
             adapter.submit(listOf(shareBook("b.cbz")))
             layout()
-            until { "b.cbz" in fake.started }
+            idleUntil("b.cbz's cover started") { "b.cbz" in fake.started }
             assertTrue("b.cbz" in fake.started)
         } finally {
             NetPolicy.rules = NetRules()
@@ -209,12 +216,12 @@ class BookAdapterCoversTest {
         try {
             adapter.submit(listOf(shareBook("a.cbz"), shareBook("b.cbz")))
             layout()
-            repeat(20) { shadowOf(Looper.getMainLooper()).idle(); Thread.sleep(10) }
+            idleUntil("both covers looked for") { fake.looked.containsAll(listOf("a.cbz", "b.cbz")) }
             assertTrue(fake.started.isEmpty())
             Metered.probe = { Metered.Link(connected = true, notMetered = true, activeMetered = false) }
             Metered.forget()
             adapter.retryHeld()
-            until { fake.started.size == 2 }
+            idleUntil("both covers started") { fake.started.size == 2 }
             assertEquals(setOf("a.cbz", "b.cbz"), fake.started.toSet())
         } finally {
             Metered.probe = { Metered.Link(connected = true, notMetered = true, activeMetered = false) }
@@ -229,13 +236,13 @@ class BookAdapterCoversTest {
         try {
             adapter.submit(listOf(shareBook("a.cbz"), shareBook("b.cbz")))
             layout()
-            until { fake.started.size == 2 }
+            idleUntil("both covers started") { fake.started.size == 2 }
             assertEquals(setOf("a.cbz", "b.cbz"), fake.started.toSet())
             // Skipping any network use not asked for holds back those on screen too.
             NetPolicy.rules = NetRules(slow = setOf(NetSkip.ANY))
             adapter.submit(listOf(shareBook("c.cbz")))
             layout()
-            repeat(20) { shadowOf(Looper.getMainLooper()).idle(); Thread.sleep(10) }
+            idleUntil("c.cbz's cover looked for") { "c.cbz" in fake.looked }
             assertTrue("c.cbz" !in fake.started)
         } finally {
             NetPolicy.rules = NetRules()
@@ -267,7 +274,7 @@ class BookAdapterCoversTest {
             (recycler.parent as FrameLayout).addView(prefetched)
             adapter.onViewAttachedToWindow(holder)
             lookedUp.countDown()
-            until { "late$position.cbz" in fake.started }
+            idleUntil("late$position.cbz's cover started") { "late$position.cbz" in fake.started }
             assertTrue("late$position.cbz" in fake.started)
         } finally {
             Remotes.serve(emptyList()) { throw AssertionError("no shares") }
@@ -281,29 +288,32 @@ class BookAdapterCoversTest {
         adapter.firstLayerOnly = true
         adapter.submit((1..3).map { book("$it.cbz") })
         layout()
-        until { layered.steps.size == 3 }
+        idleUntil("three first layers") { layered.steps.size == 3 }
         val shown = 0 until recycler.childCount
-        until { shown.all { (drawn(it) as? BitmapDrawable)?.bitmap?.getPixel(0, 0) == Color.RED } }
-        // Waiting longer makes no full cover.
-        repeat(20) { shadowOf(Looper.getMainLooper()).idle(); Thread.sleep(10) }
+        // A row shows its first layer, then would ask for its full cover at once.
+        idleUntil("every row red") { shown.all { (drawn(it) as? BitmapDrawable)?.bitmap?.getPixel(0, 0) == Color.RED } }
+        // No full cover was asked for.
         assertEquals((1..3).map { "first $it.cbz" }.toSet(), layered.steps.toSet())
         adapter.firstLayerOnly = false
         layout()
-        until { shown.all { (drawn(it) as? BitmapDrawable)?.bitmap?.getPixel(0, 0) == Color.BLUE } }
+        idleUntil("every row blue") { shown.all { (drawn(it) as? BitmapDrawable)?.bitmap?.getPixel(0, 0) == Color.BLUE } }
         assertEquals((1..3).map { "full $it.cbz" }.toSet(), layered.steps.filter { it.startsWith("full") }.toSet())
     }
 
     @Test
     fun layeredCoversShowTheirFirstLayersFirstThenTheFullCovers() {
-        val layered = Layered()
+        // The other first layers are given while one is still being made.
+        val layered = Layered { if (it.name == "1.cbz") firstHeld.await() }
         adapter.covers = layered
         adapter.submit((1..6).map { book("$it.cbz") })
         layout()
-        until { layered.steps.size == 12 }
+        idleUntil("six first layers asked for") { layered.steps.size == 6 }
+        firstHeld.countDown()
+        idleUntil("twelve covers made") { layered.steps.size == 12 }
         assertEquals((1..6).map { "first $it.cbz" }.toSet(), layered.steps.take(6).toSet())
         assertEquals((1..6).map { "full $it.cbz" }.toSet(), layered.steps.drop(6).toSet())
         val shown = 0 until recycler.childCount
-        until { shown.all { (drawn(it) as? BitmapDrawable)?.bitmap?.getPixel(0, 0) == Color.BLUE } }
+        idleUntil("every row blue") { shown.all { (drawn(it) as? BitmapDrawable)?.bitmap?.getPixel(0, 0) == Color.BLUE } }
         for (i in shown) assertEquals(Color.BLUE, (drawn(i) as BitmapDrawable).bitmap.getPixel(0, 0))
     }
 
@@ -314,16 +324,16 @@ class BookAdapterCoversTest {
         val books = (1..2).map { book("$it.cbz") }
         adapter.submit(books)
         layout()
-        until { layered.steps.size == 4 }
+        idleUntil("both rows' covers made") { layered.steps.size == 4 }
         adapter.cancelCovers()
-        // The next tab's view redraws the old rows before its own list arrives.
+        // The next tab's view redraws the old rows before its own list arrives; they ask on the main thread.
         adapter.options = RowOptions(density = com.infinity.comicreader.data.ListDensity.LARGE)
         layout()
-        until { false }
+        idle()
         assertEquals(4, layered.steps.size)
         adapter.submit(listOf(book("3.cbz")))
         layout()
-        until { layered.steps.size == 6 }
+        idleUntil("3.cbz's covers made") { layered.steps.size == 6 }
         assertEquals(listOf("first 3.cbz", "full 3.cbz"), layered.steps.drop(4))
     }
 
@@ -331,18 +341,20 @@ class BookAdapterCoversTest {
     fun aCoverMadeBeforeShowsAtOnceAfterSwitchingAway() {
         adapter.submit((1..8).map { book("slow $it.cbz") })
         layout()
-        until { fake.started.size == 3 }
+        idleUntil("three covers started") { fake.started.size == 3 }
         assertEquals("three covers are made at a time", 3, fake.started.size)
 
         adapter.cancelCovers()
         adapter.submit(listOf(book("made.cbz")))
         layout()
-        until { drawn(0) != null }
+        idleUntil("made.cbz drawn") { drawn(0) != null }
 
         assertNotNull("shown while the slow covers are still being made", drawn(0))
         assertTrue("the slow covers were told to stop", fake.stops.all { it() })
         release.countDown()
-        until { false }
+        // The slow covers end and give their places back; those waiting their turn ended as they were dropped.
+        awaitUntil("the slow covers ended") { fake.ended.size == 3 }
+        idle()
         assertEquals("the covers waiting their turn never started " + fake.started, 3, fake.started.size)
     }
 
@@ -350,12 +362,12 @@ class BookAdapterCoversTest {
     fun coversStuckAfterSwitchingAwayLeaveRoomForTheNewView() {
         adapter.submit((1..8).map { book("slow $it.cbz") })
         layout()
-        until { fake.started.size == 3 }
+        idleUntil("three covers started") { fake.started.size == 3 }
 
         adapter.cancelCovers()
         adapter.submit(listOf(book("new.cbz")))
         layout()
-        until { drawn(0) != null }
+        idleUntil("new.cbz drawn") { drawn(0) != null }
 
         assertNotNull("made while the slow covers are still stuck", drawn(0))
         assertEquals(fake.started.toString(), 4, fake.started.size)

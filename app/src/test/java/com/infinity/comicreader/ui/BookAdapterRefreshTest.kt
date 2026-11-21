@@ -21,6 +21,8 @@ import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ReadingDirection
 import com.infinity.comicreader.data.Thumbs
+import com.infinity.comicreader.testing.idleUntil
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotSame
@@ -35,7 +37,6 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.io.File
 import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 
 /** Facts arriving after a listing redraw only the text of their rows: covers are never reloaded or blanked. */
 @RunWith(RobolectricTestRunner::class)
@@ -46,6 +47,9 @@ class BookAdapterRefreshTest {
     private lateinit var recycler: RecyclerView
     private lateinit var adapter: BookAdapter
     private val events = ArrayList<String>()
+
+    /** The cover sources of a test, opened after it so no load stays held. */
+    private val gates = ArrayList<Gated>()
 
     @Before
     fun setUp() {
@@ -69,6 +73,14 @@ class BookAdapterRefreshTest {
             }
         })
     }
+
+    @After
+    fun tearDown() {
+        gates.forEach { it.release.countDown() }
+        adapter.release()
+    }
+
+    private fun gated() = Gated().also { gates += it }
 
     private fun book(name: String, pages: Int = -1, size: Long = 100) =
         BookEntry(File("/books/$name"), name, false, EntryType.ARCHIVE, size, 1L, pages = pages)
@@ -165,7 +177,7 @@ class BookAdapterRefreshTest {
             style: CoverStyle,
             canceled: () -> Boolean
         ): Bitmap? {
-            release.await(5, TimeUnit.SECONDS)
+            release.await()
             return Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         }
 
@@ -182,7 +194,7 @@ class BookAdapterRefreshTest {
 
     @Test
     fun aDirectionFoundRedrawsOnlyTheText() {
-        adapter.covers = Gated()
+        adapter.covers = gated()
         adapter.submit(listOf(book("a.cbz"), book("b.cbz")))
         layout()
         val cover = BitmapDrawable(recycler.resources, Bitmap.createBitmap(4, 6, Bitmap.Config.ARGB_8888))
@@ -201,16 +213,16 @@ class BookAdapterRefreshTest {
         prefs.thumbnails = true
         val id = BookId(0x1234)
         val a = book("a.cbz").copy(id = id)
-        val first = Gated()
+        val first = gated()
         adapter.covers = first
         adapter.submit(listOf(a))
         layout()
         first.release.countDown()
-        until { holder(0).thumb.drawable != null }
+        idleUntil("the first cover drawn") { holder(0).thumb.drawable != null }
         val shown = holder(0).thumb.drawable
         events.clear()
 
-        val waiting = Gated()
+        val waiting = gated()
         adapter.covers = waiting
         adapter.hiddenPages = { Library.Hidden(emptyMap(), emptyMap(), emptyMap(), mapOf(id to 2)) }
         adapter.submit(listOf(a))
@@ -220,17 +232,7 @@ class BookAdapterRefreshTest {
         assertEquals(View.GONE, holder(0).placeholder.visibility)
 
         waiting.release.countDown()
-        until { holder(0).thumb.drawable !== shown }
+        idleUntil("the new cover drawn") { holder(0).thumb.drawable !== shown }
         assertNotSame(shown, holder(0).thumb.drawable)
-        adapter.release()
-    }
-
-    /** Runs the main looper until [done], for up to two seconds. */
-    private fun until(done: () -> Boolean) {
-        val end = System.currentTimeMillis() + 2000
-        while (!done() && System.currentTimeMillis() < end) {
-            shadowOf(Looper.getMainLooper()).idle()
-            Thread.sleep(10)
-        }
     }
 }

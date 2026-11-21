@@ -3094,8 +3094,12 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
 
     private fun markFolderNow(dir: File, read: Boolean) = markFolderNow(listOf(dir), read)
 
+    /** The last marking of folders read or unread ([markFolderNow]); tests wait for it. */
+    internal var markJob: Job? = null
+        private set
+
     private fun markFolderNow(dirs: List<File>, read: Boolean) {
-        lifecycleScope.launch {
+        markJob = lifecycleScope.launch {
             val files = withContext(AppDispatchers.io) { dirs.flatMap { dir -> dir.listFiles()?.filter { it.isFile && Formats.isOpenable(it.name) }.orEmpty() } }
             // Books never seen are read for their IDs, several at once.
             val books = idsOf(files).map { (f, id) -> BookRef(id, f.absolutePath) }

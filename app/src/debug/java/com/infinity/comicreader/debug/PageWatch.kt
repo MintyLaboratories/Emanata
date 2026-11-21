@@ -36,6 +36,32 @@ internal class PageWatch(private val clock: () -> Long = System::nanoTime) {
     fun pages(onScreen: Iterable<Any>): List<Int> =
         onScreen.mapNotNull { states[it]?.bound?.takeIf { p -> p != NONE } }.distinct()
 
+    /** What the [onScreen] views standing for a page show, with the reader at [item] ([Showing]). */
+    fun showing(onScreen: Iterable<Any>, item: Int): Showing {
+        val bound = onScreen.filter { (states[it]?.bound ?: NONE) != NONE }
+        return Showing(pages(bound), bound.toSet(), item)
+    }
+
+    /**
+     * The [pages] on screen, the [views] showing them, and the reader's [item] (-1 when
+     * unknown). The two halves of a split page are two items showing one page in two views.
+     */
+    data class Showing(val pages: List<Int>, val views: Set<Any>, val item: Int) {
+        /**
+         * True when [after] shows something else: other pages, or the same pages in other
+         * views with the reader at another item (the other half of a split page).
+         */
+        fun changedTo(after: Showing): Boolean =
+            after.pages.isNotEmpty() && (after.pages != pages || (after.views != views && after.item != item))
+
+        /** True when [after] lies before this in reading order: an earlier first page, or the same with an earlier item. */
+        fun backTo(after: Showing): Boolean {
+            val from = pages.minOrNull() ?: 0
+            val to = after.pages.minOrNull() ?: 0
+            return if (to != from) to < from else after.item in 0 until item
+        }
+    }
+
     /**
      * How far the [onScreen] views standing for a page are: [Ready.SHARP] once each shows
      * its page's final bitmap, [Ready.VISIBLE] once each shows its page at all; nothing

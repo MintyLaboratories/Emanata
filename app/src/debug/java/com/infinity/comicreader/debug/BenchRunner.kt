@@ -258,12 +258,13 @@ internal class BenchRunner(private val app: Application) {
     /**
      * One turn forward in [viewer] as [plan] says, timed from the input's end (a tap's or
      * the last drag's lift, a key's press) until a frame showing the pages then on screen
-     * visible and sharp completes; null when nothing moved. Frames from the input's start
-     * on in which a page on screen is blank or a stand-in are counted too: a drag scrolls
-     * pages in before it lifts.
+     * visible and sharp completes; null when nothing moved. A turn between the halves of a
+     * split page shows the same page in another view ([PageWatch.Showing.changedTo]; `half`).
+     * Frames from the input's start on in which a page on screen is blank or a stand-in are
+     * counted too: a drag scrolls pages in before it lifts.
      */
     private suspend fun turn(viewer: ViewerActivity, plan: BenchPlan, tapX: Float, tapMs: Long): JSONObject? = coroutineScope {
-        val before = probe.pages.pages(probe.pageViewsOnScreen())
+        val before = probe.showing()
         var movedAt = -1L
         probe.onMoved = { if (movedAt < 0) movedAt = it }
         var frameCount = 0
@@ -282,15 +283,15 @@ internal class BenchRunner(private val app: Application) {
         }
         val m = Milestones(start)
         var first: PageWatch.Ready? = null
-        var shownPages = before
+        var shown: PageWatch.Showing? = null
         // Pages on screen count once they are new: until then the last turn's still show.
         val ok = framesUntil(TURN_TIMEOUT_MS) { now ->
             val views = probe.pageViewsOnScreen()
-            val pages = probe.pages.pages(views)
-            if (pages == before || pages.isEmpty()) {
+            val showing = probe.pages.showing(views, probe.item)
+            if (!before.changedTo(showing)) {
                 now - start > NO_MOVE_MS * 1_000_000 && (movedAt < 0 || plan.layout == BenchPlan.CONTINUOUS)
             } else {
-                shownPages = pages
+                shown = showing
                 val ready = probe.pages.ready(views)
                 if (first == null) first = ready
                 m.frame(now, ready, probe.pages.changedAt(views))
@@ -300,14 +301,14 @@ internal class BenchRunner(private val app: Application) {
         probe.onMoved = null
         awaitDrawn(m.sharpAt)
         if (movedAt >= 0) m.moved(movedAt)
-        if (shownPages == before) return@coroutineScope null
+        val after = shown ?: return@coroutineScope null
         JSONObject()
-            .put("pages", JSONArray(shownPages))
+            .put("pages", JSONArray(after.pages)).put("item", after.item).put("half", after.pages == before.pages)
             .put("visibleMs", Stats.ms(m.visible(frames::drawnBy))).put("sharpMs", Stats.ms(m.sharp(frames::drawnBy)))
             .apply { if (m.moved >= 0) put("movedMs", Stats.ms(m.moved)) }
             .put("ready", first == PageWatch.Ready.SHARP)
             .put("frames", frameCount).put("unsharpFrames", unsharp)
-            .put("back", (shownPages.minOrNull() ?: 0) < (before.minOrNull() ?: 0))
+            .put("back", before.backTo(after))
             .put("timedOut", !ok)
     }
 

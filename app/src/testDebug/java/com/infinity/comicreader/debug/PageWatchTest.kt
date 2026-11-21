@@ -2,6 +2,8 @@ package com.infinity.comicreader.debug
 
 import com.infinity.comicreader.debug.PageWatch.Ready
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PageWatchTest {
@@ -100,6 +102,51 @@ class PageWatchTest {
         timed.bound(right, PageWatch.NONE)
         assertEquals(300L, timed.changedAt(listOf(left, right)))
         assertEquals(0L, timed.changedAt(emptyList()))
+    }
+
+    @Test
+    fun showingLeavesOutViewsStandingForNoPage() {
+        watch.bound(left, 6)
+        watch.bound(right, PageWatch.NONE)
+        assertEquals(PageWatch.Showing(listOf(6), setOf(left), 11), watch.showing(listOf(left, right), 11))
+    }
+
+    @Test
+    fun theOtherHalfOfASplitPageIsATurn() {
+        // Item 8 shows page 5's first half in one view, item 9 its second half in another.
+        watch.bound(left, 5)
+        watch.bound(right, 5)
+        val first = watch.showing(listOf(left), 8)
+        val second = watch.showing(listOf(right), 9)
+        assertTrue(first.changedTo(second))
+        assertFalse(first.backTo(second))
+        assertTrue(second.backTo(first))
+        // Mid-slide both halves show, the reader already at the next item.
+        assertTrue(first.changedTo(watch.showing(listOf(left, right), 9)))
+    }
+
+    @Test
+    fun theSamePageInAnotherViewWithoutAMoveIsNoTurn() {
+        watch.bound(left, 5)
+        watch.bound(right, 5)
+        val before = watch.showing(listOf(left), 8)
+        // A view bound anew at the same item, as after a relayout.
+        assertFalse(before.changedTo(watch.showing(listOf(right), 8)))
+        assertFalse(before.changedTo(watch.showing(listOf(left), 9)))
+        assertFalse(before.changedTo(watch.showing(emptyList(), 9)))
+    }
+
+    @Test
+    fun otherPagesAreATurnWhicheverItemTheReaderTells() {
+        watch.bound(left, 2)
+        watch.bound(right, 3)
+        val before = watch.showing(listOf(left), -1)
+        val after = watch.showing(listOf(right), -1)
+        assertTrue(before.changedTo(after))
+        assertFalse(before.backTo(after))
+        assertTrue(after.backTo(before))
+        // Unknown items order nothing.
+        assertFalse(before.backTo(before.copy(views = setOf(right))))
     }
 
     @Test

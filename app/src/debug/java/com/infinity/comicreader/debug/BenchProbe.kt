@@ -61,7 +61,12 @@ internal class BenchProbe : ReadProbe {
         opening = System.nanoTime()
     }
 
+    /** The item the reader last moved to; -1 until then. */
+    var item = -1
+        private set
+
     override fun moved(item: Int) {
+        this.item = item
         onMoved?.invoke(System.nanoTime())
     }
 
@@ -86,6 +91,9 @@ internal class BenchProbe : ReadProbe {
     /** The page views on screen now, in screen order. */
     fun pageViewsOnScreen(): List<View> = pages.views.filterIsInstance<View>().filter { onScreen(it) }.sortedWith(SCREEN_ORDER)
 
+    /** What the page views on screen show now ([PageWatch.showing]). */
+    fun showing(): PageWatch.Showing = pages.showing(pageViewsOnScreen(), item)
+
     /** The cover views on screen now. */
     fun coversOnScreen(): List<Pair<Int, Boolean>> = covers.filterKeys { onScreen(it) }.values.toList()
 
@@ -98,6 +106,7 @@ internal class BenchProbe : ReadProbe {
         coverEvents = 0
         onMoved = null
         opening = -1
+        item = -1
         decodes = 0
         aside.clear()
         sharpAt.clear()

@@ -402,6 +402,9 @@ class DavFsTest {
         assertTrue(Remotes.DEFAULT_ANSWER_MS >= Remotes.SPIN_UP_MS * 6 / 5)
         val fs = DavFs(server.share(), answerMs = { Remotes.DEFAULT_ANSWER_MS }).also { opened += it }
         assertEquals(0, fs.client.callTimeoutMillis)
+        for (t in listOf(fs.client.connectTimeoutMillis, fs.client.readTimeoutMillis, fs.client.writeTimeoutMillis)) {
+            assertTrue("$t ms", t >= Remotes.SPIN_UP_MS * 6 / 5)
+        }
         // The first answer after the disk slept comes only once it spun up.
         val spinUp = CountDownLatch(1)
         server.spinUp = spinUp

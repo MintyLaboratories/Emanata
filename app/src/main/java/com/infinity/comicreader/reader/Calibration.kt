@@ -404,13 +404,14 @@ object Calibration {
      * broadcast, which can be minutes old (hours apart on a full battery on the charger), so
      * where it is the only signal a run that heats up is not ended by it.
      */
-    fun heatStatus(thermalStatus: Int?, thermalKnown: Boolean?, batteryTenthsC: Int?): Int {
-        val battery = batteryTenthsC?.let { batteryStatus(it) } ?: 0
-        return when {
-            thermalStatus == null || thermalKnown == false -> battery
-            thermalKnown == true -> thermalStatus
-            else -> maxOf(thermalStatus, battery)
-        }
+    fun heatStatus(thermalStatus: Int?, thermalKnown: Boolean?, batteryTenthsC: Int?): Int =
+        heatStatusOf(thermalStatus, thermalKnown, batteryTenthsC?.let { batteryStatus(it) } ?: 0)
+
+    /** [heatStatus] with the battery's part already a thermal status ([battery], [batteryStatus]). */
+    fun heatStatusOf(thermalStatus: Int?, thermalKnown: Boolean?, battery: Int): Int = when {
+        thermalStatus == null || thermalKnown == false -> battery
+        thermalKnown == true -> thermalStatus
+        else -> maxOf(thermalStatus, battery)
     }
 
     /**

@@ -8,6 +8,7 @@ import android.os.BatteryManager
 import android.os.Build
 import android.os.PowerManager
 import android.os.SystemClock
+import android.util.Log
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.Thrift
 import com.infinity.comicreader.reader.BitmapUtils
@@ -23,6 +24,8 @@ import com.infinity.comicreader.reader.Scaling
  * ahead reaches [MAX_HEADROOM].
  */
 object AiConditions {
+    private const val TAG = "AiConditions"
+
     /** The thermal status that stops runs: moderate, where the system starts throttling. */
     const val HOT = PowerManager.THERMAL_STATUS_MODERATE
 
@@ -70,7 +73,9 @@ object AiConditions {
      * temperature's ([batteryTenthsC]) before Android 10 (no thermal status), and the higher of
      * both where that cannot be told (Android 10, or no headroom read yet). [sdk] is the
      * Android version; [clock] spaces the readings ([HEADROOM_EVERY_MS], [BATTERY_EVERY_MS]).
-     * The battery is not read where the thermal status is known to be real.
+     * The battery is not read where the thermal status is known to be real. Once the battery
+     * reaches [Calibration.HOT]'s temperature it counts as that until it falls below
+     * [Calibration.LIGHT]'s, as calibration waits while cooling ([Calibration.waitReason]).
      */
     internal class Heat(
         private val sdk: Int,
@@ -85,7 +90,11 @@ object AiConditions {
         /** The forecast headroom ([FORECAST_S] seconds ahead); NaN while unknown. */
         fun headroom(): Float = forecast.get()
 
+        /** Whether the battery reached [Calibration.HOT] and has not yet fallen below [Calibration.LIGHT]. */
+        private var cooling = false
+
         /** The heat as a thermal status. */
+        @Synchronized
         fun status(): Int {
             val known = when {
                 sdk < 29 -> false
@@ -93,7 +102,17 @@ object AiConditions {
                 else -> null
             }
             val tenths = if (known == true) null else battery.get().takeUnless { it.isNaN() }?.toInt()
-            return Calibration.heatStatus(thermal(), known, tenths)
+            val read = tenths?.let { Calibration.batteryStatus(it) } ?: 0
+            val was = cooling
+            cooling = when {
+                read >= Calibration.HOT -> true
+                read < Calibration.LIGHT -> false
+                else -> cooling
+            }
+            if (cooling != was && tenths != null) {
+                Log.i(TAG, "battery at ${tenths / 10.0} °C: " + if (cooling) "AI pauses until below ${Calibration.BATTERY_LIGHT_C} °C" else "AI goes on")
+            }
+            return Calibration.heatStatusOf(thermal(), known, if (cooling) Calibration.HOT else read)
         }
     }
 

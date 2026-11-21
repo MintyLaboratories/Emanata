@@ -182,16 +182,46 @@ class AiPagesTest {
 
     @Test
     fun withoutThermalStatusBatteryTemperatureStandsForIt() {
-        val p = HeatProbe(28, thermal = null, tenths = Calibration.BATTERY_HOT_C * 10)
-        assertEquals(Calibration.HOT, p.heat.status())
-        assertEquals(Fallback.PAUSED, p.stop())
-        p.now += AiConditions.BATTERY_EVERY_MS
-        p.tenths = Calibration.BATTERY_HOT_C * 10 - 1
+        val p = HeatProbe(28, thermal = null, tenths = Calibration.BATTERY_HOT_C * 10 - 1)
         assertEquals(Calibration.LIGHT, p.heat.status())
         assertNull("light heat goes on", p.stop())
         p.now += AiConditions.BATTERY_EVERY_MS
+        p.tenths = Calibration.BATTERY_HOT_C * 10
+        assertEquals(Calibration.HOT, p.heat.status())
+        assertEquals(Fallback.PAUSED, p.stop())
+        p.now += AiConditions.BATTERY_EVERY_MS
         p.tenths = null
-        assertEquals("no battery reading keeps the last", Calibration.LIGHT, p.heat.status())
+        assertEquals("no battery reading keeps the last", Calibration.HOT, p.heat.status())
+    }
+
+    @Test
+    fun aBatteryHotEnoughToPauseMustCoolBelowLightHeatToGoOn() {
+        val p = HeatProbe(28, thermal = null, tenths = 420)
+        assertEquals(Fallback.PAUSED, p.stop())
+        for (tenths in listOf(419, 415, 400)) {
+            p.now += AiConditions.BATTERY_EVERY_MS
+            p.tenths = tenths
+            assertEquals("$tenths stays paused", Fallback.PAUSED, p.stop())
+        }
+        p.now += AiConditions.BATTERY_EVERY_MS
+        p.tenths = 399
+        assertEquals(0, p.heat.status())
+        assertNull(p.stop())
+        p.now += AiConditions.BATTERY_EVERY_MS
+        p.tenths = 415
+        assertNull("warming again goes on until hot", p.stop())
+    }
+
+    @Test
+    fun onAndroid10ABatteryCoolingKeepsThePauseOverThermalStatusNone() {
+        val p = HeatProbe(29, thermal = PowerManager.THERMAL_STATUS_NONE, tenths = 425)
+        assertEquals(Fallback.PAUSED, p.stop())
+        p.now += AiConditions.BATTERY_EVERY_MS
+        p.tenths = 410
+        assertEquals(Fallback.PAUSED, p.stop())
+        p.now += AiConditions.BATTERY_EVERY_MS
+        p.tenths = 390
+        assertNull(p.stop())
     }
 
     @Test

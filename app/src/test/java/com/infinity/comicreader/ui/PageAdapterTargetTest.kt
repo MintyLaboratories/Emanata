@@ -11,6 +11,9 @@ import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.reader.PageSource
 import com.infinity.comicreader.reader.Target
+import com.infinity.comicreader.testing.Waits
+import com.infinity.comicreader.testing.awaitUntil
+import com.infinity.comicreader.testing.idleUntil
 import com.infinity.comicreader.util.ReadProbe
 import com.infinity.comicreader.util.ReadProbes
 import org.junit.Assert.assertEquals
@@ -51,7 +54,7 @@ class PageAdapterTargetTest {
         val gate = CountDownLatch(1)
         override fun loadPage(index: Int, target: Target): Bitmap {
             requests += index to target
-            gate.await(5, TimeUnit.SECONDS)
+            gate.await(Waits.LIVENESS_MS, TimeUnit.MILLISECONDS)
             val plan = target.plan(2000.0, 3000.0)
             return Bitmap.createBitmap(plan.width, plan.height, Bitmap.Config.ARGB_8888)
         }
@@ -61,14 +64,8 @@ class PageAdapterTargetTest {
 
     private val context get() = ApplicationProvider.getApplicationContext<Application>()
 
-    private fun idle(done: () -> Boolean = { false }) {
-        val deadline = System.currentTimeMillis() + 3_000
-        while (!done() && System.currentTimeMillis() < deadline) {
-            Thread.sleep(10)
-            shadowOf(Looper.getMainLooper()).idle()
-        }
-        shadowOf(Looper.getMainLooper()).idle()
-    }
+    /** Idles until no decode of [adapter] is under way: each one's end handled on the main thread, where decodes are asked for. */
+    private fun settled(adapter: PageAdapter) = idleUntil("the decodes under way to end") { !adapter.decoding }
 
     private fun recycler(adapter: PageAdapter, w: Int, h: Int): RecyclerView =
         RecyclerView(context).apply {
@@ -91,7 +88,7 @@ class PageAdapterTargetTest {
         val source = RecordingSource(3)
         val adapter = adapter(source)
         recycler(adapter, 1848, 2960)
-        idle { source.requests.isNotEmpty() }
+        idleUntil("the first request") { source.requests.isNotEmpty() }
         assertEquals(0 to Target(1848, 2960, banded = true), source.requests.first())
         adapter.release()
     }
@@ -101,14 +98,14 @@ class PageAdapterTargetTest {
         val source = RecordingSource(3)
         val adapter = adapter(source, twoPage = true)
         val rv = recycler(adapter, 2960, 1848)
-        idle { source.requests.size >= 2 }
+        idleUntil("both halves' requests") { source.requests.size >= 2 }
         assertTrue(0 to Target(1480, 1848, banded = true) in source.requests)
         assertTrue(1 to Target(1480, 1848, banded = true) in source.requests)
 
         // The odd last page has the whole row.
         rv.scrollToPosition(1)
         rv.layOut(2960, 1848)
-        idle { source.requests.any { it.first == 2 } }
+        idleUntil("page 2's request") { source.requests.any { it.first == 2 } }
         assertTrue(2 to Target(2960, 1848, banded = true) in source.requests)
         adapter.release()
     }
@@ -118,18 +115,20 @@ class PageAdapterTargetTest {
         val source = RecordingSource(1)
         val adapter = adapter(source)
         val rv = recycler(adapter, 1848, 2960)
-        idle { source.requests.isNotEmpty() }
+        idleUntil("the first request") { source.requests.isNotEmpty() }
 
         // Rotating the screen re-lays the pager out at the other size.
         rv.layOut(2960, 1848)
         // The size change rebinds the page in the layout pass that follows.
-        idle()
+        settled(adapter)
         rv.layOut(2960, 1848)
-        idle { source.requests.size >= 2 }
+        idleUntil("the new size's request") { source.requests.size >= 2 }
         assertEquals(0 to Target(2960, 1848, banded = true), source.requests.last())
 
         rv.layOut(2960, 1848)
-        idle()
+        idleUntil("the new size shown one to one, no decode under way") {
+            (rv.findViewHolderForAdapterPosition(0) as PageAdapter.PageHolder).images[0].drawsOneToOne && !adapter.decoding
+        }
         val image = (rv.findViewHolderForAdapterPosition(0) as PageAdapter.PageHolder).images[0]
         assertTrue(image.drawsOneToOne)
         // Laying out again at the same size asks for nothing new.
@@ -142,10 +141,10 @@ class PageAdapterTargetTest {
         val source = RecordingSource(1)
         val adapter = adapter(source)
         val rv = recycler(adapter, 1848, 2960)
-        idle { source.requests.isNotEmpty() }
+        idleUntil("the first request") { source.requests.isNotEmpty() }
         adapter.notifyItemChanged(0)
         rv.layOut(1848, 2960)
-        idle()
+        settled(adapter)
         assertEquals(1, source.requests.size)
         adapter.release()
     }
@@ -155,7 +154,7 @@ class PageAdapterTargetTest {
         val source = HeldSource(1)
         val adapter = adapter(source)
         val rv = recycler(adapter, 1848, 2960)
-        idle { source.requests.isNotEmpty() }
+        idleUntil("the first request") { source.requests.isNotEmpty() }
         // The decode is let go once the rebind found the cache without it, and is done before it asks for one.
         var armed = true
         var ended = false
@@ -164,8 +163,8 @@ class PageAdapterTargetTest {
                 if (!armed || page != PageLayout.NONE) return
                 armed = false
                 source.gate.countDown()
-                val deadline = System.currentTimeMillis() + 3_000
-                while (adapter.running > 0 && System.currentTimeMillis() < deadline) Thread.sleep(5)
+                // In a layout pass: the main thread may not idle.
+                awaitUntil("the held decode to end") { adapter.running == 0 }
                 ended = adapter.running == 0
             }
         }
@@ -175,7 +174,9 @@ class PageAdapterTargetTest {
         } finally {
             ReadProbes.current = null
         }
-        idle()
+        idleUntil("the joined decode shown and put away") {
+            (rv.findViewHolderForAdapterPosition(0) as PageAdapter.PageHolder).images[0].drawable is BitmapDrawable && !adapter.decoding
+        }
         assertTrue(ended)
         assertEquals(1, source.requests.size)
         val image = (rv.findViewHolderForAdapterPosition(0) as PageAdapter.PageHolder).images[0]
@@ -191,14 +192,14 @@ class PageAdapterTargetTest {
         val screen = Target(1848, 2960, banded = true)
         val height = Target(0, 2960, banded = true)
         // Page 0 shows, pages 1 to 3 are preloaded; each step waits for its decodes to be put away.
-        idle { 3 to screen in source.requests && !adapter.decoding }
+        idleUntil("page 3 preloaded at fit screen") { 3 to screen in source.requests && !adapter.decoding }
 
         adapter.fitMode = ZoomImageView.FitMode.HEIGHT
         rv.layOut(1848, 2960)
-        idle { 3 to height in source.requests && !adapter.decoding }
+        idleUntil("page 3 preloaded at fit height") { 3 to height in source.requests && !adapter.decoding }
         adapter.fitMode = ZoomImageView.FitMode.SCREEN
         rv.layOut(1848, 2960)
-        idle { source.requests.count { it == 3 to screen } == 2 && !adapter.decoding }
+        idleUntil("page 3 preloaded at fit screen again") { source.requests.count { it == 3 to screen } == 2 && !adapter.decoding }
         // The page shown kept its bitmap at fit screen; one far off screen is preloaded again.
         assertEquals(1, source.requests.count { it == 0 to screen })
         assertEquals(2, source.requests.count { it == 3 to screen })
@@ -210,13 +211,13 @@ class PageAdapterTargetTest {
         val source = RecordingSource(3)
         val first = adapter(source)
         recycler(first, 1848, 2960)
-        idle { source.requests.isNotEmpty() && !first.decoding }
+        idleUntil("the first adapter's decode put away") { source.requests.isNotEmpty() && !first.decoding }
         val decoded = first.decoded(source)
         first.release(closeSources = false)
         val second = adapter(source)
         second.adopt(decoded)
         recycler(second, 1848, 2960)
-        idle()
+        settled(second)
         assertEquals(1, source.requests.size)
         // Pages of another source are not handed over.
         assertTrue(second.decoded(RecordingSource(3)).isEmpty())
@@ -234,7 +235,7 @@ class PageAdapterTargetTest {
         val rv = recycler(adapter, 2960, 1848)
         rv.scrollToPosition(1)
         rv.layOut(2960, 1848)
-        idle { source.requests.count { it.first in 1..2 } >= 2 && !adapter.decoding }
+        idleUntil("both halves decoded") { source.requests.count { it.first in 1..2 } >= 2 && !adapter.decoding }
         val holder = rv.findViewHolderForAdapterPosition(1) as PageAdapter.PageHolder
         assertTrue(holder.joined)
         // Both views cover the whole item; each page is still decoded for its half.
@@ -242,7 +243,7 @@ class PageAdapterTargetTest {
         assertTrue(1 to Target(1480, 1848, banded = true) in source.requests)
         assertTrue(2 to Target(1480, 1848, banded = true) in source.requests)
         rv.layOut(2960, 1848)
-        idle()
+        settled(adapter)
         val left = FloatArray(9).also { holder.images[0].imageMatrix.getValues(it) }
         val right = FloatArray(9).also { holder.images[1].imageMatrix.getValues(it) }
         val page = Target(1480, 1848, banded = true).plan(2000.0, 3000.0)
@@ -258,7 +259,7 @@ class PageAdapterTargetTest {
         val gate = CountDownLatch(1)
         override fun loadPage(index: Int, target: Target): Bitmap {
             requests += index to target
-            if (requests.size > 1) gate.await(5, TimeUnit.SECONDS)
+            if (requests.size > 1) gate.await(Waits.LIVENESS_MS, TimeUnit.MILLISECONDS)
             val plan = target.plan(2000.0, 3000.0)
             return Bitmap.createBitmap(plan.width, plan.height, Bitmap.Config.ARGB_8888)
         }
@@ -275,10 +276,10 @@ class PageAdapterTargetTest {
         val source = GatedSource(1)
         val adapter = adapter(source)
         val rv = recycler(adapter, 1848, 2960)
-        idle { source.requests.isNotEmpty() }
+        idleUntil("the first request") { source.requests.isNotEmpty() }
         val holder = rv.findViewHolderForAdapterPosition(0) as PageAdapter.PageHolder
         val image = holder.images[0]
-        idle { image.drawable != null }
+        idleUntil("the page shown") { image.drawable != null }
         val screen = shownBitmap(image)
         assertEquals(1848, screen.width)
 
@@ -287,7 +288,7 @@ class PageAdapterTargetTest {
         adapter.fitMode = ZoomImageView.FitMode.HEIGHT
         rv.layOut(1848, 2960)
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(20))
-        idle { source.requests.size >= 2 }
+        idleUntil("the new size's request") { source.requests.size >= 2 }
         // The first frame is timed, the page standing in until the exact bitmap arrives.
         assertTrue(timingLogs().single().matches(Regex("""Resize shown in \d+ ms, 1 page\(s\) standing in""")))
         assertSame(holder, rv.findViewHolderForAdapterPosition(0))
@@ -297,7 +298,7 @@ class PageAdapterTargetTest {
         assertEquals(2960f / screen.height, m[Matrix.MSCALE_Y], 1e-4f)
 
         source.gate.countDown()
-        idle { shownBitmap(image) !== screen }
+        idleUntil("the exact size swapped in") { shownBitmap(image) !== screen }
         assertEquals(0 to Target(0, 2960, banded = true), source.requests.last())
         assertEquals(2960, shownBitmap(image).height)
         assertTrue(image.drawsOneToOne)
@@ -306,7 +307,7 @@ class PageAdapterTargetTest {
         // Back to fit screen: still cached, so nothing decodes.
         adapter.fitMode = ZoomImageView.FitMode.SCREEN
         rv.layOut(1848, 2960)
-        idle()
+        settled(adapter)
         assertSame(screen, shownBitmap(image))
         assertTrue(image.drawsOneToOne)
         assertEquals(2, source.requests.size)
@@ -317,7 +318,7 @@ class PageAdapterTargetTest {
     private fun shownAtFitScreen(source: GatedSource, adapter: PageAdapter): Pair<RecyclerView, ZoomImageView> {
         val rv = recycler(adapter, 1848, 2960)
         val image = (rv.findViewHolderForAdapterPosition(0) as PageAdapter.PageHolder).images[0]
-        idle { image.drawable != null }
+        idleUntil("the page shown") { image.drawable != null }
         return rv to image
     }
 
@@ -331,13 +332,13 @@ class PageAdapterTargetTest {
 
         adapter.spacingPx = 20
         rv.layOut(1848, 2960)
-        idle { source.requests.size >= 2 }
+        idleUntil("the new size's request") { source.requests.size >= 2 }
         assertSame(holder, rv.findViewHolderForAdapterPosition(0))
         assertSame(screen, shownBitmap(image))
         assertEquals(0 to Target(1808, 2920, banded = true), source.requests.last())
 
         source.gate.countDown()
-        idle { shownBitmap(image) !== screen }
+        idleUntil("the exact size swapped in") { shownBitmap(image) !== screen }
         assertEquals(1808, shownBitmap(image).width)
         assertTrue(image.drawsOneToOne)
         adapter.release()
@@ -352,15 +353,16 @@ class PageAdapterTargetTest {
         val portrait = shownBitmap(image)
 
         rv.layOut(2960, 1848)
-        idle()
+        // The size change rebinds the page in the layout pass after the main thread runs.
+        shadowOf(Looper.getMainLooper()).idle()
         rv.layOut(2960, 1848)
-        idle { source.requests.size >= 2 }
+        idleUntil("the new size's request") { source.requests.size >= 2 }
         assertSame(holder, rv.findViewHolderForAdapterPosition(0))
         assertSame(portrait, shownBitmap(image))
         assertEquals(0 to Target(2960, 1848, banded = true), source.requests.last())
 
         source.gate.countDown()
-        idle { shownBitmap(image) !== portrait }
+        idleUntil("the exact size swapped in") { shownBitmap(image) !== portrait }
         assertEquals(1848, shownBitmap(image).height)
         assertTrue(image.drawsOneToOne)
         adapter.release()
@@ -376,15 +378,15 @@ class PageAdapterTargetTest {
             layOut(1848, 2960)
         }
         val image = (rv.findViewHolderForAdapterPosition(0) as PageAdapter.PageHolder).images[0]
-        idle { image.drawable != null }
+        idleUntil("the page shown") { image.drawable != null }
         rv.layOut(1848, 2960)
-        idle()
+        settled(adapter)
         val shown = shownBitmap(image)
         val requests = source.requests.toList()
 
         adapter.fitMode = ZoomImageView.FitMode.HEIGHT
         rv.layOut(1848, 2960)
-        idle()
+        settled(adapter)
         assertSame(shown, shownBitmap(image))
         assertEquals(requests, source.requests.toList())
         assertTrue(requests.all { it.second == Target(1848, 0, banded = true) })
@@ -401,7 +403,7 @@ class PageAdapterTargetTest {
             layOut(2000, 3000)
         }
         val holder = rv.findViewHolderForAdapterPosition(0) as PageAdapter.PageHolder
-        idle { holder.images[0].drawable != null }
+        idleUntil("the page shown") { holder.images[0].drawable != null }
         rv.layOut(2000, 3000)
         assertEquals(3000 + 24, holder.container.layoutParams.height)
         assertEquals(24, holder.container.paddingBottom)

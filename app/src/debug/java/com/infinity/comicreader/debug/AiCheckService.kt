@@ -96,12 +96,14 @@ import kotlin.math.max
  *   `cool`, first waits for the thermal headroom to fall below it, up to [COOL_TIME_MAX_S].
  * - limits: a page whose time runs out falls back to exactly the Lanczos3 page; a page
  *   canceled after three tiles stops within one; a sample of each output saved as PNG.
- * - sustain (not part of all): per engine, `rounds` runs, each after a `cooldown` s pause
- *   and an `idle` s baseline: pages of `size` back to back for `seconds`, through the gate
- *   reading heat and battery saver ([AiConditions]), each with its time, thermal status and
- *   headroom, until the time is up or the gate stops a page (`stoppedBy`; that page counts
- *   neither in `pages` nor in the busy window, which ends with the last whole page). Each
- *   run's energy per page on battery alone is measured as ResampleCheckService's sustain measures it
+ * - sustain (not part of all): per engine, `rounds` runs, each after a `cooldown` s pause,
+ *   a wait for the thermal headroom to fall below `cool` (default [COOL_HEADROOM], up to
+ *   [COOL_TIME_MAX_S]; `cooledS`) and an `idle` s baseline: pages of `size` back to back
+ *   for `seconds`, through the gate reading heat and battery saver ([AiConditions]), each
+ *   with its time, thermal status and headroom, until the time is up or the gate stops a
+ *   page (`stoppedBy`; that page counts neither in `pages` nor in the busy window, which
+ *   ends with the last whole page). Each run's energy per page on battery alone is
+ *   measured as ResampleCheckService's sustain measures it
  *   ([EnergyMeter]: refused on a charger; valid only with the cable out, adb over Wi-Fi),
  *   then the energy per page across valid rounds with its spread (`energy`). A run is
  *   valid when it stayed cool, from a bench build, with the app in front from before it
@@ -252,7 +254,7 @@ class AiCheckService : Service() {
                         if (what == "check" || what == "all") seams(s, files, threads, small[0], small[1])
                         if (what == "time" || what == "all") time(s, tiles.ifEmpty { listOf(s.size) }, size[0], size[1], reps, cooldown, timeCool)
                         if (what == "limits" || what == "all") limits(s, size[0], size[1])
-                        if (what == "sustain") sustain(s, size[0], size[1], seconds, rounds, cooldown, idle)
+                        if (what == "sustain") sustain(s, size[0], size[1], seconds, rounds, cooldown, cool, idle)
                     }
                     log(JSONObject().put("closed", if (gpu) "gpu" else "cpu").put("graphicsMb", graphicsKb() / 1024).put("rssMb", rssKb() / 1024))
                 }
@@ -411,10 +413,10 @@ class AiCheckService : Service() {
 
     /**
      * [rounds] runs of [s] on pages of [w] x [h] back to back for [seconds], each after a
-     * [cooldown] s pause and an [idle] s baseline ([EnergyMeter]); then the energy per page
-     * across rounds.
+     * [cooldown] s pause, a wait for the thermal headroom to fall below [cool] and an [idle]
+     * s baseline ([EnergyMeter]); then the energy per page across valid rounds.
      */
-    private fun sustain(s: Session, w: Int, h: Int, seconds: Int, rounds: Int, cooldown: Int, idle: Int) {
+    private fun sustain(s: Session, w: Int, h: Int, seconds: Int, rounds: Int, cooldown: Int, cool: Float, idle: Int) {
         val page = SyntheticPage.draw(w, h)
         val gate = AiConditions.gate(this)
         val meter = EnergyMeter(this)
@@ -423,9 +425,10 @@ class AiCheckService : Service() {
         try {
             for (round in 0 until rounds) {
                 if (cooldown > 0) Thread.sleep(cooldown * 1000L)
+                val cooledS = coolDown(cool, COOL_TIME_MAX_S)
                 val heat = ResampleRuns.Heat().apply { see(meter.thermal()) }
                 val before = conditions()
-                log(JSONObject().put("sustain", engine).put("round", round).put("start", state()))
+                log(JSONObject().put("sustain", engine).put("round", round).put("cooledS", cooledS).put("start", state()))
                 var stopped: Fallback? = null
                 val run = meter.measure(idle, seconds, heat) { until ->
                     val t0 = SystemClock.elapsedRealtime()

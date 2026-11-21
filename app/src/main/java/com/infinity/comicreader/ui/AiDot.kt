@@ -3,7 +3,6 @@ package com.infinity.comicreader.ui
 import android.os.Handler
 import android.os.Looper
 import android.view.View
-import android.view.ViewGroup
 import kotlin.math.ceil
 import kotlin.math.sqrt
 
@@ -13,8 +12,8 @@ import kotlin.math.sqrt
  * [com.infinity.comicreader.ai.AiQueue.working] tells it). It shows once the work has gone on for
  * [showDelayMs], so a page put off or given up at once never blinks it, and hides at once. Only its
  * visibility changes, never per tile; hidden while enabled it stays laid out (invisible), so showing
- * it costs no layout. [inset] and [place] keep it inside the window's insets, clear of a rounded
- * screen corner, and above the bars while they show.
+ * it costs no layout. [place] keeps it clear of the window's edges and a rounded screen corner,
+ * and above the bars while they show, by translation alone: placing it lays nothing out.
  */
 internal class AiDot(
     private val view: View,
@@ -41,11 +40,6 @@ internal class AiDot(
             update()
         }
 
-    /** The window's insets at the right and bottom edges, and the radius of its rounded bottom right corner, in px. */
-    private var insetRight = 0
-    private var insetBottom = 0
-    private var radius = 0
-
     private fun update() {
         handler.removeCallbacks(show)
         when {
@@ -58,30 +52,18 @@ internal class AiDot(
         }
     }
 
-    /** Takes the window's insets at the right and bottom edges (system bars, display cutout) and its bottom right corner's [radius]. */
-    fun inset(right: Int, bottom: Int, radius: Int) {
-        insetRight = right
-        insetBottom = bottom
-        this.radius = radius
-    }
-
     /**
-     * Puts the dot in the corner: [awayRight] and [awayBottom] px from the window's edges, as its
-     * parent is, and above [barTop] (in its parent) while a bar shows there, else null.
+     * Puts the dot, laid out in its parent's bottom right corner, in the window's: its parent
+     * [awayRight] and [awayBottom] px from the window's edges (the system bars and a display
+     * cutout, in a window that fits them), the window's bottom right corner rounded at [radius]
+     * px (0: square), and above [barTop] (in its parent) while a bar shows there, else null.
      */
-    fun place(awayRight: Int, awayBottom: Int, barTop: Int?) {
-        val (right, bottom) = offsets(insetRight + awayRight, insetBottom + awayBottom, radius, margin)
-        val lp = view.layoutParams as? ViewGroup.MarginLayoutParams
-        if (lp != null) {
-            val r = (right - awayRight).coerceAtLeast(0)
-            val b = (bottom - awayBottom).coerceAtLeast(0)
-            if (lp.rightMargin != r || lp.bottomMargin != b) {
-                lp.rightMargin = r
-                lp.bottomMargin = b
-                view.layoutParams = lp
-            }
-        }
-        view.translationY = lift(view.bottom, barTop, margin).toFloat()
+    fun place(awayRight: Int, awayBottom: Int, radius: Int, barTop: Int?) {
+        val (right, bottom) = offsets(awayRight, awayBottom, radius, margin)
+        val dx = (right - awayRight).coerceAtLeast(0)
+        val dy = (bottom - awayBottom).coerceAtLeast(0)
+        view.translationX = -dx.toFloat()
+        view.translationY = (-dy + lift(view.bottom - dy, barTop, margin)).toFloat()
     }
 
     /** Stops a pending show; the reader is going away. */

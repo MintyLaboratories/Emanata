@@ -44,8 +44,6 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
 import androidx.core.content.FileProvider
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -919,19 +917,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         chapterText = findViewById(R.id.viewer_chapter_text)
         nightOverlay = findViewById(R.id.night_overlay)
         autoProgress = findViewById(R.id.auto_progress)
-        val dot = findViewById<View>(R.id.ai_dot)
-        aiDot = AiDot(dot, resources.getDimensionPixelSize(R.dimen.ai_dot_margin))
-        ViewCompat.setOnApplyWindowInsetsListener(dot) { _, insets ->
-            val edges = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
-            val corner = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                insets.toWindowInsets()?.getRoundedCorner(android.view.RoundedCorner.POSITION_BOTTOM_RIGHT)?.radius ?: 0
-            } else {
-                0
-            }
-            aiDot.inset(edges.right, edges.bottom, corner)
-            placeAiDot()
-            insets
-        }
+        aiDot = AiDot(findViewById(R.id.ai_dot), resources.getDimensionPixelSize(R.dimen.ai_dot_margin))
         progress = findViewById(R.id.viewer_progress)
         fetched = findViewById(R.id.viewer_fetched)
         shareWait = findViewById(R.id.viewer_share_wait)
@@ -968,7 +954,11 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         }
     }
 
-    /** Puts the AI indicator in the window's bottom right corner, above the preview strip or the bottom bar while one shows. */
+    /**
+     * Puts the AI indicator in the window's bottom right corner, above the preview strip or the
+     * bottom bar while one shows. The window fits the system bars and the display cutout, so the
+     * root's distance from its edges keeps the dot clear of them.
+     */
     private fun placeAiDot() {
         val root = findViewById<View>(R.id.viewer_root)
         val window = root.rootView
@@ -978,7 +968,16 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
             bottomBar.visibility == View.VISIBLE -> bottomBar.top
             else -> null
         }
-        aiDot.place(window.width - at[0] - root.width, window.height - at[1] - root.height, barTop)
+        aiDot.place(window.width - at[0] - root.width, window.height - at[1] - root.height, screenCorner(), barTop)
+    }
+
+    /** The radius of the screen's rounded bottom right corner in px, as the window's own insets tell it; 0 when square or unknown. */
+    internal var screenCorner: () -> Int = {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            window.decorView.rootWindowInsets?.getRoundedCorner(android.view.RoundedCorner.POSITION_BOTTOM_RIGHT)?.radius ?: 0
+        } else {
+            0
+        }
     }
 
     /** Puts the preview strip just above the bottom bar. */

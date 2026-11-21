@@ -6,6 +6,7 @@ import android.view.View
 import android.widget.FrameLayout
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -96,16 +97,21 @@ class AiDotTest {
     }
 
     @Test
-    fun placingSetsItsMarginsFromTheWindowsEdges() {
+    fun placingMovesItFromTheWindowsEdgesWithoutALayout() {
         val (dot, view) = dot()
-        dot.inset(right = 0, bottom = 0, radius = 100)
-        dot.place(awayRight = 0, awayBottom = 0, barTop = null)
-        val lp = view.layoutParams as FrameLayout.LayoutParams
-        assertEquals(36, lp.rightMargin)
-        assertEquals(36, lp.bottomMargin)
+        // Laid out in the bottom right corner of a parent 1000 px square.
+        view.layout(992, 992, 1000, 1000)
+        dot.place(awayRight = 0, awayBottom = 0, radius = 100, barTop = null)
+        assertEquals(-36f, view.translationX)
+        assertEquals(-36f, view.translationY)
+        assertFalse("nothing laid out again", view.isLayoutRequested)
         // Its parent ends above a navigation bar 120 px tall: the corner is behind it.
-        dot.place(awayRight = 0, awayBottom = 120, barTop = null)
-        assertEquals(6, lp.rightMargin)
-        assertEquals(6, lp.bottomMargin)
+        dot.place(awayRight = 0, awayBottom = 120, radius = 100, barTop = null)
+        assertEquals(-6f, view.translationX)
+        assertEquals(-6f, view.translationY)
+        // A bar with its top at 900: lifted from 964 to 6 px above it.
+        dot.place(awayRight = 0, awayBottom = 0, radius = 100, barTop = 900)
+        assertEquals(-106f, view.translationY)
+        assertFalse(view.isLayoutRequested)
     }
 }

@@ -23,7 +23,7 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.io.File
 
-/** The reader's AI indicator follows its setting live and sits above the bottom bar. */
+/** The reader's AI indicator follows its setting and the pages' AI work, clear of a rounded corner and above the bottom bar. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class ViewerActivityAiDotTest {
@@ -72,5 +72,25 @@ class ViewerActivityAiDotTest {
         Prefs(context).aiDot = false
         idle()
         assertEquals(View.GONE, dot.visibility)
+    }
+
+    @Test
+    fun theDotKeepsClearOfTheScreensRoundedCorner() {
+        val viewer = open()
+        val dot = viewer.findViewById<View>(R.id.ai_dot)
+        val root = viewer.findViewById<View>(R.id.viewer_root)
+        val margin = viewer.resources.getDimensionPixelSize(R.dimen.ai_dot_margin)
+        Prefs(context).aiDot = true
+        idle()
+        val at = IntArray(2).also(root::getLocationInWindow)
+        val awayRight = root.rootView.width - at[0] - root.width
+        /** The gap between the dot and the window's right edge. */
+        fun gap() = root.rootView.width - (at[0] + dot.right + dot.translationX.toInt())
+        assertEquals("square: only the margin", awayRight + margin, gap())
+        viewer.screenCorner = { 200 }
+        root.requestLayout()
+        idle()
+        assertEquals(AiDot.offsets(awayRight, 0, 200, margin).first, gap())
+        assertTrue("clear of the curve", gap() >= AiDot.cornerGap(200) + margin)
     }
 }

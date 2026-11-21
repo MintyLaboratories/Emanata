@@ -10,6 +10,7 @@ import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.files.FileClipboard
 import com.infinity.comicreader.files.FileWork
+import com.infinity.comicreader.testing.idleUntil
 import org.junit.After
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -57,14 +58,7 @@ class FileActionsNotificationsTest {
         controller.pause().stop().destroy()
     }
 
-    private fun settle() {
-        repeat(300) {
-            shadowOf(Looper.getMainLooper()).idle()
-            if (FileWork.operations.value.isEmpty()) return
-            Thread.sleep(10)
-        }
-        throw AssertionError("still running: ${FileWork.operations.value}")
-    }
+    private fun settle() = idleUntil("every operation done") { FileWork.operations.value.isEmpty() }
 
     /** Deletes a new file through the confirmation, and waits for it to go. */
     private fun deleteOne(name: String) {

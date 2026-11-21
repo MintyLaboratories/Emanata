@@ -1,13 +1,13 @@
 package com.infinity.comicreader.ui
 
 import android.app.Application
-import android.os.Looper
 import androidx.appcompat.app.AlertDialog
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.files.FileWork
+import com.infinity.comicreader.testing.idleUntil
 import com.infinity.comicreader.util.FileUtils
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -19,7 +19,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.Shadows.shadowOf
 import org.robolectric.android.controller.ActivityController
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
@@ -48,14 +47,7 @@ class FileActionsRebuildTest {
         controller.pause().stop().destroy()
     }
 
-    private fun settle() {
-        repeat(300) {
-            shadowOf(Looper.getMainLooper()).idle()
-            if (FileWork.operations.value.isEmpty()) return
-            Thread.sleep(10)
-        }
-        throw AssertionError("still running: ${FileWork.operations.value}")
-    }
+    private fun settle() = idleUntil("every operation done") { FileWork.operations.value.isEmpty() }
 
     private fun message(dialog: AlertDialog) = dialog.findViewById<android.widget.TextView>(android.R.id.message)!!.text.toString()
 

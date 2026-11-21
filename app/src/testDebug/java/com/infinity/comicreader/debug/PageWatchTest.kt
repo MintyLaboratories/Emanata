@@ -137,6 +137,21 @@ class PageWatchTest {
     }
 
     @Test
+    fun theSamePageReboundFarOffIsNoTurn() {
+        watch.bound(left, 5)
+        watch.bound(right, 5)
+        val before = watch.showing(listOf(left), 8)
+        // A relayout splitting pages renumbers items: the same page now at item 12, in a new view.
+        assertFalse(before.changedTo(watch.showing(listOf(right), 12)))
+        assertFalse(before.changedTo(watch.showing(listOf(right), 6)))
+        // An item unknown on either side orders nothing.
+        assertFalse(watch.showing(listOf(left), -1).changedTo(watch.showing(listOf(right), 0)))
+        assertFalse(before.changedTo(watch.showing(listOf(right), -1)))
+        // One item back is the first half again.
+        assertTrue(before.changedTo(watch.showing(listOf(right), 7)))
+    }
+
+    @Test
     fun otherPagesAreATurnWhicheverItemTheReaderTells() {
         watch.bound(left, 2)
         watch.bound(right, 3)

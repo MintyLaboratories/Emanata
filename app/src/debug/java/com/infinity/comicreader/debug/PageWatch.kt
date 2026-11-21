@@ -1,5 +1,7 @@
 package com.infinity.comicreader.debug
 
+import kotlin.math.abs
+
 /**
  * What each page view stands for and shows, as the reader reports it
  * ([com.infinity.comicreader.util.ReadProbe]), for telling when the pages on screen are
@@ -49,10 +51,11 @@ internal class PageWatch(private val clock: () -> Long = System::nanoTime) {
     data class Showing(val pages: List<Int>, val views: Set<Any>, val item: Int) {
         /**
          * True when [after] shows something else: other pages, or the same pages in other
-         * views with the reader at another item (the other half of a split page).
+         * views with the reader one item on or back (the other half of a split page). A
+         * relayout rebinding the same page at a far-off item is no turn.
          */
         fun changedTo(after: Showing): Boolean =
-            after.pages.isNotEmpty() && (after.pages != pages || (after.views != views && after.item != item))
+            after.pages.isNotEmpty() && (after.pages != pages || (after.views != views && item >= 0 && after.item >= 0 && abs(after.item - item) == 1))
 
         /** True when [after] lies before this in reading order: an earlier first page, or the same with an earlier item. */
         fun backTo(after: Showing): Boolean {

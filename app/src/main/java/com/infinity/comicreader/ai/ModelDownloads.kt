@@ -2,6 +2,7 @@ package com.infinity.comicreader.ai
 
 import android.os.SystemClock
 import android.util.Log
+import androidx.annotation.VisibleForTesting
 import com.infinity.comicreader.net.NetPolicy
 import com.infinity.comicreader.net.NetWork
 import kotlinx.coroutines.CoroutineScope
@@ -9,6 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
@@ -48,8 +50,12 @@ object ModelDownloads {
     private val _state = MutableStateFlow(Downloads())
     val state: StateFlow<Downloads> = _state
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
+    /** Runs downloads one at a time; replaced by [reset]. */
+    @Volatile
+    private var scope = worker()
     private val jobs = HashMap<String, Job>()
+
+    private fun worker() = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
 
     /** The client downloads use unless given one; JVM tests stand in one that never reaches the network. */
     @Volatile
@@ -95,6 +101,24 @@ object ModelDownloads {
                     finish(model.id, job, DownloadState.Failed(DownloadFailure.NETWORK), changed = false)
                 }
             }.also { jobs[model.id] = it }
+        }
+    }
+
+    /** [id]'s download running or waiting; null when none is. */
+    internal fun job(id: String): Job? = synchronized(jobs) { jobs[id]?.takeIf { it.isActive } }
+
+    /**
+     * Stops every download and forgets their states, and runs later ones on a worker of their
+     * own, so none waits behind one stopped here that has yet to notice; for JVM tests, each
+     * starting from none.
+     */
+    @VisibleForTesting
+    fun reset() {
+        synchronized(jobs) {
+            scope.cancel()
+            scope = worker()
+            jobs.clear()
+            _state.update { it.copy(states = emptyMap()) }
         }
     }
 

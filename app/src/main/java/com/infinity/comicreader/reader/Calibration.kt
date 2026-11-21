@@ -651,6 +651,7 @@ internal interface CalibrationProbe {
  * the first round; [winners], when given, ends the run once what it makes of the timings so
  * far (the tuning they pick) stays the same over a round, from round [minRounds] on.
  * [progress] hears where the run is before each sample it tries and once at its end.
+ * [nanos] is the clock [redoneMs] is read on.
  */
 internal class CalibrationRun(
     private val probe: CalibrationProbe,
@@ -663,7 +664,8 @@ internal class CalibrationRun(
     private val warmOnce: Boolean = false,
     private val winners: ((List<Timing>) -> Any?)? = null,
     private val minRounds: Int = 3,
-    private val progress: ((CalibrationProgress) -> Unit)? = null
+    private val progress: ((CalibrationProgress) -> Unit)? = null,
+    private val nanos: () -> Long = System::nanoTime
 ) {
     /** Why the last [run] stopped first; null when it finished. */
     var why: String? = null
@@ -706,7 +708,7 @@ internal class CalibrationRun(
                     if (stopped()) return stop("stopped")
                     if (!probe.awaitFair()) return stop(probe.why ?: "not fair")
                     val saver = probe.powerSave
-                    val sampledFrom = System.nanoTime()
+                    val sampledFrom = nanos()
                     val t = sample(c, warm && (!warmOnce || round == 0))
                     if (t == null) {
                         missing += c
@@ -719,7 +721,7 @@ internal class CalibrationRun(
                         }
                         break
                     }
-                    redoneMs += (System.nanoTime() - sampledFrom) / 1_000_000
+                    redoneMs += (nanos() - sampledFrom) / 1_000_000
                     if (++redone > mostRedone) return stop("disturbed $redone times")
                 }
             }

@@ -4,7 +4,6 @@ import com.infinity.comicreader.testing.toggleFavorite
 import android.Manifest
 import android.app.Application
 import android.os.Environment
-import android.os.Looper
 import android.view.View
 import android.widget.TextView
 import androidx.preference.PreferenceManager
@@ -12,6 +11,7 @@ import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
 import com.google.android.material.tabs.TabLayout
 import com.infinity.comicreader.R
+import com.infinity.comicreader.testing.idleUntil
 import com.infinity.comicreader.data.FavoriteKind
 import com.infinity.comicreader.data.FavoriteKindCache
 import com.infinity.comicreader.data.Library
@@ -45,13 +45,12 @@ class ListActivityFavoritesTest {
         root.mkdirs()
     }
 
-    private fun idle() {
-        // Background classification runs on the IO pool; let it land on the main thread.
-        repeat(20) {
-            shadowOf(Looper.getMainLooper()).idle()
-            Thread.sleep(20)
-        }
-    }
+    /** True once the screen waits on nothing but the test: listed, favorites classified, facts read, presence asked, its menu looked into. */
+    private fun ListActivity.quiet() =
+        listJob?.isCompleted == true && listOf(classifyJob, factsJob, presenceJob, moreLook).none { it?.isActive == true }
+
+    /** Runs the main looper until the screen is quiet. */
+    private fun ListActivity.settle() = idleUntil("the library screen quiet") { quiet() }
 
     private fun folder(path: String, vararg files: String): File {
         val dir = File(root, path)
@@ -84,9 +83,9 @@ class ListActivityFavoritesTest {
         Prefs(context).lastPath = root.absolutePath
 
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        activity.settle()
         activity.findViewById<TabLayout>(R.id.tabs).getTabAt(1)!!.select()
-        idle()
+        activity.settle()
         val recycler = activity.findViewById<RecyclerView>(R.id.recycler)
         assertEquals(
             listOf("Libraries", "Shelf", "Sets", "stacks/Comics", "Comics", "books/Comics"),
@@ -100,9 +99,9 @@ class ListActivityFavoritesTest {
         library.toggleFavorite(folder("Solo", "x.cbz"))
         Prefs(context).groupFavorites = false
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        activity.settle()
         activity.findViewById<TabLayout>(R.id.tabs).getTabAt(1)!!.select()
-        idle()
+        activity.settle()
         assertEquals(listOf("Solo"), rows(activity.findViewById(R.id.recycler)))
     }
 
@@ -115,9 +114,9 @@ class ListActivityFavoritesTest {
         val prefs = Prefs(context)
         prefs.setGridSize(Prefs.TAB_FAVORITES, 2, 2)
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        activity.settle()
         activity.findViewById<TabLayout>(R.id.tabs).getTabAt(1)!!.select()
-        idle()
+        activity.settle()
         val recycler = activity.findViewById<RecyclerView>(R.id.recycler)
         // Sets header, Solo, Comics header, a.cbz: both rows and both headers on screen.
         assertEquals(4, recycler.childCount)
@@ -134,13 +133,13 @@ class ListActivityFavoritesTest {
         val prefs = Prefs(context)
         prefs.groupFavorites = false
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        activity.settle()
         activity.findViewById<TabLayout>(R.id.tabs).getTabAt(1)!!.select()
-        idle()
+        activity.settle()
         assertNull(FavoriteKindCache(context).get(solo.absolutePath, solo.lastModified()))
 
         prefs.groupFavorites = true
-        idle()
+        activity.settle()
         assertEquals(FavoriteKind.SET, FavoriteKindCache(context).get(solo.absolutePath, solo.lastModified()))
         assertEquals(listOf("Sets", "Solo"), rows(activity.findViewById(R.id.recycler)))
     }

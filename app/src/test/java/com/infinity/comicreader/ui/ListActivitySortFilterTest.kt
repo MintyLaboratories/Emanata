@@ -11,6 +11,7 @@ import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
 import com.google.android.material.chip.Chip
 import com.infinity.comicreader.R
+import com.infinity.comicreader.testing.idleUntil
 import com.infinity.comicreader.data.BookFactsCache
 import com.infinity.comicreader.data.Bookmark
 import com.infinity.comicreader.data.EntryType
@@ -54,12 +55,12 @@ class ListActivitySortFilterTest {
         prefs.lastPath = dir.absolutePath
     }
 
-    private fun idle() {
-        repeat(10) {
-            shadowOf(Looper.getMainLooper()).idle()
-            Thread.sleep(20)
-        }
-    }
+    /** True once the screen waits on nothing but the test: listed, favorites classified, facts read, presence asked, its menu looked into. */
+    private fun ListActivity.quiet() =
+        listJob?.isCompleted == true && listOf(classifyJob, factsJob, presenceJob, moreLook).none { it?.isActive == true }
+
+    /** Runs the main looper until the screen is quiet. */
+    private fun ListActivity.settle() = idleUntil("the library screen quiet") { quiet() }
 
     /** Names shown, in order, read through the adapter's positions. */
     private fun ListActivity.shown(): List<String> {
@@ -72,32 +73,32 @@ class ListActivitySortFilterTest {
     @Test
     fun sortAppliesLiveWithMissingValuesLast() {
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        activity.settle()
         assertEquals(listOf("z extras", "a (2001).cbz", "b (2010).cbz", "c.pdf"), activity.shown())
 
         prefs.setSort(Prefs.TAB_BROWSE, TabSort(SortLevel(SortKey.YEAR)))
-        idle()
+        activity.settle()
         assertEquals(listOf("z extras", "b (2010).cbz", "a (2001).cbz", "c.pdf"), activity.shown())
 
         prefs.setSort(Prefs.TAB_BROWSE, TabSort(SortLevel(SortKey.YEAR, flipped = true), foldersFirst = false))
-        idle()
+        activity.settle()
         assertEquals(listOf("a (2001).cbz", "b (2010).cbz", "c.pdf", "z extras"), activity.shown())
     }
 
     @Test
     fun filterShowsAChipThatClearsIt() {
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        activity.settle()
         val chip = activity.findViewById<Chip>(R.id.filter_chip)
         assertEquals(View.GONE, chip.visibility)
 
         prefs.setFilter(Prefs.TAB_BROWSE, LibraryFilter(types = setOf(EntryType.PDF)))
-        idle()
+        activity.settle()
         assertEquals(listOf("c.pdf"), activity.shown())
         assertEquals(View.VISIBLE, chip.visibility)
 
         chip.performCloseIconClick()
-        idle()
+        activity.settle()
         assertEquals(LibraryFilter.NONE, prefs.filter(Prefs.TAB_BROWSE))
         assertEquals(View.GONE, chip.visibility)
         assertEquals(4, activity.shown().size)
@@ -107,7 +108,7 @@ class ListActivitySortFilterTest {
     fun browsingKeepsFoldersReachable() {
         prefs.setFilter(Prefs.TAB_BROWSE, LibraryFilter(minLength = 1, direction = ReadingDirection.RTL))
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        activity.settle()
         assertEquals(listOf("z extras"), activity.shown())
     }
 
@@ -116,8 +117,7 @@ class ListActivitySortFilterTest {
         BookFactsCache.reset()
         val junk = File(dir, "b (2010).cbz").apply { writeText("not an archive") }
         prefs.setSort(Prefs.TAB_BROWSE, TabSort(SortLevel(SortKey.LENGTH)))
-        Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        Robolectric.buildActivity(ListActivity::class.java).setup().get().settle()
         val cache = BookFactsCache(ApplicationProvider.getApplicationContext()).apply { load() }
         assertNull(cache.get(bookId(junk)))
     }
@@ -130,14 +130,15 @@ class ListActivitySortFilterTest {
         prefs.setSort(Prefs.TAB_BROWSE, TabSort(SortLevel(SortKey.LENGTH)))
         // Created but not yet in sight, as under a book opened over it.
         val controller = Robolectric.buildActivity(ListActivity::class.java).create()
-        idle()
+        // Facts are read only once the library is started: nothing can be read before.
+        shadowOf(Looper.getMainLooper()).idle()
         fun counted(): Int {
             val cache = BookFactsCache(ApplicationProvider.getApplicationContext()).apply { load() }
             return books.count { cache.get(bookId(it))?.pages == 2 }
         }
         assertTrue("read ${counted()} while out of sight", counted() < books.size)
         controller.start().resume()
-        idle()
+        controller.get().settle()
         assertEquals(books.size, counted())
     }
 
@@ -153,24 +154,24 @@ class ListActivitySortFilterTest {
         prefs.startupTab = Prefs.TAB_BOOKMARKS
         prefs.setSort(Prefs.TAB_BOOKMARKS, TabSort(SortLevel(SortKey.SIZE)))
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        activity.settle()
         assertEquals(listOf("b (2010).cbz", "c.pdf", "a (2001).cbz"), activity.shown())
     }
 
     @Test
     fun sortAndFilterPopupsSurviveRotation() {
         val controller = Robolectric.buildActivity(ListActivity::class.java).setup()
-        idle()
+        controller.get().settle()
         for ((item, kind) in listOf(R.id.menu_sort to TabDialogFragment.Kind.SORT, R.id.menu_filter to TabDialogFragment.Kind.FILTER)) {
             controller.get().onOptionsItemSelected(RoboMenuItem(item))
-            idle()
+            controller.get().settle()
             controller.recreate()
-            idle()
+            controller.get().settle()
             val fragment = controller.get().supportFragmentManager.fragments.filterIsInstance<TabDialogFragment>().single()
             assertEquals(kind.name, fragment.requireArguments().getString("kind"))
             assertTrue(fragment.dialog!!.isShowing)
             fragment.dismiss()
-            idle()
+            controller.get().settle()
         }
     }
 
@@ -178,7 +179,7 @@ class ListActivitySortFilterTest {
     fun filtersBelongToTheirTab() {
         prefs.setFilter(Prefs.TAB_HISTORY, LibraryFilter(types = setOf(EntryType.PDF)))
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        activity.settle()
         assertEquals(View.GONE, activity.findViewById<Chip>(R.id.filter_chip).visibility)
         assertEquals(4, activity.shown().size)
     }

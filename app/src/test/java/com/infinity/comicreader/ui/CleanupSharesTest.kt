@@ -9,6 +9,7 @@ import android.view.View
 import android.widget.CheckBox
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.lifecycle.lifecycleScope
 import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
@@ -24,6 +25,7 @@ import com.infinity.comicreader.reader.Fixtures
 import com.infinity.comicreader.reader.SyntheticArt
 import com.infinity.comicreader.testing.Xxh3Port
 import com.infinity.comicreader.testing.idleUntil
+import kotlinx.coroutines.Job
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -229,6 +231,8 @@ class CleanupSharesTest {
         // Closed as it was made, before any search could start.
         shadowOf(Looper.getMainLooper()).idle()
         assertTrue(activity.isFinishing)
+        // A search started anyway would reach the share only after an I/O step.
+        idleUntil("no search running") { activity.lifecycleScope.coroutineContext[Job]!!.children.none { !it.isCompleted } }
         assertEquals(0, fake.lists)
         assertEquals(0L, fake.bytesRead)
     }

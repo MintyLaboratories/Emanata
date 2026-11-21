@@ -5,6 +5,7 @@ import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
+import okhttp3.mockwebserver.SocketPolicy
 import okio.Buffer
 import java.io.Closeable
 import java.io.File
@@ -15,6 +16,7 @@ import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 /**
@@ -37,7 +39,10 @@ class FakeDavServer(private val dir: File, private val prefix: String = "/dav") 
     @Volatile
     var slow = false
 
-    /** Holds the next answer this long before it starts, as a server waking its disk would; once. */
+    /**
+     * Holds the next answer this long before it starts, as a server waking its disk would;
+     * once. Closing the server ends the hold and drops the connection instead.
+     */
     @Volatile
     var spinUpMs = 0L
 
@@ -69,6 +74,9 @@ class FakeDavServer(private val dir: File, private val prefix: String = "/dav") 
 
     val requests = CopyOnWriteArrayList<RecordedRequest>()
 
+    /** Released by [close]: ends a [spinUpMs] hold. */
+    private val closing = CountDownLatch(1)
+
     /** Status codes to answer with instead, by path below [prefix]. */
     val errors = ConcurrentHashMap<String, Int>()
 
@@ -82,7 +90,8 @@ class FakeDavServer(private val dir: File, private val prefix: String = "/dav") 
                 requests += request
                 val wait = spinUpMs
                 spinUpMs = 0
-                return answer(request).let { if (wait > 0) it.setHeadersDelay(wait, TimeUnit.MILLISECONDS) else it }
+                if (wait > 0 && closing.await(wait, TimeUnit.MILLISECONDS)) return MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST)
+                return answer(request)
             }
         }
         server.start()
@@ -97,7 +106,10 @@ class FakeDavServer(private val dir: File, private val prefix: String = "/dav") 
     /** The requests made with [method], by path. */
     fun paths(method: String): List<String> = requests.filter { it.method == method }.map { it.path!! }
 
-    override fun close() = server.shutdown()
+    override fun close() {
+        closing.countDown()
+        server.shutdown()
+    }
 
     private fun answer(request: RecordedRequest): MockResponse {
         if (password.isNotEmpty() && request.getHeader("Authorization") != okhttp3.Credentials.basic(user, password)) {

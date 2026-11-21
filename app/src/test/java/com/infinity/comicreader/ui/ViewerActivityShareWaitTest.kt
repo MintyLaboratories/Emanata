@@ -17,6 +17,8 @@ import com.infinity.comicreader.net.FakeRemoteFs
 import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.net.ShareSpeed
 import com.infinity.comicreader.reader.Fixtures
+import com.infinity.comicreader.testing.Waits
+import com.infinity.comicreader.testing.idleUntil
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -59,7 +61,8 @@ class ViewerActivityShareWaitTest {
         // Pages of noise, so each is read from the share apart from the others.
         val pages = (0 until PAGES).map { i -> Fixtures.entry("Tale 001-%03d.png".format(i), noise(300, 450, i)) }
         Fixtures.zip(File(share, "Tale 001.cbz"), *pages.toTypedArray())
-        fake = FakeRemoteFs(share)
+        // Held until the test opens the hold: only a hang ends it.
+        fake = FakeRemoteFs(share).apply { slowCapMs = Waits.LIVENESS_MS }
         Remotes.serve(listOf(FakeRemoteFs.share())) { fake }
         // As on a device: the main thread never waits on the share.
         Remotes.onMainThread = { Looper.getMainLooper().thread === Thread.currentThread() }
@@ -80,17 +83,7 @@ class ViewerActivityShareWaitTest {
         return ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
     }
 
-    private fun idle() = shadowOf(Looper.getMainLooper()).idle()
-
     private fun idleFor(ms: Long) = shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(ms))
-
-    private fun await(ms: Long = 10_000, done: () -> Boolean) {
-        val deadline = System.currentTimeMillis() + ms
-        while (!done() && System.currentTimeMillis() < deadline) {
-            Thread.sleep(10)
-            idle()
-        }
-    }
 
     private fun launch(): ViewerActivity {
         val intent = Intent(ApplicationProvider.getApplicationContext(), ViewerActivity::class.java)
@@ -106,7 +99,12 @@ class ViewerActivityShareWaitTest {
     }
 
     /** Waits until the share holds a request, as one waking its disk. */
-    private fun awaitHeld() = await { fake.held.get() > 0 }
+    private fun awaitHeld() = idleUntil("the share holding a request") { fake.held.get() > 0 }
+
+    /** Waits until the book is open, its first page shows and no page decodes: the share answered all the reader asked so far. */
+    private fun ViewerActivity.awaitFirstPage() = idleUntil("the first page shown, no page decoding") {
+        progress().visibility != View.VISIBLE && pageAdapter?.let { !it.blankAt(pages().currentItem) && !it.decoding } == true
+    }
 
     private fun ViewerActivity.note() = findViewById<View>(R.id.viewer_share_wait)
 
@@ -119,7 +117,7 @@ class ViewerActivityShareWaitTest {
         fun ahead(speed: ShareSpeed): Int {
             Remotes.serve(listOf(FakeRemoteFs.share().copy(speed = speed))) { fake }
             val viewer = launch()
-            await { viewer.pages().adapter != null }
+            idleUntil("the pages laid out") { viewer.pages().adapter != null }
             val adapter = viewer.pages().adapter as PageAdapter
             return PageAdapter::class.java.getDeclaredField("preload").apply { isAccessible = true }.getInt(adapter)
         }
@@ -143,7 +141,7 @@ class ViewerActivityShareWaitTest {
         assertEquals(View.VISIBLE, viewer.note().visibility)
         fake.slow = null
         held.countDown()
-        await { viewer.progress().visibility != View.VISIBLE }
+        idleUntil("the book open") { viewer.progress().visibility != View.VISIBLE }
         assertEquals(View.GONE, viewer.note().visibility)
         assertFalse(viewer.isFinishing)
         assertEquals(PAGES, viewer.pages().adapter!!.itemCount)
@@ -153,8 +151,7 @@ class ViewerActivityShareWaitTest {
     fun aPageLoadingSlowlySaysSoUntilItShows() {
         val held = holdLaterPages()
         val viewer = launch()
-        await { viewer.progress().visibility != View.VISIBLE }
-        repeat(30) { Thread.sleep(10); idle() }
+        viewer.awaitFirstPage()
         viewer.pages().setCurrentItem(PAGES - 2, false)
         awaitHeld()
         idleFor(1_500)
@@ -163,7 +160,7 @@ class ViewerActivityShareWaitTest {
         assertEquals(View.VISIBLE, viewer.note().visibility)
         fake.slow = null
         held.countDown()
-        await { viewer.note().visibility != View.VISIBLE }
+        idleUntil("the note gone") { viewer.note().visibility != View.VISIBLE }
         assertEquals(View.GONE, viewer.note().visibility)
         assertFalse(viewer.isFinishing)
     }
@@ -173,8 +170,7 @@ class ViewerActivityShareWaitTest {
         File(tmp.root, "share/notes.txt").writeText("cover scan")
         val held = holdLaterPages()
         val viewer = launch()
-        await { viewer.progress().visibility != View.VISIBLE }
-        repeat(30) { Thread.sleep(10); idle() }
+        viewer.awaitFirstPage()
         viewer.pages().setCurrentItem(PAGES - 2, false)
         awaitHeld()
         idleFor(1_500)
@@ -185,15 +181,14 @@ class ViewerActivityShareWaitTest {
         assertEquals(View.VISIBLE, viewer.findViewById<View>(R.id.viewer_share_wait_spinner).visibility)
         fake.slow = null
         held.countDown()
-        await { viewer.note().visibility != View.VISIBLE }
+        idleUntil("the note gone") { viewer.note().visibility != View.VISIBLE }
         assertFalse(viewer.isFinishing)
     }
 
     @Test
     fun aPageThatShowsAtOnceSaysNothing() {
         val viewer = launch()
-        await { viewer.progress().visibility != View.VISIBLE }
-        repeat(30) { Thread.sleep(10); idle() }
+        viewer.awaitFirstPage()
         idleFor(3_000)
         assertEquals(View.GONE, viewer.note().visibility)
     }
@@ -205,8 +200,7 @@ class ViewerActivityShareWaitTest {
         prefs.autoCrop = true
         val held = holdLaterPages()
         val viewer = launch()
-        await { viewer.progress().visibility != View.VISIBLE }
-        repeat(30) { Thread.sleep(10); idle() }
+        viewer.awaitFirstPage()
         // A pair far ahead: its shared crop measures both pages from the share first.
         val pages = viewer.pages()
         pages.setCurrentItem(pages.adapter!!.itemCount - 2, false)
@@ -215,7 +209,7 @@ class ViewerActivityShareWaitTest {
         assertEquals(View.VISIBLE, viewer.note().visibility)
         fake.slow = null
         held.countDown()
-        await { viewer.note().visibility != View.VISIBLE }
+        idleUntil("the note gone") { viewer.note().visibility != View.VISIBLE }
         assertEquals(View.GONE, viewer.note().visibility)
         assertFalse(viewer.isFinishing)
     }

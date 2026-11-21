@@ -25,6 +25,7 @@ import com.infinity.comicreader.reader.DirectionDetection
 import com.infinity.comicreader.reader.Fixtures
 import com.infinity.comicreader.reader.SyntheticStrips
 import com.infinity.comicreader.reader.TestImages
+import com.infinity.comicreader.testing.idleUntil
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Before
@@ -86,21 +87,8 @@ class ViewerActivitySlicesTest {
             .putExtra(ViewerActivity.EXTRA_PATH, book.absolutePath)
         val viewer = Robolectric.buildActivity(ViewerActivity::class.java, intent).setup().get()
         val progress = viewer.findViewById<View>(R.id.viewer_progress)
-        val deadline = System.currentTimeMillis() + 5_000
-        do {
-            Thread.sleep(10)
-            idle()
-        } while (progress.visibility == View.VISIBLE && System.currentTimeMillis() < deadline)
+        idleUntil("the book open") { progress.visibility != View.VISIBLE }
         return viewer
-    }
-
-    /** Waits up to [ms] for [done]. */
-    private fun await(ms: Long = 5_000, done: () -> Boolean) {
-        val deadline = System.currentTimeMillis() + ms
-        while (!done() && System.currentTimeMillis() < deadline) {
-            Thread.sleep(10)
-            idle()
-        }
     }
 
     private fun ViewerActivity.continuous() = findViewById<View>(R.id.viewer_vertical).visibility == View.VISIBLE
@@ -120,7 +108,7 @@ class ViewerActivitySlicesTest {
     @Test
     fun slicesOfOneHeightReadInOneColumnOnceTheirSeamsTell() {
         val viewer = launch(seamedBook())
-        await { viewer.continuous() }
+        idleUntil("one column") { viewer.continuous() }
         assertEquals(true, viewer.continuous())
         assertEquals("Top-to-bottom (from page shapes and seams)", viewer.hint().text.toString())
     }
@@ -129,7 +117,7 @@ class ViewerActivitySlicesTest {
     fun seamsFoundOnceShowTheNextOpenInOneColumnAtOnce() {
         val book = seamedBook()
         val first = launch(book)
-        await { first.continuous() }
+        idleUntil("one column") { first.continuous() }
         assertEquals(DirectionDetection.Source.SEAMS, BookDirection.checkedSlices(book)?.found?.source)
         first.finish()
         idle()
@@ -144,7 +132,7 @@ class ViewerActivitySlicesTest {
         val facts = BookFactsCache(ApplicationProvider.getApplicationContext())
         facts.put(bookId(book), BookFacts(7, 0))
         val viewer = launch(book)
-        await { viewer.continuous() }
+        idleUntil("one column") { viewer.continuous() }
         assertEquals(DirectionDetection.Source.SEAMS, facts.get(bookId(book))?.slices?.found?.source)
     }
 
@@ -153,7 +141,7 @@ class ViewerActivitySlicesTest {
         val viewer = launch(seamedBook())
         viewer.findViewById<ViewPager2>(R.id.viewer_pager).setCurrentItem(1, false)
         idle()
-        await { viewer.continuous() }
+        idleUntil("one column") { viewer.continuous() }
         assertEquals(true, viewer.continuous())
     }
 
@@ -205,7 +193,7 @@ class ViewerActivitySlicesTest {
         val viewer = launch(shapedBook())
         assertEquals(false, viewer.continuous())
         ReaderSheet(viewer).tap(R.id.btn_dir_auto)
-        await { viewer.continuous() }
+        idleUntil("one column") { viewer.continuous() }
         assertEquals(true, viewer.continuous())
         assertEquals(null, library.folderLayout(dir.absolutePath))
     }
@@ -216,7 +204,8 @@ class ViewerActivitySlicesTest {
         val viewer = launch(shapedBook())
         assertEquals(true, viewer.continuous())
         ReaderSheet(viewer).tap(R.id.btn_dir_rtl)
-        await(500) { false }
+        // Late detection, if any, has run.
+        idleUntil("all the open started done") { viewer.openSettled() }
         val pager = viewer.findViewById<ViewPager2>(R.id.viewer_pager)
         assertEquals(false, viewer.continuous())
         assertEquals(View.VISIBLE, pager.visibility)

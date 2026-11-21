@@ -2,10 +2,10 @@ package com.infinity.comicreader.ui
 
 import android.app.Application
 import android.graphics.Bitmap
-import android.os.Looper
 import com.infinity.comicreader.reader.PageDetail
 import com.infinity.comicreader.reader.Region
 import com.infinity.comicreader.reader.Scaling
+import com.infinity.comicreader.testing.idleUntil
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -17,10 +17,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 @RunWith(RobolectricTestRunner::class)
@@ -48,17 +46,14 @@ class DetailStoreTest {
 
     private fun detail(key: String) = synchronized(made) { made.getValue(key) }
 
-    private fun idle(done: () -> Boolean = { false }) {
-        val deadline = System.currentTimeMillis() + 3_000
-        while (!done() && System.currentTimeMillis() < deadline) {
-            Thread.sleep(5)
-            shadowOf(Looper.getMainLooper()).idle()
-        }
-        shadowOf(Looper.getMainLooper()).idle()
-    }
+    /** Gates loads and renders wait at until the test opens them; all opened after it. */
+    private val gates = ArrayList<CountDownLatch>()
+
+    private fun gate() = CountDownLatch(1).also { gates += it }
 
     @After
     fun tearDown() {
+        gates.forEach { it.countDown() }
         scope.cancel()
     }
 
@@ -67,7 +62,7 @@ class DetailStoreTest {
         val results = ArrayList<String>()
         store.render("a", listOf("a"), loader("a"), { (it as FakeDetail).name + 1 }) { results += it }
         store.render("a", listOf("a"), loader("a"), { (it as FakeDetail).name + 2 }) { results += it }
-        idle { results.size == 2 }
+        idleUntil("both renders delivered") { results.size == 2 }
         assertEquals(listOf("a1", "a2"), results.sorted())
         assertEquals(1, loads.get())
     }
@@ -76,9 +71,9 @@ class DetailStoreTest {
     fun anotherItemDropsAndFreesThePages() {
         var done = 0
         store.render("a", listOf("a"), loader("a"), { it }) { done++ }
-        idle { done == 1 }
+        idleUntil("a rendered") { done == 1 }
         store.render("b", listOf("b"), loader("b"), { it }) { done++ }
-        idle { done == 2 }
+        idleUntil("b rendered") { done == 2 }
         assertTrue(detail("a").released)
         assertFalse(detail("b").released)
         assertEquals(setOf("b"), store.keys)
@@ -90,7 +85,7 @@ class DetailStoreTest {
         store.render("left", listOf("left", "right"), loader("left"), { it }) { done++ }
         store.prepare("right", listOf("left", "right"), loader("right"))
         store.render("right", listOf("left", "right"), loader("right"), { it }) { done++ }
-        idle { done == 2 }
+        idleUntil("both halves rendered") { done == 2 }
         assertEquals(setOf("left", "right"), store.keys)
         assertEquals(2, loads.get())
         assertFalse(detail("left").released)
@@ -100,18 +95,18 @@ class DetailStoreTest {
     @Test
     fun pageDroppedMidRenderIsFreedOnceTheRenderEnds() {
         val started = CountDownLatch(1)
-        val proceed = CountDownLatch(1)
+        val proceed = gate()
         var done = 0
         store.render("a", listOf("a"), loader("a"), {
             started.countDown()
-            proceed.await(5, TimeUnit.SECONDS)
+            proceed.await()
             it
         }) { done++ }
-        idle { started.count == 0L }
+        idleUntil("the render started") { started.count == 0L }
         store.clear()
         assertFalse(detail("a").released)
         proceed.countDown()
-        idle { detail("a").released }
+        idleUntil("the page freed") { detail("a").released }
         assertTrue(detail("a").released)
         assertTrue(store.keys.isEmpty())
     }
@@ -119,21 +114,21 @@ class DetailStoreTest {
     @Test
     fun canceledRenderDeliversNothing() {
         val started = CountDownLatch(1)
-        val proceed = CountDownLatch(1)
+        val proceed = gate()
         var done = 0
         val job = store.render("a", listOf("a"), loader("a"), {
             started.countDown()
-            proceed.await(5, TimeUnit.SECONDS)
+            proceed.await()
             it
         }) { done++ }
-        idle { started.count == 0L }
+        idleUntil("the render started") { started.count == 0L }
         job.cancel()
         proceed.countDown()
-        idle { job.isCompleted }
+        idleUntil("the canceled render ended") { job.isCompleted }
         assertEquals(0, done)
         // The page stays for the next render.
         store.render("a", listOf("a"), loader("a"), { it }) { done++ }
-        idle { done == 1 }
+        idleUntil("a rendered") { done == 1 }
         assertEquals(1, loads.get())
     }
 
@@ -141,13 +136,13 @@ class DetailStoreTest {
     fun failedLoadGivesNothingAndIsTriedAgain() {
         var done = 0
         val job = store.render("a", listOf("a"), { throw OutOfMemoryError("synthetic") }, { it }) { done++ }
-        idle { job.isCompleted }
+        idleUntil("the failed render ended") { job.isCompleted }
         assertEquals(0, done)
-        idle { store.keys.isEmpty() }
+        idleUntil("the failed page forgotten") { store.keys.isEmpty() }
         assertTrue(store.keys.isEmpty())
 
         store.render("a", listOf("a"), loader("a"), { it }) { done++ }
-        idle { done == 1 }
+        idleUntil("a rendered") { done == 1 }
         assertEquals(1, done)
         assertEquals(1, loads.get())
     }
@@ -157,63 +152,63 @@ class DetailStoreTest {
         var failed = 0
         var done = 0
         store.render("a", listOf("a"), { throw IllegalStateException("synthetic") }, { it }, failed = { failed++ }) { done++ }
-        idle { failed == 1 }
+        idleUntil("a's load failed") { failed == 1 }
         store.render("b", listOf("b"), loader("b"), { throw OutOfMemoryError("synthetic") }, failed = { failed++ }) { done++ }
-        idle { failed == 2 }
+        idleUntil("b's render failed") { failed == 2 }
         assertEquals(2, failed)
         assertEquals(0, done)
     }
 
     @Test
     fun pageDroppedBeforeItsRenderStartsCallsFailed() {
-        val proceed = CountDownLatch(1)
+        val proceed = gate()
         var failed = 0
         var done = 0
         store.render("a", listOf("a"), {
-            proceed.await(5, TimeUnit.SECONDS)
+            proceed.await()
             FakeDetail("a")
         }, { it }, failed = { failed++ }) { done++ }
         store.clear()
         proceed.countDown()
-        idle { failed == 1 }
+        idleUntil("the dropped render failed") { failed == 1 }
         assertEquals(1, failed)
         assertEquals(0, done)
     }
 
     @Test
     fun pageDroppedBeforeItsRenderStartsCallsDroppedWhenGiven() {
-        val proceed = CountDownLatch(1)
+        val proceed = gate()
         var failed = 0
         var dropped = 0
         store.render("a", listOf("a"), {
-            proceed.await(5, TimeUnit.SECONDS)
+            proceed.await()
             FakeDetail("a")
         }, { it }, failed = { failed++ }, dropped = { dropped++ }) { }
         // Another page's render keeping only its own.
         store.render("b", listOf("b"), loader("b"), { it }) { }
         proceed.countDown()
-        idle { dropped == 1 }
+        idleUntil("the render told it was dropped") { dropped == 1 }
         assertEquals(1, dropped)
         assertEquals(0, failed)
         // A failed load still fails.
         store.render("c", listOf("c"), { throw IllegalStateException("synthetic") }, { it }, failed = { failed++ }, dropped = { dropped++ }) { }
-        idle { failed == 1 }
+        idleUntil("c's load failed") { failed == 1 }
         assertEquals(1, dropped)
     }
 
     @Test
     fun canceledRenderCallsNeitherCallback() {
-        val proceed = CountDownLatch(1)
+        val proceed = gate()
         var calls = 0
         val job = store.render("a", listOf("a"), {
-            proceed.await(5, TimeUnit.SECONDS)
+            proceed.await()
             FakeDetail("a")
         }, { it }, failed = { calls++ }) { calls++ }
         job.cancel()
         store.clear()
         proceed.countDown()
-        idle { job.isCompleted }
-        idle()
+        // The callbacks run within the render's job: none can come once it ended.
+        idleUntil("the canceled render ended") { job.isCompleted }
         assertEquals(0, calls)
     }
 

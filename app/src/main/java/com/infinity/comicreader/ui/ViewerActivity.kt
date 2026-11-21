@@ -2417,7 +2417,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         adapter?.refreshTurns()
         // A lock let go first: a turn to landscape asked for after it wins.
         updateImageLock()
-        spreadRotation.show(widePageShown(), prefs.widePages == WidePages.ORIENTATION, landscape(), screenOrientation(), unsure)?.let { requestedOrientation = it }
+        spreadRotation.show(widePageShown(), prefs.widePages == WidePages.ORIENTATION, landscape(), screenOrientation(), unsure)?.let { requestTurn(it) }
         adapter?.turned = spreadRotation.held >= 0
         watchUpright()
     }
@@ -2467,8 +2467,13 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         return { item -> imageTurn.turns(widePageOf(item), prefs.widePages == WidePages.IMAGE, sideways()) }
     }
 
+    /** Requests [orientation] for [spreadRotation], unless a page drawn turned holds the lock, whose end hands the reader's own back. */
+    private fun requestTurn(orientation: Int) {
+        if (imageTurn.locked < 0) requestedOrientation = orientation
+    }
+
     private fun upright(): UprightWatch = uprightWatch ?: UprightWatch(this) {
-        spreadRotation.settled()?.let { requestedOrientation = it }
+        spreadRotation.settled()?.let { requestTurn(it) }
         watchUpright()
     }.also { uprightWatch = it }
 
@@ -2479,7 +2484,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
     private fun watchUpright() {
         val needed = spreadRotation.watching && started
         val auto = needed && autoRotate()
-        if (needed && !auto && spreadRotation.keeping) spreadRotation.settled()?.let { requestedOrientation = it }
+        if (needed && !auto && spreadRotation.keeping) spreadRotation.settled()?.let { requestTurn(it) }
         if (auto) upright().enabled = true
         else uprightWatch?.enabled = false
     }

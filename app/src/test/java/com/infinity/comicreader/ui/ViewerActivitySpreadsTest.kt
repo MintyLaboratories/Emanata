@@ -350,6 +350,31 @@ class ViewerActivitySpreadsTest {
     }
 
     @Test
+    fun aPortraitKeptLyingFlatDoesNotUndoALaterRotateImageLock() {
+        val sensors = accelerometer()
+        val viewer = launch(book(numbered(1, 6), setOf("Tale 001-003")))
+        sizesRead()
+        repeat(2) { viewer.next() }
+        sensors.gravity(0f, 0f, 9.8f)
+        viewer.turn("land")
+        viewer.next()
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT, viewer.requestedOrientation)
+        viewer.turn("port")
+        // Switched to "Rotate image" and back on the wide page: drawn turned, the screen locked.
+        prefs.widePages = WidePages.IMAGE
+        idleFor(100)
+        viewer.findViewById<View>(R.id.btn_prev_page).performClick()
+        idle()
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_LOCKED, viewer.requestedOrientation)
+        // Picked up: the kept portrait is let go, but the lock stays.
+        sensors.gravity(0f, 9.8f, 0f)
+        idleFor(500)
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_LOCKED, viewer.requestedOrientation)
+        viewer.next()
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED, viewer.requestedOrientation)
+    }
+
+    @Test
     fun heldUpTheSensorTakesOverAtOnce() {
         val sensors = accelerometer()
         val viewer = launch(book(numbered(1, 6), setOf("Tale 001-003")))

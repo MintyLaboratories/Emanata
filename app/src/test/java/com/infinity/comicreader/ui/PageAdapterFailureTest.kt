@@ -170,7 +170,7 @@ class PageAdapterFailureTest {
         val source = StalledSource()
         val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false, preload = 0)
         adapter.onBindViewHolder(adapter.onCreateViewHolder(FrameLayout(context), 0), 0)
-        assertTrue(source.entered.await(5, TimeUnit.SECONDS))
+        assertTrue(source.entered.await(Waits.LIVENESS_MS, TimeUnit.MILLISECONDS))
 
         // The decode size changes while the old decode is still running, then it fails.
         adapter.fitMode = ZoomImageView.FitMode.WIDTH

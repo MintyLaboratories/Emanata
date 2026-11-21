@@ -6,6 +6,7 @@ import android.os.Looper
 import android.view.View
 import androidx.appcompat.widget.SearchView
 import androidx.preference.Preference
+import androidx.preference.PreferenceGroup
 import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
@@ -14,6 +15,7 @@ import com.infinity.comicreader.R
 import com.infinity.comicreader.data.Prefs
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -155,6 +157,28 @@ class SettingsSearchTest {
         shadowOf(Looper.getMainLooper()).idleFor(SettingFlash.HOLD_MS + SettingFlash.FADE_MS + 100, TimeUnit.MILLISECONDS)
         assertNull(fragment.flashing)
         controller.pause()
+    }
+
+    @Test
+    fun openingASettingNearTheEndScrollsToIt() {
+        val (_, fragment) = open()
+        (fragment.pref("section_cache") as CollapsibleCategory).performClick()
+        idle()
+        val list = fragment.listView
+        fun lay() {
+            list.measure(View.MeasureSpec.makeMeasureSpec(1080, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(800, View.MeasureSpec.EXACTLY))
+            list.layout(0, 0, 1080, 800)
+        }
+        lay()
+        fragment.reveal("pref_reset")
+        lay()
+        idle()
+        lay()
+        val position = (list.adapter as PreferenceGroup.PreferencePositionCallback).getPreferenceAdapterPosition("pref_reset")
+        assertTrue(position > 0)
+        val row = list.layoutManager!!.findViewByPosition(position)
+        assertNotNull(row)
+        assertTrue(row!!.bottom > 0 && row.top < list.height)
     }
 
     @Test

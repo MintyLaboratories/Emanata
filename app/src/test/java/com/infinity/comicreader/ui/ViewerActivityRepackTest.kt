@@ -21,6 +21,7 @@ import com.infinity.comicreader.files.WorkRates
 import com.infinity.comicreader.reader.Fixtures
 import com.infinity.comicreader.reader.Fixtures.entry
 import com.infinity.comicreader.testing.bookId
+import com.infinity.comicreader.testing.idleUntil
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -39,6 +40,7 @@ import org.robolectric.android.controller.ActivityController
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
 import java.io.File
+import java.time.Duration
 
 /** A solid archive opened in the reader: the offer to repack it as CBZ, and what each answer does. */
 @RunWith(RobolectricTestRunner::class)
@@ -76,18 +78,20 @@ class ViewerActivityRepackTest {
 
     private fun solid(name: String = "one.cbr") = File(dir, name).apply { writeBytes(Fixtures.rar4Bytes(*pages, solid = true)) }
 
-    /** Opens [book] and runs the main looper until it shows and its check for solid had time to end. */
+    /**
+     * Opens [book] and runs the main looper, a frame's time passing each round (sizes learned
+     * are kept after a delay), until it shows and all its open started, the check for solid
+     * with it, is done.
+     */
     private fun launch(book: File): ViewerActivity {
         val intent = Intent(context, ViewerActivity::class.java).putExtra(ViewerActivity.EXTRA_PATH, book.absolutePath)
         val controller = Robolectric.buildActivity(ViewerActivity::class.java, intent).setup()
         controllers += controller
         val viewer = controller.get()
         val progress = viewer.findViewById<View>(R.id.viewer_progress)
-        val deadline = System.currentTimeMillis() + 5_000
-        do {
-            Thread.sleep(10)
-            idle()
-        } while ((progress.visibility == View.VISIBLE || offer() == null) && System.currentTimeMillis() < deadline)
+        idleUntil("the book open and its check for solid done", step = { shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(16)) }) {
+            progress.visibility != View.VISIBLE && viewer.openSettled()
+        }
         return viewer
     }
 
@@ -161,11 +165,7 @@ class ViewerActivityRepackTest {
         assertFalse(OpenBooks.isOpen(book.absolutePath))
         assertTrue(Prefs(context).compactInPlace)
         val cbz = File(dir, "one.cbz")
-        repeat(500) {
-            idle()
-            if (FileWork.operations.value.isNotEmpty() && FileWork.operations.value.all { it.outcome != null }) return@repeat
-            Thread.sleep(10)
-        }
+        idleUntil("the repack done") { FileWork.operations.value.isNotEmpty() && FileWork.operations.value.all { it.outcome != null } }
         val status = FileWork.operations.value.single()
         assertEquals(FileWork.Kind.REPACK, status.kind)
         assertTrue("${status.outcome}", status.outcome is FileWork.Outcome.Done)
@@ -185,11 +185,7 @@ class ViewerActivityRepackTest {
         launch(book)
         val dialog = offer() ?: throw AssertionError("no offer")
         val line = dialog.findViewById<TextView>(R.id.convert_estimate)!!
-        repeat(300) {
-            idle()
-            if (line.text.toString() != context.getString(R.string.takes_estimating)) return@repeat
-            Thread.sleep(10)
-        }
+        idleUntil("the estimate") { line.text.toString() != context.getString(R.string.takes_estimating) }
         assertEquals(View.VISIBLE, line.visibility)
         val away = TimeText.span(context, 180 * WorkRates.BACK_SLOWDOWN)
         assertEquals(context.getString(R.string.takes_away, context.getString(R.string.takes_minutes, 3), away), line.text.toString())

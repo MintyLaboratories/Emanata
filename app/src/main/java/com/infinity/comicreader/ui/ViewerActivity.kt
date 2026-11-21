@@ -2424,7 +2424,22 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
 
     /** Locks the screen while the page on screen is drawn turned ([imageTurn]); lets it go back to the reader's own orientation otherwise. */
     private fun updateImageLock() {
-        imageTurn.show(widePageShown(), prefs.widePages == WidePages.IMAGE, landscape(), spreadRotation.user)?.let { requestedOrientation = it }
+        imageTurn.show(widePageShown(), prefs.widePages == WidePages.IMAGE, sideways(), spreadRotation.user)?.let { requestedOrientation = it }
+    }
+
+    /**
+     * True where no page is drawn turned ([ImageTurn.turns]): in a landscape window, on a
+     * landscape display whatever part of it the window takes, and in a window sharing the
+     * screen, where the system ignores the lock.
+     */
+    private fun sideways(): Boolean = landscape() || isInMultiWindowMode || displayLandscape(shownDisplay())
+
+    /** The window's shape or mode changed: pages are turned, and the screen locked, as [sideways] now says. */
+    private fun windowChanged() {
+        if (source == null) return
+        updateImageLock()
+        // A resize shows the pages again; a window that kept its size turns them here, once laid out.
+        pager.post { adapter?.refreshTurns() }
     }
 
     /**
@@ -2442,7 +2457,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
     /** The items drawn turned in paged reading ([PageAdapter.turnsImage]): wide pages with "Rotate image"; null for none. */
     private fun imageTurns(): ((Int) -> Boolean)? {
         if (mode != MODE_PAGED || prefs.widePages != WidePages.IMAGE) return null
-        return { item -> imageTurn.turns(widePageOf(item), prefs.widePages == WidePages.IMAGE, landscape()) }
+        return { item -> imageTurn.turns(widePageOf(item), prefs.widePages == WidePages.IMAGE, sideways()) }
     }
 
     private fun upright(): UprightWatch = uprightWatch ?: UprightWatch(this) {
@@ -2468,10 +2483,13 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
 
     /** The fixed orientation the display is in now, from its rotation and shape (not the window's, which may be a part of it). */
     private fun screenOrientation(): Int {
-        @Suppress("DEPRECATION")
-        val display = window.decorView.display ?: windowManager.defaultDisplay
+        val display = shownDisplay()
         return SpreadRotation.fixedOrientation(display?.rotation ?: -1, displayLandscape(display), reverseDefaultRotation)
     }
+
+    /** The display the reader shows on. */
+    @Suppress("DEPRECATION")
+    private fun shownDisplay(): android.view.Display? = window.decorView.display ?: windowManager.defaultDisplay
 
     /** True when [display] is wider than tall, whatever part of it the reader's window takes. */
     private fun displayLandscape(display: android.view.Display?): Boolean {
@@ -2775,10 +2793,13 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
             syncSheet()
         }
         // In landscape no page is drawn turned, so none locks the screen.
-        if (source != null) updateImageLock()
-        // Pages turn in portrait only: a resize shows them again; a window that kept its size, here once laid out.
-        pager.post { adapter?.refreshTurns() }
+        windowChanged()
         sheetDialog?.behavior?.peekHeight = sheetPeek()
+    }
+
+    override fun onMultiWindowModeChanged(isInMultiWindowMode: Boolean, newConfig: Configuration) {
+        super.onMultiWindowModeChanged(isInMultiWindowMode, newConfig)
+        windowChanged()
     }
 
     private fun pageToItem(page: Int) = layout.itemOf(page)

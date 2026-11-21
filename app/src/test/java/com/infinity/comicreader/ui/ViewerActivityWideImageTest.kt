@@ -118,6 +118,11 @@ class ViewerActivityWideImageTest {
         idle()
     }
 
+    private fun ViewerActivity.previous() {
+        findViewById<View>(R.id.btn_prev_page).performClick()
+        idle()
+    }
+
     /** The holder of item [position], once bound. */
     private fun ViewerActivity.holder(position: Int = pager().currentItem): PageAdapter.PageHolder? =
         (pager().getChildAt(0) as RecyclerView).findViewHolderForAdapterPosition(position) as? PageAdapter.PageHolder
@@ -231,6 +236,30 @@ class ViewerActivityWideImageTest {
         assertEquals(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED, viewer.requestedOrientation)
         assertEquals(0, viewer.turnOf())
         viewer.turn("port")
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_LOCKED, viewer.requestedOrientation)
+        assertEquals(1, viewer.turnOf())
+    }
+
+    @Test
+    fun inSplitScreenNothingTurnsOrLocks() {
+        val viewer = launch()
+        repeat(2) { viewer.next() }
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_LOCKED, viewer.requestedOrientation)
+        // A portrait half of the screen, where the system ignores a lock.
+        shadowOf(viewer).setInMultiWindowMode(true)
+        viewer.onMultiWindowModeChanged(true, viewer.resources.configuration)
+        idleFor(100)
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED, viewer.requestedOrientation)
+        assertEquals(0, viewer.turnOf())
+        viewer.next()
+        viewer.previous()
+        assertEquals("3 / 6", viewer.indicator())
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED, viewer.requestedOrientation)
+        assertEquals(0, viewer.turnOf())
+        // The whole screen again: the page turns, and the screen locks.
+        shadowOf(viewer).setInMultiWindowMode(false)
+        viewer.onMultiWindowModeChanged(false, viewer.resources.configuration)
+        idleFor(100)
         assertEquals(ActivityInfo.SCREEN_ORIENTATION_LOCKED, viewer.requestedOrientation)
         assertEquals(1, viewer.turnOf())
     }

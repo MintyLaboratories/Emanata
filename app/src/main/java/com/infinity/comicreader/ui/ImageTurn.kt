@@ -20,17 +20,21 @@ class ImageTurn {
     /** The page the reader picked an orientation on while locked, or -1. */
     private var declined = -1
 
-    /** True when wide page [page] (-1 for none) is drawn turned, with the setting [enabled], the layout in [landscape] or not. */
-    fun turns(page: Int, enabled: Boolean, landscape: Boolean): Boolean = enabled && !landscape && page >= 0
+    /**
+     * True when wide page [page] (-1 for none) is drawn turned, with the setting [enabled], the
+     * screen [sideways] or not: a landscape window or display, or a window sharing the screen,
+     * where no lock holds.
+     */
+    fun turns(page: Int, enabled: Boolean, sideways: Boolean): Boolean = enabled && !sideways && page >= 0
 
     /**
      * Page [widePage] shows (a wide page shown whole, or -1 for anything else), with the
-     * setting [enabled] or not, the layout in [landscape] or not, the reader's own
+     * setting [enabled] or not, the screen [sideways] or not ([turns]), the reader's own
      * orientation [user]: the orientation to request now, or null to leave it as is.
      */
-    fun show(widePage: Int, enabled: Boolean, landscape: Boolean, user: Int): Int? {
+    fun show(widePage: Int, enabled: Boolean, sideways: Boolean, user: Int): Int? {
         if (widePage != declined) declined = -1
-        val want = if (turns(widePage, enabled, landscape) && widePage != declined) widePage else -1
+        val want = if (turns(widePage, enabled, sideways) && widePage != declined) widePage else -1
         val wasLocked = locked >= 0
         locked = want
         return when {

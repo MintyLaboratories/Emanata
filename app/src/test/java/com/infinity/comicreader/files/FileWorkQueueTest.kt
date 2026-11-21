@@ -1,5 +1,6 @@
 package com.infinity.comicreader.files
 
+import com.infinity.comicreader.testing.awaitUntil
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -28,14 +29,6 @@ class FileWorkQueueTest {
 
     private fun status(id: Long) = FileWork.operations.value.first { it.id == id }
 
-    private fun waitFor(what: () -> Boolean) {
-        repeat(500) {
-            if (what()) return
-            Thread.sleep(5)
-        }
-        throw AssertionError("never came: ${FileWork.operations.value}")
-    }
-
     /** An operation that runs until [go] lets it end, counting itself in [running] meanwhile. */
     private fun held(name: String, go: Semaphore, running: AtomicInteger, most: AtomicInteger, log: MutableList<String>): Long =
         FileWork.start(FileWork.Kind.COPY, name) {
@@ -55,20 +48,20 @@ class FileWorkQueueTest {
         val a = held("a", go, running, most, log)
         val b = held("b", go, running, most, log)
         val c = held("c", go, running, most, log)
-        waitFor { log.size == 1 }
+        awaitUntil("a to start") { log.size == 1 }
         assertTrue(status(a).running)
         assertTrue(status(b).waiting)
         assertTrue(status(c).waiting)
         assertTrue(FileWork.busy)
 
         go.release()
-        waitFor { log.size == 2 }
+        awaitUntil("b to start") { log.size == 2 }
         assertEquals(FileWork.Outcome.Done(null), status(a).outcome)
         assertTrue(status(b).running)
         go.release()
-        waitFor { log.size == 3 }
+        awaitUntil("c to start") { log.size == 3 }
         go.release()
-        waitFor { status(c).outcome != null }
+        awaitUntil("c to end") { status(c).outcome != null }
         assertEquals(listOf("a", "b", "c"), log.toList())
         assertEquals(1, most.get())
         assertFalse(FileWork.busy)
@@ -83,13 +76,13 @@ class FileWorkQueueTest {
         held("a", go, running, most, log)
         val b = FileWork.start(FileWork.Kind.DELETE, "b", count = 3) { throw AssertionError("never runs") }
         val c = held("c", go, running, most, log)
-        waitFor { log.size == 1 }
+        awaitUntil("a to start") { log.size == 1 }
         FileWork.cancel(b)
         assertEquals(FileWork.Outcome.Canceled(0, 3), status(b).outcome)
         go.release()
-        waitFor { log.size == 2 }
+        awaitUntil("c to start") { log.size == 2 }
         go.release()
-        waitFor { status(c).outcome != null }
+        awaitUntil("c to end") { status(c).outcome != null }
         assertEquals(listOf("a", "c"), log.toList())
     }
 
@@ -108,7 +101,7 @@ class FileWorkQueueTest {
         FileWork.cancel(b)
         FileWork.cancel(a)
         go.release()
-        waitFor { status(a).outcome != null }
+        awaitUntil("a to end") { status(a).outcome != null }
         assertEquals(listOf("unrun b"), log.toList())
     }
 
@@ -117,13 +110,13 @@ class FileWorkQueueTest {
         val started = Semaphore(0)
         val a = FileWork.start(FileWork.Kind.COPY, "a") { p ->
             started.release()
-            while (p.alive) Thread.sleep(2)
+            awaitUntil("a's cancel") { !p.alive }
             throw CancellationException()
         }
         val b = FileWork.start(FileWork.Kind.MOVE, "b") { FileWork.Outcome.Done(null) }
         started.acquire()
         FileWork.cancel(a)
-        waitFor { status(b).outcome != null }
+        awaitUntil("b to end") { status(b).outcome != null }
         assertEquals(FileWork.Outcome.Canceled(), status(a).outcome)
         assertEquals(FileWork.Outcome.Done(null), status(b).outcome)
     }
@@ -133,13 +126,13 @@ class FileWorkQueueTest {
         val started = Semaphore(0)
         val a = FileWork.start(FileWork.Kind.COPY, "a") { p ->
             started.release()
-            while (p.alive) Thread.sleep(2)
+            awaitUntil("a's cancel") { !p.alive }
             throw CancellationException()
         }
         val b = FileWork.start(FileWork.Kind.COPY, "b") { FileWork.Outcome.Done(null) }
         started.acquire()
         FileWork.cancel()
-        waitFor { status(b).outcome != null }
+        awaitUntil("b to end") { status(b).outcome != null }
         assertTrue(status(a).outcome is FileWork.Outcome.Canceled)
         assertEquals(FileWork.Outcome.Done(null), status(b).outcome)
     }
@@ -152,12 +145,12 @@ class FileWorkQueueTest {
             go.acquire()
             FileWork.Outcome.Done(null)
         }
-        waitFor { status(a).outcome != null && status(b).running }
+        awaitUntil("a to end and b to run") { status(a).outcome != null && status(b).running }
         FileWork.acknowledge(a)
         FileWork.acknowledge(b)
         assertEquals(listOf(b), FileWork.operations.value.map { it.id })
         go.release()
-        waitFor { status(b).outcome != null }
+        awaitUntil("b to end") { status(b).outcome != null }
         FileWork.acknowledge(b)
         assertTrue(FileWork.operations.value.isEmpty())
     }
@@ -194,7 +187,7 @@ class FileWorkQueueTest {
         assertFalse(s.stoppable)
         assertEquals(FileWork.Status(FileWork.Kind.COPY, "b", null, id = b), status(b))
         go.release()
-        waitFor { status(b).outcome != null }
+        awaitUntil("b to end") { status(b).outcome != null }
     }
 
     @Test
@@ -225,7 +218,7 @@ class FileWorkQueueTest {
             stage.acquire()
             assertEquals(FileWork.Since(8_000L, 0, 0.5, front = false), status(id).since)
             go.release()
-            waitFor { status(id).outcome != null }
+            awaitUntil("the job to end") { status(id).outcome != null }
         } finally {
             FileWork.inFront = { true }
             FileWork.clock = { System.nanoTime() / 1_000_000 }

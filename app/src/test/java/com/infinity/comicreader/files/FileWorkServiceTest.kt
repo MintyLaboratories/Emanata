@@ -4,6 +4,8 @@ import android.app.Application
 import android.content.Intent
 import android.os.Looper
 import androidx.test.core.app.ApplicationProvider
+import com.infinity.comicreader.testing.awaitUntil
+import com.infinity.comicreader.testing.idleUntil
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -37,19 +39,6 @@ class FileWorkServiceTest {
         FileWork.reset()
     }
 
-    private fun idle() = repeat(10) {
-        shadowOf(Looper.getMainLooper()).idle()
-        Thread.sleep(20)
-    }
-
-    private fun waitFor(done: () -> Boolean) {
-        repeat(300) {
-            idle()
-            if (done()) return
-        }
-        throw AssertionError("not yet: ${FileWork.operations.value}")
-    }
-
     @Test
     fun startingAnOperationStartsTheServiceWhichHoldsTheDeviceAwakeUntilItEnds() {
         val started = ArrayList<Unit>()
@@ -69,14 +58,15 @@ class FileWorkServiceTest {
 
         val controller = Robolectric.buildService(FileWorkService::class.java, Intent(context, FileWorkService::class.java)).create().startCommand(0, 1)
         val service = controller.get()
-        idle()
+        // The operation holds until go: starting the service put it in the foreground and took the wake lock.
+        shadowOf(Looper.getMainLooper()).idle()
         assertNotNull(shadowOf(service).lastForegroundNotification)
         val lock = ShadowPowerManager.getLatestWakeLock()
         assertTrue(lock.isHeld)
         assertFalse(shadowOf(service).isStoppedBySelf)
 
         go.release()
-        waitFor { shadowOf(service).isStoppedBySelf }
+        idleUntil("the service to stop itself") { shadowOf(service).isStoppedBySelf }
         assertFalse(lock.isHeld)
         assertTrue(shadowOf(service).isForegroundStopped)
     }
@@ -84,12 +74,12 @@ class FileWorkServiceTest {
     @Test
     fun cancelFromTheNotificationCancelsTheOperation() {
         FileWork.start(FileWork.Kind.COPY, "big.cbz") { p ->
-            while (p.alive) Thread.sleep(5)
+            awaitUntil("the cancel") { !p.alive }
             throw java.util.concurrent.CancellationException()
         }
         val controller = Robolectric.buildService(FileWorkService::class.java, Intent(context, FileWorkService::class.java)).create().startCommand(0, 1)
         controller.withIntent(Intent(context, FileWorkService::class.java).setAction("cancel")).startCommand(0, 2)
-        waitFor { FileWork.operations.value.firstOrNull()?.outcome != null }
+        idleUntil("the operation to end") { FileWork.operations.value.firstOrNull()?.outcome != null }
         assertEquals(FileWork.Outcome.Canceled(), FileWork.operations.value.firstOrNull()?.outcome)
     }
 

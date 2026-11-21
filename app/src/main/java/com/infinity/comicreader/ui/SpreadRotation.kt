@@ -3,9 +3,9 @@ package com.infinity.comicreader.ui
 import android.content.pm.ActivityInfo
 
 /**
- * "Rotate for spreads": holds the screen in landscape, either way up, from when a wide
- * page shows whole until a page that is not wide shows; then the reader's own
- * orientation ([user]) is back. Wide pages in a row keep it held. An orientation the
+ * The wide-pages setting's "Change orientation": holds the screen in landscape, either
+ * way up, from when a wide page shows whole until a page that is not wide shows; then
+ * the reader's own orientation ([user]) is back. Wide pages in a row keep it held. An orientation the
  * reader picks meanwhile wins, and the page it was picked on is not turned for again.
  * While held, the layout follows the orientation that comes back ([layoutLandscape]),
  * so a turn made only for one page never re-pairs the pages around it. Free of the

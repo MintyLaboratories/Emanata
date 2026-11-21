@@ -652,7 +652,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   is not wide shows; then the reader's own orientation is back. Lying flat,
   where the sensor cannot tell which way is up, the screen turns back to the
   way it was and stays so until the device is picked up. *Do nothing* shows it
-  as it is. In landscape and in split screen nothing turns.
+  as it is. In continuous reading, in landscape and in split screen nothing
+  turns.
 - **Page thumbnails:** grid picker to jump straight to any page.
 - **Crop:** crop the current page to a PNG.
 - **Reading direction:** left-to-right, right-to-left (left/right tap zones

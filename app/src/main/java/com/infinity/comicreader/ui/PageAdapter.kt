@@ -1098,12 +1098,14 @@ class PageAdapter(
 
     /**
      * The box two pages shown as one ([ZoomImageView.joinWith]) fit into at fit screen: the
-     * item's width and the one height of [key]'s pair, when it has one ([fitBoxOf]).
+     * item's width (its height when the picture is turned) and the one height of [key]'s
+     * pair, when it has one ([fitBoxOf]).
      */
     private fun joinedBoxOf(key: PageKey): IntArray? {
         val t = key.target
         if (fitOf(key.page) != ZoomImageView.FitMode.SCREEN || t.box == null || t.height <= 0) return null
-        return intArrayOf(itemSize()[0], t.height)
+        val across = if (turnOf(layout.itemOf(key.part)) != 0) 1 else 0
+        return intArrayOf(itemSize()[across], t.height)
     }
 
     /**

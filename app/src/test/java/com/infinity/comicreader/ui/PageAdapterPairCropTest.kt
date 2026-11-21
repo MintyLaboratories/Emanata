@@ -131,6 +131,23 @@ class PageAdapterPairCropTest {
     }
 
     @Test
+    fun aTurnedPictureOfTwoPagesFitsAcrossTheScreen() {
+        val source = PngSource(listOf(page(40, 60, 360, 540), page(20, 120, 380, 480)))
+        val adapter = PageAdapter(
+            source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false,
+            autoCrop = true, preload = 0,
+            pageLayout = PageLayout.of(listOf(intArrayOf(0, 1)), spread = true, rtl = false, joined = setOf(0))
+        )
+        adapter.turnsImage = { true }
+        val rv = recycler(adapter, 800, 1200)
+        idle(rv) { source.requests.count { it.second.box != null } >= 2 && rv.images().all { it.bitmap() != null && it.bitmap()!!.width > 16 } }
+        val height = source.requests.last { it.second.box != null }.second.height
+        // Drawn turned, the picture's box spans the screen's height, at the pair's one height.
+        for (image in rv.images()) assertArrayEquals(intArrayOf(1200, height), image.fitBox)
+        adapter.release()
+    }
+
+    @Test
     fun withoutAutoCropPagesFitTheirHalvesAndMeetAtTheGutter() {
         val source = PngSource(listOf(page(40, 60, 360, 540), page(20, 120, 380, 480)))
         val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false, twoPage = true, preload = 0)

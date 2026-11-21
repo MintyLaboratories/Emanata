@@ -18,6 +18,7 @@ import com.infinity.comicreader.data.ReaderLayout
 import com.infinity.comicreader.data.ResumeMode
 import com.infinity.comicreader.data.TwoPage
 import com.infinity.comicreader.reader.Fixtures
+import com.infinity.comicreader.testing.idleUntil
 import com.infinity.comicreader.testing.ref
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -64,11 +65,7 @@ class ViewerActivityFolderLayoutTest {
         val intent = Intent(context, ViewerActivity::class.java).putExtra(ViewerActivity.EXTRA_PATH, book.absolutePath)
         val viewer = Robolectric.buildActivity(ViewerActivity::class.java, intent).setup().get()
         val progress = viewer.findViewById<View>(R.id.viewer_progress)
-        val deadline = System.currentTimeMillis() + 5_000
-        do {
-            Thread.sleep(10)
-            idle()
-        } while (progress.visibility == View.VISIBLE && System.currentTimeMillis() < deadline)
+        idleUntil("the book open") { progress.visibility != View.VISIBLE }
         return viewer
     }
 
@@ -168,11 +165,7 @@ class ViewerActivityFolderLayoutTest {
         ReaderSheet(viewer).tap(R.id.btn_scope_all)
         assertEquals(false, viewer.paged())
         val strip = viewer.findViewById<RecyclerView>(R.id.viewer_vertical)
-        val deadline = System.currentTimeMillis() + 5_000
-        while ((strip.adapter?.itemCount ?: 0) <= 4 && System.currentTimeMillis() < deadline) {
-            Thread.sleep(10)
-            idle()
-        }
+        idleUntil("the next chapter laid in behind") { (strip.adapter?.itemCount ?: 0) > 4 }
         assertEquals(8, strip.adapter?.itemCount)
     }
 }

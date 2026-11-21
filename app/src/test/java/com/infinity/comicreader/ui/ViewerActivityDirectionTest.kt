@@ -20,6 +20,7 @@ import com.infinity.comicreader.data.ReadingDirection
 import com.infinity.comicreader.data.ResumeMode
 import com.infinity.comicreader.reader.DirectionDetection
 import com.infinity.comicreader.reader.Fixtures
+import com.infinity.comicreader.testing.idleUntil
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
@@ -74,11 +75,7 @@ class ViewerActivityDirectionTest {
 
     private fun awaitOpen(viewer: ViewerActivity) {
         val progress = viewer.findViewById<View>(R.id.viewer_progress)
-        val deadline = System.currentTimeMillis() + 5_000
-        do {
-            Thread.sleep(10)
-            shadowOf(Looper.getMainLooper()).idle()
-        } while (progress.visibility == View.VISIBLE && System.currentTimeMillis() < deadline)
+        idleUntil("the book open") { progress.visibility != View.VISIBLE }
         assertEquals(View.GONE, progress.visibility)
     }
 
@@ -124,11 +121,7 @@ class ViewerActivityDirectionTest {
         }
         val viewer = launch(book).get()
         awaitOpen(viewer)
-        val deadline = System.currentTimeMillis() + 5_000
-        while (viewer.pagerDirection() != View.LAYOUT_DIRECTION_RTL && System.currentTimeMillis() < deadline) {
-            Thread.sleep(10)
-            shadowOf(Looper.getMainLooper()).idle()
-        }
+        idleUntil("the book turned right to left") { viewer.pagerDirection() == View.LAYOUT_DIRECTION_RTL }
         assertEquals(View.LAYOUT_DIRECTION_RTL, viewer.pagerDirection())
         assertEquals("Right-to-left (from ComicInfo)", viewer.hint().text.toString())
         // Kept with the library's facts, so the next open knows at once.
@@ -269,11 +262,7 @@ class ViewerActivityDirectionTest {
     }
 
     private fun awaitDirection(viewer: ViewerActivity, direction: Int) {
-        val deadline = System.currentTimeMillis() + 5_000
-        while (viewer.pagerDirection() != direction && System.currentTimeMillis() < deadline) {
-            Thread.sleep(10)
-            shadowOf(Looper.getMainLooper()).idle()
-        }
+        idleUntil("the book turned to direction $direction") { viewer.pagerDirection() == direction }
         assertEquals(direction, viewer.pagerDirection())
     }
 

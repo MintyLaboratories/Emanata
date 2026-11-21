@@ -1,7 +1,6 @@
 package com.infinity.comicreader.ui
 
 import android.app.Application
-import android.os.Looper
 import android.view.View
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
@@ -14,6 +13,7 @@ import com.infinity.comicreader.files.ConvertRates
 import com.infinity.comicreader.files.FileWork
 import com.infinity.comicreader.files.FileWorkService
 import com.infinity.comicreader.files.WorkRates
+import com.infinity.comicreader.testing.idleUntil
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -23,7 +23,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.Shadows.shadowOf
 import org.robolectric.android.controller.ActivityController
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
@@ -100,14 +99,9 @@ class ConvertTimesTest {
     private fun takes(minutes: Int) = context.getString(R.string.takes_away, context.getString(R.string.takes_minutes, minutes), TimeText.span(context, minutes * 60 * WorkRates.BACK_SLOWDOWN))
 
     private fun estimateLine(): TextView {
-        val dialog = ShadowDialog.getLatestDialog() as AlertDialog
-        repeat(300) {
-            shadowOf(Looper.getMainLooper()).idle()
-            val line = dialog.findViewById<TextView>(R.id.convert_estimate)!!
-            if (line.text.toString() != context.getString(R.string.takes_estimating)) return line
-            Thread.sleep(10)
-        }
-        throw AssertionError("never estimated")
+        val line = (ShadowDialog.getLatestDialog() as AlertDialog).findViewById<TextView>(R.id.convert_estimate)!!
+        idleUntil("the estimate") { line.text.toString() != context.getString(R.string.takes_estimating) }
+        return line
     }
 
     @Test
@@ -139,11 +133,7 @@ class ConvertTimesTest {
         val line = dialog.findViewById<TextView>(R.id.convert_estimate)!!
         val failed = CompletableFuture<List<Double>>().apply { completeExceptionally(IOException("unreadable")) }
         TimeText.show(line, controller.get().lifecycleScope, failed)
-        repeat(300) {
-            shadowOf(Looper.getMainLooper()).idle()
-            if (line.visibility == View.GONE) return@repeat
-            Thread.sleep(10)
-        }
+        idleUntil("the estimate line hidden") { line.visibility == View.GONE }
         assertEquals(View.GONE, line.visibility)
     }
 

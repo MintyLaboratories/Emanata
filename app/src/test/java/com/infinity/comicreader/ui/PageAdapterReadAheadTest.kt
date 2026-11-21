@@ -10,6 +10,8 @@ import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.reader.PageSource
 import com.infinity.comicreader.reader.Target
+import com.infinity.comicreader.testing.Waits
+import com.infinity.comicreader.testing.idleUntil
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
 import org.junit.Assert.assertEquals
@@ -23,6 +25,7 @@ import org.robolectric.annotation.Config
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 /** Reading ahead waits for the first pages shown after opening, then runs beside the pages shown. */
 @RunWith(RobolectricTestRunner::class)
@@ -36,12 +39,23 @@ class PageAdapterReadAheadTest {
         /** A copy, safe to read while decoders add to it. */
         val started: List<Int> get() = synchronized(loads) { loads.toList() }
         private val held = ConcurrentHashMap<Int, CountDownLatch>()
+        private val waiting = AtomicInteger()
+
+        /** How many loads wait at their latch now. */
+        val blocked: Int get() = waiting.get()
 
         fun hold(page: Int) = CountDownLatch(1).also { held[page] = it }
 
         override fun loadPage(index: Int, target: Target): Bitmap {
             synchronized(loads) { loads += index }
-            held[index]?.await(5, TimeUnit.SECONDS)
+            held[index]?.let { latch ->
+                waiting.incrementAndGet()
+                try {
+                    latch.await(Waits.LIVENESS_MS, TimeUnit.MILLISECONDS)
+                } finally {
+                    waiting.decrementAndGet()
+                }
+            }
             return Bitmap.createBitmap(4, 6, Bitmap.Config.ARGB_8888)
         }
 
@@ -50,22 +64,18 @@ class PageAdapterReadAheadTest {
 
     private val context get() = ApplicationProvider.getApplicationContext<Application>()
 
-    private fun idleUntil(done: () -> Boolean) {
-        val deadline = System.currentTimeMillis() + 5_000
-        while (!done() && System.currentTimeMillis() < deadline) {
-            Thread.sleep(10)
-            shadowOf(Looper.getMainLooper()).idle()
+    /**
+     * Idles until no load can start before the test opens a latch: every decode under way, or
+     * every decoder, waits at one. Decodes are asked for on the main thread only, and one asked
+     * for is under way until it ends; given a decoder, it starts, and is listed.
+     */
+    private fun stalled(adapter: PageAdapter, source: HeldSource) =
+        idleUntil("every decode under way, or every decoder, to wait at a held page") {
+            source.blocked == adapter.running || source.blocked == PageAdapter.decodeThreads
         }
-    }
 
-    /** Lets work that is not due run for a while, then checks [check] still holds. */
-    private fun stillAfterAWhile(check: () -> Boolean) {
-        repeat(20) {
-            Thread.sleep(10)
-            shadowOf(Looper.getMainLooper()).idle()
-        }
-        assertTrue(check())
-    }
+    /** Idles until no decode is under way: each one's end handled on the main thread, where decodes are asked for. */
+    private fun settled(adapter: PageAdapter) = idleUntil("the decodes under way to end") { !adapter.decoding }
 
     @Test
     fun theFirstPageShownDecodesAloneThenReadingAheadRunsBesideTurns() {
@@ -75,18 +85,19 @@ class PageAdapterReadAheadTest {
         val holder = adapter.onCreateViewHolder(FrameLayout(context), 0)
         adapter.onBindViewHolder(holder, 0)
 
-        idleUntil { source.started.isNotEmpty() }
-        stillAfterAWhile { source.started.toList() == listOf(0) }
+        idleUntil("page 0's decode to start") { source.started.isNotEmpty() }
+        stalled(adapter, source)
+        assertEquals(listOf(0), source.started.toList())
 
         first.countDown()
-        idleUntil { source.started.size >= 3 }
+        idleUntil("pages 1 and 2 to start") { source.started.size >= 3 }
         assertEquals(listOf(0, 1, 2), source.started.toList().sorted())
 
         // Turned to a page not read yet: its decode and the next ones run at once.
         val later = source.hold(5)
         val next = adapter.onCreateViewHolder(FrameLayout(context), 0)
         adapter.onBindViewHolder(next, 5)
-        idleUntil { 6 in source.started }
+        idleUntil("page 6 to start") { 6 in source.started }
         assertTrue(5 in source.started)
         later.countDown()
         adapter.release()
@@ -104,7 +115,7 @@ class PageAdapterReadAheadTest {
 
         override fun loadPage(index: Int, target: Target): Bitmap {
             synchronized(loads) { loads += index to target }
-            if (holds(index, target)) gate.await(5, TimeUnit.SECONDS)
+            if (holds(index, target)) gate.await(Waits.LIVENESS_MS, TimeUnit.MILLISECONDS)
             return Bitmap.createBitmap(40, 60, Bitmap.Config.ARGB_8888)
         }
 
@@ -125,15 +136,8 @@ class PageAdapterReadAheadTest {
         rv.layout(0, 0, 1200, 800)
     }
 
-    /** Idles [rv] until [done] or a while passes, laying it out again meanwhile, as a window would after items change. */
-    private fun idleUntil(rv: RecyclerView, done: () -> Boolean = { false }, ms: Long = 5_000) {
-        val deadline = System.currentTimeMillis() + ms
-        while (!done() && System.currentTimeMillis() < deadline) {
-            Thread.sleep(10)
-            shadowOf(Looper.getMainLooper()).idle()
-            layOut(rv)
-        }
-    }
+    /** Idles [rv] until [done], laying it out again meanwhile, as a window would after items change; throws naming [what] if it never holds. */
+    private fun idleLaidOut(rv: RecyclerView, what: String, done: () -> Boolean) = idleUntil(what, step = { layOut(rv) }, done = done)
 
     @Test
     fun withAutoCropReadingAheadWaitsForTheFirstPairsMeasureAndDecode() {
@@ -145,13 +149,20 @@ class PageAdapterReadAheadTest {
             pageLayout = PageLayout.of(listOf(intArrayOf(0, 1), intArrayOf(2, 3), intArrayOf(4, 5)), spread = true, rtl = false, joined = emptySet())
         )
         val rv = recycler(adapter)
-        idleUntil(rv, { source.started.any { it.first == 1 } })
-        // Page 0's measure ends meanwhile; nothing after the pair starts.
-        idleUntil(rv, ms = 300)
+        // A measure's end binds its one item again, then reads ahead if it may.
+        val changed = ArrayList<Int>()
+        adapter.registerAdapterDataObserver(object : RecyclerView.AdapterDataObserver() {
+            override fun onItemRangeChanged(positionStart: Int, itemCount: Int, payload: Any?) {
+                if (itemCount == 1) changed += positionStart
+            }
+        })
+        idleLaidOut(rv, "page 1's measure to start") { source.started.any { it.first == 1 } }
+        // Page 0's measure ends meanwhile; nothing after the pair starts, nor is asked for.
+        idleLaidOut(rv, "page 0's measure handled") { 0 in changed && adapter.running == 0 }
         assertTrue(source.started.toList().toString(), source.started.all { it.first <= 1 })
 
         source.open()
-        idleUntil(rv, { source.started.any { it.first >= 2 } })
+        idleLaidOut(rv, "reading ahead to start") { source.started.any { it.first >= 2 } }
         // The pair's own decodes, with their shared crop, came before reading ahead.
         val started = source.started
         val firstAhead = started.indexOfFirst { it.first >= 2 }
@@ -168,11 +179,13 @@ class PageAdapterReadAheadTest {
         val holder = adapter.onCreateViewHolder(FrameLayout(context), 0)
         adapter.onBindViewHolder(holder, 4)
         // Both decoders busy with the pages ahead: the one behind waits its turn.
-        idleUntil { source.started.size >= 3 }
-        stillAfterAWhile { source.started.toList().sorted() == listOf(4, 5, 6) }
+        idleUntil("pages 4 to 6 to start") { source.started.size >= 3 }
+        stalled(adapter, source)
+        assertEquals(listOf(4, 5, 6), source.started.toList().sorted())
         ahead.forEach { it.countDown() }
-        idleUntil { 3 in source.started }
-        stillAfterAWhile { source.started.toList().sorted() == listOf(3, 4, 5, 6) }
+        idleUntil("page 3 to start") { 3 in source.started }
+        settled(adapter)
+        assertEquals(listOf(3, 4, 5, 6), source.started.toList().sorted())
         adapter.release()
     }
 
@@ -194,10 +207,11 @@ class PageAdapterReadAheadTest {
         val ahead = source.hold(5)
         adapter.onBindViewHolder(adapter.onCreateViewHolder(FrameLayout(context), 0), 4)
         // Read ahead asks for 5, 6, then 3 behind; 6 and 3 wait for the decoder 5 holds.
-        idleUntil { 5 in source.started }
-        stillAfterAWhile { source.started == listOf(4, 5) }
+        idleUntil("page 5 to start") { 5 in source.started }
+        stalled(adapter, source)
+        assertEquals(listOf(4, 5), source.started)
         ahead.countDown()
-        idleUntil { source.started.size >= 4 }
+        idleUntil("pages 6 and 3 to start") { source.started.size >= 4 }
         assertEquals(listOf(4, 5, 6, 3), source.started)
         adapter.release()
     }
@@ -212,7 +226,7 @@ class PageAdapterReadAheadTest {
         )
         val rv = recycler(adapter)
         // After page 0, reading ahead asks for the crops of pair 1-2, then for page 3.
-        idleUntil(rv, { source.started.size >= 4 })
+        idleLaidOut(rv, "four loads to start") { source.started.size >= 4 }
         val started = source.started.take(4)
         assertEquals(started.toString(), listOf(0, 1, 2, 3), started.map { it.first })
         assertTrue(started.toString(), started.slice(1..2).all { it.second.box == null })
@@ -242,7 +256,7 @@ class PageAdapterReadAheadTest {
         // The pair's bind asks for its crop; the adapter is released before the main thread idles.
         adapter.onBindViewHolder(adapter.onCreateViewHolder(FrameLayout(context), adapter.getItemViewType(0)), 0)
         adapter.release()
-        idleUntil { source.closes > 0 }
+        idleUntil("the source closed") { source.closes > 0 }
         assertEquals(1, source.closes)
     }
 
@@ -252,8 +266,9 @@ class PageAdapterReadAheadTest {
         val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false, preload = 2)
         val holder = adapter.onCreateViewHolder(FrameLayout(context), 0)
         adapter.onBindViewHolder(holder, 4)
-        idleUntil { source.started.size >= 3 }
-        stillAfterAWhile { source.started.toList().sorted() == listOf(4, 5, 6) }
+        idleUntil("pages 4 to 6 to start") { source.started.size >= 3 }
+        settled(adapter)
+        assertEquals(listOf(4, 5, 6), source.started.toList().sorted())
         adapter.release()
     }
 
@@ -264,16 +279,18 @@ class PageAdapterReadAheadTest {
         val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false, preload = 0)
         val holder = adapter.onCreateViewHolder(FrameLayout(context), 0)
         adapter.onBindViewHolder(holder, 0)
-        idleUntil { source.started.isNotEmpty() }
+        idleUntil("page 0's decode to start") { source.started.isNotEmpty() }
         assertTrue(adapter.decoding)
         var idle = false
         val waiting = MainScope().launch {
             adapter.awaitIdle()
             idle = true
         }
-        stillAfterAWhile { !idle }
+        // Page 0 is held, so its decode cannot end: once the wait runs, it still waits.
+        shadowOf(Looper.getMainLooper()).idle()
+        assertFalse(idle)
         first.countDown()
-        idleUntil { idle }
+        idleUntil("the wait for idle to return") { idle }
         assertTrue(idle)
         assertFalse(adapter.decoding)
         waiting.cancel()
@@ -300,9 +317,11 @@ class PageAdapterReadAheadTest {
     private fun turnForward(adapter: PageAdapter, source: ScreenSource, from: Int, turns: Int, decodes: (Int) -> Int) {
         for (i in 0..turns) {
             adapter.onBindViewHolder(adapter.onCreateViewHolder(FrameLayout(context), 0), from + i)
-            idleUntil { source.total() >= decodes(i) && !adapter.decoding }
+            idleUntil("turn $i's decodes put away") { source.total() >= decodes(i) && !adapter.decoding }
         }
-        stillAfterAWhile { !adapter.decoding }
+        // Decodes are asked for on the main thread only: none is, once it idles again.
+        shadowOf(Looper.getMainLooper()).idle()
+        assertFalse(adapter.decoding)
     }
 
     @Test

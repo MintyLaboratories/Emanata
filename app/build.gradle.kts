@@ -104,6 +104,10 @@ android {
             it.forkEvery = 10
             it.maxParallelForks = providers.gradleProperty("testForks").map(String::toInt).getOrElse(2)
             it.timeout.set(Duration.ofMinutes(30))
+            // Java thread priorities ignored: Windows runs a below-normal thread only when no normal one
+            // waits, so on a busy machine the app's background readers (similar books, analysis) stall
+            // for minutes; Android's scheduler only weighs them less.
+            it.jvmArgs("-XX:-UseThreadPriorities")
         }
     }
 

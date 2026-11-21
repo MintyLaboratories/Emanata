@@ -9,6 +9,7 @@ import org.junit.Test
 import java.util.concurrent.CancellationException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.ceil
@@ -543,17 +544,25 @@ class ResamplerTest {
     fun aFailingBandStopsEveryWorkerAndThrows() {
         val done = AtomicInteger()
         val stop = AtomicBoolean()
+        val hung = AtomicReference<AssertionError>()
         assertThrows(IllegalStateException::class.java) {
             Resampler.inBands(1000, 4, { false }, stopped = stop) { _, _, _ ->
                 val n = done.incrementAndGet()
                 check(n != 3) { "band failed" }
-                // Bands after the failing one are held until it stopped the workers.
-                if (n > 3) awaitUntil("the failed band to stop the workers") { stop.get() }
+                // Bands after the failing one are held until it stopped the workers; a hold that gives up fails the test, not the worker.
+                if (n > 3 && hung.get() == null) {
+                    try {
+                        awaitUntil("the failed band to stop the workers") { stop.get() }
+                    } catch (e: AssertionError) {
+                        hung.compareAndSet(null, e)
+                    }
+                }
                 true
             }
         }
+        hung.get()?.let { throw it }
         // Each other worker then ends the one band it holds and takes no more: at most 6.
-        assertTrue("${done.get()}", done.get() <= 9)
+        assertTrue("${done.get()}", done.get() <= 6)
     }
 
     @Test

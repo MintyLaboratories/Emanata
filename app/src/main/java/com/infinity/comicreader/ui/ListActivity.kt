@@ -203,7 +203,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
 
     /** Above [fab]: a Paste bubble for each pick ([FileClipboard]) and a bubble for each operation queued. */
     internal lateinit var stack: OperationStack
-    private lateinit var fileActions: FileActions
+    internal lateinit var fileActions: FileActions
+        private set
     private lateinit var bookShare: BookShare
 
     /** Whether device items checked since the list was made are there, by path ([isThere]). */

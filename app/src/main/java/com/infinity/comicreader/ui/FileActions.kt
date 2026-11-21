@@ -25,6 +25,8 @@ import com.infinity.comicreader.net.ChangeRefused
 import com.infinity.comicreader.net.RemoteException
 import com.infinity.comicreader.util.AppDispatchers
 import com.infinity.comicreader.util.FileUtils
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -65,6 +67,19 @@ internal class FileActions(
 
     /** The operations' work, holding nothing of this screen; lambdas queued take it as a local. */
     private val jobs = FileJobs(activity, library, prefs)
+
+    private val planning = ArrayList<Job>()
+
+    /** Every planning of an operation this screen started (Pack, Paste and their questions), ended or not. */
+    internal val launched: List<Job> get() = planning
+
+    /** True while a planning of an operation started here still runs. */
+    internal val busy: Boolean get() = planning.any { !it.isCompleted }
+
+    /** Runs [block] on the screen's scope, kept in [launched]. */
+    private fun launchPlan(block: suspend CoroutineScope.() -> Unit) {
+        planning += activity.lifecycleScope.launch(block = block)
+    }
 
     init {
         activity.lifecycleScope.launch {
@@ -223,7 +238,7 @@ internal class FileActions(
             .setPositiveButton(if (compacted) R.string.more_pack_compacted else R.string.more_pack) { _, _ ->
                 asked.set(false)
                 onConfirmed()
-                activity.lifecycleScope.launch { planPack(folders, compacted) }
+                launchPlan { planPack(folders, compacted) }
             }
             .setNegativeButton(R.string.cancel) { _, _ -> asked.set(false) }
             .setOnCancelListener { asked.set(false) }
@@ -243,8 +258,8 @@ internal class FileActions(
         AlertDialog.Builder(activity)
             .setTitle(R.string.pack_unusual_title)
             .setMessage(activity.getString(R.string.pack_unusual_message, list))
-            .setPositiveButton(R.string.pack_unusual_yes) { _, _ -> activity.lifecycleScope.launch { planPack(folders, compacted, unusual, true) } }
-            .setNegativeButton(R.string.pack_unusual_no) { _, _ -> activity.lifecycleScope.launch { planPack(folders, compacted, unusual, false) } }
+            .setPositiveButton(R.string.pack_unusual_yes) { _, _ -> launchPlan { planPack(folders, compacted, unusual, true) } }
+            .setNegativeButton(R.string.pack_unusual_no) { _, _ -> launchPlan { planPack(folders, compacted, unusual, false) } }
             .setNeutralButton(R.string.cancel, null)
             .show()
     }
@@ -279,7 +294,7 @@ internal class FileActions(
                 }
             }
             setNeutralButton(R.string.clash_keep_both) { _, _ ->
-                activity.lifecycleScope.launch {
+                launchPlan {
                     val kept = withContext(AppDispatchers.io) { clashes.map { plan(it, keepBoth(it)) } }
                     startPack(plans + kept, compacted)
                 }
@@ -335,7 +350,7 @@ internal class FileActions(
         val items = if (clip.move) clip.items.filter { Transfer.parentOf(it.path) != targetDir } else clip.items
         if (items.isEmpty()) return toast(activity.getString(R.string.paste_already_here))
         pasting += clip.id
-        activity.lifecycleScope.launch {
+        launchPlan {
             try {
                 plan(clip, targetDir, items)
             } finally {

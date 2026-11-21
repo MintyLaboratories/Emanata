@@ -59,7 +59,9 @@ class LocationSheet : BottomSheetDialogFragment() {
     }
 
     private var list: LinearLayout? = null
-    private val spaceJobs = ArrayList<Job>()
+
+    /** Free space being asked for, a row each; tests wait on them. */
+    internal val spaceJobs = ArrayList<Job>()
 
     /** The rows shown, for tests. */
     internal val shownRoots = ArrayList<StorageRoot>()

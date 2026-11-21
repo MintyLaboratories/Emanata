@@ -26,6 +26,7 @@ import java.io.File
 import java.io.IOException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.FutureTask
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.thread
 import kotlin.random.Random
@@ -272,14 +273,16 @@ class DavFsTest {
             server.slow = true
             val gets = server.paths("GET").size
             val failure = AtomicReference<Throwable>()
+            val finished = AtomicBoolean()
             // A megabyte at the slow pace takes about a minute.
-            val reader = thread { runCatching { input.read(1L shl 20, ByteArray(1 shl 20), 0, 1 shl 20) }.onFailure { failure.set(it) } }
+            val reader = thread {
+                runCatching { input.read(1L shl 20, ByteArray(1 shl 20), 0, 1 shl 20) }.onSuccess { finished.set(true) }.onFailure { failure.set(it) }
+            }
             // Under way: the GET sent and its body coming in.
             awaitUntil("the read to take its body in") { server.paths("GET").size > gets && reader.stackTrace.any { it.methodName == "readBody" } }
             assertTrue(reader.isAlive)
-            val start = System.nanoTime()
             if (closeShare) fs.close() else input.close()
-            assertTrue("close waited", System.nanoTime() - start < 1_000_000_000L)
+            assertFalse("close waited for the read", finished.get())
             awaitUntil("the canceled read to end") { !reader.isAlive }
             assertFalse("read still going", reader.isAlive)
             val e = failure.get()

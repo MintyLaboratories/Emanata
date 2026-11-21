@@ -71,7 +71,7 @@ import kotlin.math.max
  * `adb shell am start-foreground-service -n <package>/com.infinity.comicreader.debug.AiCheckService
  *  --es model <path to .param, its .bin beside it> [--es do check|time|limits|sustain|all] [--es engines gpu,cpu]
  *  [--es tiles 128,192,256,384, or auto for the size it chose] [--es size 1000x1500] [--es small 300x420] [--ei reps 3] [--ei cooldown 10] [--ef cool <headroom>] [--ez fp16 true]
- *  [--ei threads 4] [--ei seconds 300] [--ez tune false]`
+ *  [--ei threads 4] [--ei seconds 300] [--ei rounds 1] [--ei idle 5] [--ez tune false]`
  *
  * or, for every model in a folder: `--es do survey --es dir <folder, searched for .param files> [--es size 1000x1500]
  *  [--ei cap 120] [--ef cool 0.85] [--ez fp16 true] [--ei threads 4]`
@@ -96,9 +96,13 @@ import kotlin.math.max
  *   `cool`, first waits for the thermal headroom to fall below it, up to [COOL_TIME_MAX_S].
  * - limits: a page whose time runs out falls back to exactly the Lanczos3 page; a page
  *   canceled after three tiles stops within one; a sample of each output saved as PNG.
- * - sustain (not part of all): pages of `size` back to back for `seconds`, through the gate
+ * - sustain (not part of all): per engine, `rounds` runs, each after a `cooldown` s pause
+ *   and an `idle` s baseline: pages of `size` back to back for `seconds`, through the gate
  *   reading heat and battery saver ([AiConditions]), each with its time, thermal status and
- *   headroom, until the time is up or the gate stops a page.
+ *   headroom, until the time is up or the gate stops a page (`stoppedBy`). Each run's energy
+ *   per page on battery alone is measured as ResampleCheckService's sustain measures it
+ *   ([EnergyMeter]: refused on a charger; valid only with the cable out, adb over Wi-Fi),
+ *   then the energy per page across rounds with its spread (`energy`).
  * - download: per catalog model or shader chain, deletes it from the app's store, downloads it
  *   (stopping once after `cut` bytes when given, then resuming), checks it is installed, and for
  *   an ncnn model opens it and runs one page of `size` within the default page time (a shader
@@ -165,6 +169,8 @@ class AiCheckService : Service() {
         val fp16 = intent?.getBooleanExtra("fp16", true) ?: true
         val threads = intent?.getIntExtra("threads", NativeResampler.threads)?.coerceIn(1, 16) ?: NativeResampler.threads
         val seconds = intent?.getIntExtra("seconds", 300)?.coerceIn(10, 3600) ?: 300
+        val rounds = intent?.getIntExtra("rounds", 1)?.coerceIn(1, 20) ?: 1
+        val idle = intent?.getIntExtra("idle", 5)?.coerceIn(1, 600) ?: 5
         val dir = intent?.getStringExtra("dir")?.let(::File)
         val cap = intent?.getIntExtra("cap", 120)?.coerceIn(5, 3600) ?: 120
         val cool = intent?.getFloatExtra("cool", COOL_HEADROOM)?.coerceIn(0.1f, 1f) ?: COOL_HEADROOM
@@ -243,7 +249,7 @@ class AiCheckService : Service() {
                         if (what == "check" || what == "all") seams(s, files, threads, small[0], small[1])
                         if (what == "time" || what == "all") time(s, tiles.ifEmpty { listOf(s.size) }, size[0], size[1], reps, cooldown, timeCool)
                         if (what == "limits" || what == "all") limits(s, size[0], size[1])
-                        if (what == "sustain") sustain(s, size[0], size[1], seconds)
+                        if (what == "sustain") sustain(s, size[0], size[1], seconds, rounds, cooldown, idle)
                     }
                     log(JSONObject().put("closed", if (gpu) "gpu" else "cpu").put("graphicsMb", graphicsKb() / 1024).put("rssMb", rssKb() / 1024))
                 }
@@ -400,27 +406,53 @@ class AiCheckService : Service() {
 
     // ------------------------------------------------------------------ sustain
 
-    private fun sustain(s: Session, w: Int, h: Int, seconds: Int) {
+    /**
+     * [rounds] runs of [s] on pages of [w] x [h] back to back for [seconds], each after a
+     * [cooldown] s pause and an [idle] s baseline ([EnergyMeter]); then the energy per page
+     * across rounds.
+     */
+    private fun sustain(s: Session, w: Int, h: Int, seconds: Int, rounds: Int, cooldown: Int, idle: Int) {
         val page = SyntheticPage.draw(w, h)
         val gate = AiConditions.gate(this)
-        val end = SystemClock.elapsedRealtime() + seconds * 1000L
-        val t0 = SystemClock.elapsedRealtime()
-        var pages = 0
-        log(JSONObject().put("sustain", if (s.model.onGpu) "gpu" else "cpu").put("start", state()))
-        while (SystemClock.elapsedRealtime() < end) {
-            val p0 = SystemClock.elapsedRealtime()
-            val run = TileEngine.run(s, page, UNLIMITED, gate = gate)
-            run.bitmap?.recycle()
-            pages++
-            log(
-                JSONObject().put("page", pages).put("atS", (SystemClock.elapsedRealtime() - t0) / 1000)
-                    .put("ms", SystemClock.elapsedRealtime() - p0).put("tiles", run.stats.tiles)
-                    .put("fallback", run.fallback?.name ?: JSONObject.NULL).put("state", state())
-            )
-            if (run.fallback != null) break
+        val meter = EnergyMeter(this)
+        val engine = if (s.model.onGpu) "gpu" else "cpu"
+        val runs = ArrayList<EnergyRuns.Run>()
+        try {
+            for (round in 0 until rounds) {
+                if (cooldown > 0) Thread.sleep(cooldown * 1000L)
+                val heat = ResampleRuns.Heat().apply { see(meter.thermal()) }
+                log(JSONObject().put("sustain", engine).put("round", round).put("start", state()))
+                var stopped: Fallback? = null
+                val run = meter.measure(idle, seconds, heat) { until ->
+                    val t0 = SystemClock.elapsedRealtime()
+                    var pages = 0
+                    while (SystemClock.elapsedRealtime() < until) {
+                        val p0 = SystemClock.elapsedRealtime()
+                        val ran = TileEngine.run(s, page, UNLIMITED, gate = gate)
+                        ran.bitmap?.recycle()
+                        log(
+                            JSONObject().put("page", pages + 1).put("atS", (SystemClock.elapsedRealtime() - t0) / 1000)
+                                .put("ms", SystemClock.elapsedRealtime() - p0).put("tiles", ran.stats.tiles)
+                                .put("fallback", ran.fallback?.name ?: JSONObject.NULL).put("state", state())
+                        )
+                        if (ran.fallback != null) {
+                            stopped = ran.fallback
+                            break
+                        }
+                        pages++
+                    }
+                    pages
+                }
+                runs += run
+                val line = JSONObject().put("sustained", engine).put("round", round).put("size", "${w}x$h").put("tile", s.size)
+                    .put("stoppedBy", stopped?.name ?: JSONObject.NULL)
+                meter.json(run, idle).let { m -> m.keys().forEach { line.put(it, m.get(it)) } }
+                log(line.put("thermalPeak", heat.peak).put("valid", heat.cool).put("end", state()))
+            }
+            log(meter.summary(engine, runs))
+        } finally {
+            page.recycle()
         }
-        log(JSONObject().put("sustained", pages).put("seconds", (SystemClock.elapsedRealtime() - t0) / 1000).put("end", state()))
-        page.recycle()
     }
 
     // ------------------------------------------------------------------ download

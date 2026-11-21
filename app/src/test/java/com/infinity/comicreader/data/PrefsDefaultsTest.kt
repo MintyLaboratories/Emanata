@@ -37,15 +37,15 @@ class PrefsDefaultsTest {
     }
 
     @Test
-    fun spreadsMergeAndTurnTheScreen() {
+    fun spreadsMergeAndWidePagesRotateTheImage() {
         val prefs = Prefs(context)
         assertEquals(SpreadDisplay.MERGE, prefs.spreads)
-        assertTrue(prefs.rotateSpreads)
+        assertEquals(WidePages.IMAGE, prefs.widePages)
         assertTrue(prefs.joinSpreads)
         // The settings screen writes the same defaults.
         PreferenceManager.setDefaultValues(context, R.xml.settings, true)
         assertEquals(SpreadDisplay.MERGE, Prefs(context).spreads)
-        assertTrue(Prefs(context).rotateSpreads)
+        assertEquals(WidePages.IMAGE, Prefs(context).widePages)
         assertTrue(Prefs(context).joinSpreads)
     }
 

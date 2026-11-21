@@ -201,11 +201,13 @@
             app:key="pref_join_spreads"
             app:summary="@string/pref_join_spreads_desc"
             app:title="@string/pref_join_spreads" />
-        <SwitchPreferenceCompat
-            app:defaultValue="true"
-            app:key="pref_rotate_spreads"
-            app:summary="@string/pref_rotate_spreads_desc"
-            app:title="@string/pref_rotate_spreads" />
+        <!-- Summary: the choice and what it does (SettingsFragment). -->
+        <ListPreference
+            app:defaultValue="image"
+            app:entries="@array/wide_pages_entries"
+            app:entryValues="@array/wide_pages_values"
+            app:key="pref_wide_pages"
+            app:title="@string/pref_wide_pages" />
         <SwitchPreferenceCompat
             app:defaultValue="false"
             app:key="pref_auto_crop"

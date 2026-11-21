@@ -6,11 +6,9 @@ import android.os.Looper
 import androidx.preference.ListPreference
 import androidx.preference.PreferenceFragmentCompat
 import androidx.preference.PreferenceManager
-import androidx.preference.TwoStatePreference
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.R
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -33,13 +31,18 @@ class SettingsSpreadDefaultsTest {
     }
 
     @Test
-    fun spreadsShowMergeAndRotateOn() {
+    fun spreadsShowMergeAndWidePagesRotateTheImage() {
         val activity = Robolectric.buildActivity(SettingsActivity::class.java).setup().get()
         shadowOf(Looper.getMainLooper()).idle()
         val fragment = activity.supportFragmentManager.findFragmentById(R.id.settings_container) as PreferenceFragmentCompat
         val spreads = fragment.findPreference<ListPreference>("pref_spreads")!!
         assertEquals("merge", spreads.value)
         assertEquals(context.getString(R.string.spreads_merge), spreads.summary.toString())
-        assertTrue(fragment.findPreference<TwoStatePreference>("pref_rotate_spreads")!!.isChecked)
+        val wide = fragment.findPreference<ListPreference>("pref_wide_pages")!!
+        assertEquals("image", wide.value)
+        assertEquals(
+            context.getString(R.string.wide_pages_image) + "\n" + context.getString(R.string.wide_pages_image_desc),
+            wide.summary.toString()
+        )
     }
 }

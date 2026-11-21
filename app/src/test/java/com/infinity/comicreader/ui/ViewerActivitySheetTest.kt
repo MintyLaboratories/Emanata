@@ -6,7 +6,6 @@ import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.os.Looper
 import android.view.View
-import android.widget.CompoundButton
 import androidx.preference.PreferenceManager
 import androidx.test.core.app.ApplicationProvider
 import com.google.android.material.button.MaterialButtonToggleGroup
@@ -19,6 +18,7 @@ import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ResumeMode
 import com.infinity.comicreader.data.TwoPage
+import com.infinity.comicreader.data.WidePages
 import com.infinity.comicreader.reader.Filters
 import com.infinity.comicreader.reader.Fixtures
 import org.junit.Assert.assertEquals
@@ -71,7 +71,7 @@ class ViewerActivitySheetTest {
         return viewer
     }
 
-    private val groups = listOf(R.id.sheet_scope, R.id.sheet_page_mode, R.id.sheet_dir, R.id.sheet_fit, R.id.sheet_two_page, R.id.sheet_orientation)
+    private val groups = listOf(R.id.sheet_scope, R.id.sheet_page_mode, R.id.sheet_dir, R.id.sheet_fit, R.id.sheet_two_page, R.id.sheet_orientation, R.id.sheet_wide_pages)
 
     @Test
     fun everySingleChoiceShowsOneSelection() {
@@ -81,10 +81,20 @@ class ViewerActivitySheetTest {
     }
 
     @Test
-    fun aFreshSheetMergesSpreadsAndTurnsTheScreen() {
+    fun aFreshSheetMergesSpreadsAndRotatesWidePages() {
         val sheet = ReaderSheet(launch())
         assertEquals(R.id.btn_spreads_merge, sheet.view<MaterialButtonToggleGroup>(R.id.sheet_spreads).checkedButtonId)
-        assertTrue(sheet.view<CompoundButton>(R.id.sheet_rotate_spreads).isChecked)
+        assertEquals(R.id.btn_wide_image, sheet.view<MaterialButtonToggleGroup>(R.id.sheet_wide_pages).checkedButtonId)
+    }
+
+    @Test
+    fun theSheetPicksWhatWidePagesDo() {
+        val sheet = ReaderSheet(launch())
+        sheet.tap(R.id.btn_wide_orientation)
+        assertEquals(WidePages.ORIENTATION, prefs.widePages)
+        sheet.tap(R.id.btn_wide_nothing)
+        assertEquals(WidePages.NOTHING, prefs.widePages)
+        assertEquals(R.id.btn_wide_nothing, sheet.view<MaterialButtonToggleGroup>(R.id.sheet_wide_pages).checkedButtonId)
     }
 
     @Test

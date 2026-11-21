@@ -393,6 +393,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
         findPreference<ListPreference>("pref_startup_location")?.let { setUpStartupLocation(it, prefs) }
         findPreference<SeekBarPreference>(Prefs.KEY_TALL_THRESHOLD)?.let { setUpTallThreshold(it) }
+        findPreference<ListPreference>("pref_wide_pages")?.let { setUpWidePages(it) }
 
         findPreference<Preference>(Prefs.KEY_NETWORK_CACHE)?.setOnPreferenceChangeListener { _, value ->
             val bytes = ((value as String).toLongOrNull() ?: return@setOnPreferenceChangeListener false) shl 20
@@ -842,6 +843,15 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 String.format(Locale.getDefault(), "%.2f", p.value / 100.0),
                 String.format(Locale.getDefault(), "%.2f", TallPages.minAspect(p.value, aspect))
             )
+        }
+    }
+
+    /** Shows the choice and what it does. */
+    private fun setUpWidePages(pref: ListPreference) {
+        val descs = resources.getStringArray(R.array.wide_pages_descs)
+        pref.summaryProvider = Preference.SummaryProvider<ListPreference> { p ->
+            val desc = descs.getOrNull(p.findIndexOfValue(p.value))
+            if (desc == null) p.entry else "${p.entry}\n$desc"
         }
     }
 

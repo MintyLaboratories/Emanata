@@ -143,10 +143,10 @@ class Prefs(context: Context) {
         get() = bool(KEY_JOIN_SPREADS, true)
         set(v) = put(KEY_JOIN_SPREADS, v)
 
-    /** Paged reading in portrait turns the screen to landscape while a wide page shows whole. */
-    var rotateSpreads: Boolean
-        get() = bool(KEY_ROTATE_SPREADS, true)
-        set(v) = put(KEY_ROTATE_SPREADS, v)
+    /** What paged reading in portrait does while a wide page shows whole. */
+    var widePages: WidePages
+        get() = WidePages.of(sp.getString(KEY_WIDE_PAGES, null))
+        set(v) = put(KEY_WIDE_PAGES, v.key)
 
     var autoNext: Boolean
         get() = bool(KEY_AUTO_NEXT, true)
@@ -787,7 +787,7 @@ class Prefs(context: Context) {
         const val KEY_TALL_THRESHOLD = "pref_tall_threshold"
         private const val KEY_SPREADS = "pref_spreads"
         private const val KEY_COVER_ALONE = "pref_cover_alone"
-        private const val KEY_ROTATE_SPREADS = "pref_rotate_spreads"
+        private const val KEY_WIDE_PAGES = "pref_wide_pages"
         private const val KEY_JOIN_SPREADS = "pref_join_spreads"
         private const val KEY_SAVER_COVERS = "pref_saver_covers"
         private const val KEY_SAVER_READ_AHEAD = "pref_saver_read_ahead"
@@ -815,7 +815,7 @@ class Prefs(context: Context) {
             KEY_LINEAR_LIGHT, KEY_SCALE_PAGES, KEY_SCALE_ZOOM, KEY_SCALE_THUMBS, KEY_RING_UP, KEY_RING_DOWN, KEY_SHARPEN, KEY_TALL_THRESHOLD, KEY_TAP_ZONES_MIRROR, KEY_ADJUST_BRIGHTNESS,
             KEY_ADJUST_CONTRAST, KEY_ADJUST_SATURATION, KEY_GROUP_FAVORITES,
             KEY_STARTUP_TAB, KEY_STARTUP_LOCATION, KEY_STARTUP_PATH, KEY_STARTUP_RESUME, KEY_LOCATION_STARTS, KEY_DETECT_DIRECTION, KEY_COVER_SPACING,
-            KEY_TOOLBAR_BUTTONS, KEY_MORE_ACTIONS, KEY_PAGE_ACTIONS, KEY_FAB_ONE, KEY_FAB_MANY, KEY_HANDED, KEY_SPREADS, KEY_COVER_ALONE, KEY_ROTATE_SPREADS, KEY_JOIN_SPREADS,
+            KEY_TOOLBAR_BUTTONS, KEY_MORE_ACTIONS, KEY_PAGE_ACTIONS, KEY_FAB_ONE, KEY_FAB_MANY, KEY_HANDED, KEY_SPREADS, KEY_COVER_ALONE, KEY_WIDE_PAGES, KEY_JOIN_SPREADS,
             KEY_SAVER_COVERS, KEY_SAVER_READ_AHEAD, KEY_SAVER_SCANS, KEY_SAVER_AI, KEY_COMPACT_IN_PLACE, KEY_SUGGEST_REPACK, KEY_AI,
             KEY_AI_UPSCALE_ABOVE, KEY_AI_CLEANUP_ABOVE, KEY_SIMILAR_SHARES, KEY_METERED_SKIP, KEY_SLOW_SKIP, KEY_METERED_WARN, KEY_METERED_WARN_MB
         ) + ChainKind.entries.flatMap { kind -> AiStep.entries.map { aiKey(it, kind) } } + TABS.flatMap { tab -> VIEW_FIELDS.map { viewKey(tab, it) } + SORT_FIELDS.map { sortKey(tab, it) } }

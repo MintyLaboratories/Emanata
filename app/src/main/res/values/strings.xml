@@ -1277,8 +1277,13 @@
     <string name="tall_strip_no">No</string>
     <string name="pref_join_spreads">Join spreads by their edges</string>
     <string name="pref_join_spreads_desc">Show or pair two pages as one picture when their facing edges run on</string>
-    <string name="pref_rotate_spreads">Rotate for spreads</string>
-    <string name="pref_rotate_spreads_desc">Turn to landscape while a wide page shows whole</string>
+    <string name="pref_wide_pages">Wide pages in portrait</string>
+    <string name="wide_pages_nothing">Do nothing</string>
+    <string name="wide_pages_orientation">Change orientation</string>
+    <string name="wide_pages_image">Rotate image</string>
+    <string name="wide_pages_nothing_desc">Shown across the screen as they are</string>
+    <string name="wide_pages_orientation_desc">The screen turns to landscape while one shows</string>
+    <string name="wide_pages_image_desc">The page turns to fill the screen, which holds still while it shows: turn the device to read it</string>
 
     <string name="pref_tap_zones">Tap zones (previous/next)</string>
     <string name="pref_tap_zones_mirror">Mirror left/right zones in right-to-left books</string>
@@ -1650,6 +1655,21 @@
         <item>off</item>
         <item>on</item>
         <item>landscape</item>
+    </string-array>
+    <string-array name="wide_pages_entries">
+        <item>@string/wide_pages_nothing</item>
+        <item>@string/wide_pages_orientation</item>
+        <item>@string/wide_pages_image</item>
+    </string-array>
+    <string-array name="wide_pages_values" translatable="false">
+        <item>nothing</item>
+        <item>orientation</item>
+        <item>image</item>
+    </string-array>
+    <string-array name="wide_pages_descs">
+        <item>@string/wide_pages_nothing_desc</item>
+        <item>@string/wide_pages_orientation_desc</item>
+        <item>@string/wide_pages_image_desc</item>
     </string-array>
     <string-array name="spreads_entries">
         <item>@string/spreads_split</item>

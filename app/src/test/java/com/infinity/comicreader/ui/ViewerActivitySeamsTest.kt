@@ -17,6 +17,7 @@ import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ResumeMode
 import com.infinity.comicreader.data.SpreadDisplay
 import com.infinity.comicreader.data.TwoPage
+import com.infinity.comicreader.data.WidePages
 import com.infinity.comicreader.reader.Fixtures
 import com.infinity.comicreader.reader.SyntheticArt
 import org.junit.Assert.assertEquals
@@ -124,13 +125,14 @@ class ViewerActivitySeamsTest {
 
     @Test
     fun aSpreadInTwoFilesShowsAsOneAndTurnsTheScreen() {
+        prefs.widePages = WidePages.ORIENTATION
         val viewer = launch(book(count = 7, first = 3))
         // Merge is the default: pages 4 and 5 become one screen once their seam is checked.
         await { viewer.items() == 6 }
         assertEquals(6, viewer.items())
         repeat(3) { viewer.next() }
         assertEquals("4 / 7", viewer.indicator())
-        // Rotate for spreads is on by default.
+        // Change orientation picked: the screen turns for the spread.
         assertEquals(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE, viewer.requestedOrientation)
         viewer.next()
         assertEquals("6 / 7", viewer.indicator())

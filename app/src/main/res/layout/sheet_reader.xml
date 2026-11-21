@@ -463,13 +463,29 @@
                 android:text="@string/orientation_landscape" />
         </com.google.android.material.button.MaterialButtonToggleGroup>
 
-        <com.google.android.material.materialswitch.MaterialSwitch
-            android:id="@+id/sheet_rotate_spreads"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_3"
-            android:minHeight="48dp"
-            android:text="@string/pref_rotate_spreads" />
+        <TextView
+            style="@style/Widget.ComicReader.SheetLabel"
+            android:text="@string/pref_wide_pages" />
+
+        <com.google.android.material.button.MaterialButtonToggleGroup
+            android:id="@+id/sheet_wide_pages"
+            style="@style/Widget.ComicReader.SheetSegments">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_wide_nothing"
+                style="@style/Widget.ComicReader.SheetSegment"
+                android:text="@string/wide_pages_nothing" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_wide_orientation"
+                style="@style/Widget.ComicReader.SheetSegment"
+                android:text="@string/wide_pages_orientation" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_wide_image"
+                style="@style/Widget.ComicReader.SheetSegment"
+                android:text="@string/wide_pages_image" />
+        </com.google.android.material.button.MaterialButtonToggleGroup>
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/sheet_more_settings"

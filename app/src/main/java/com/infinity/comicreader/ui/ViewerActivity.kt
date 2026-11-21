@@ -111,6 +111,7 @@ import com.infinity.comicreader.net.RemoteException
 import com.infinity.comicreader.net.RemoteFile
 import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.data.TwoPage
+import com.infinity.comicreader.data.WidePages
 import com.infinity.comicreader.data.Thumbs
 import com.infinity.comicreader.reader.Adjustments
 import com.infinity.comicreader.reader.ArchiveKind
@@ -394,8 +395,14 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
     /** The page the open book first showed, -1 until it shows. */
     private var openedPage = -1
 
-    /** Holds the screen in landscape while a wide page shows whole ("Rotate for spreads"). */
+    /** Holds the screen in landscape while a wide page shows whole ("Change orientation"). */
     private val spreadRotation = SpreadRotation()
+
+    /** Locks the screen while a wide page shows turned to fill it ("Rotate image"). */
+    private val imageTurn = ImageTurn()
+
+    /** Whether the layout was landscape when the pages last learned which of them [imageTurn] turns. */
+    private var turnsLandscape = false
 
     /** True from a swipe's first move until the pager comes to rest. */
     private var swiping = false
@@ -610,6 +617,8 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         loadPrefs()
         // A recreated reader (theme or language change) continues where it was, turned as it was.
         spreadRotation.restore(savedInstanceState?.getIntArray(STATE_ROTATION))
+        imageTurn.restore(savedInstanceState?.getIntArray(STATE_IMAGE_TURN))
+        turnsLandscape = landscape()
         savedInstanceState?.getString(STATE_PATH)?.let {
             intent.putExtra(EXTRA_PATH, it).putExtra(EXTRA_PAGE, savedInstanceState.getInt(STATE_PAGE))
         }
@@ -815,6 +824,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putIntArray(STATE_ROTATION, spreadRotation.save())
+        outState.putIntArray(STATE_IMAGE_TURN, imageTurn.save())
         val f = file ?: return
         if (source == null) return
         outState.putString(STATE_PATH, f.absolutePath)
@@ -1050,8 +1060,8 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
             if (!autoScrolling) applyKeepScreenOn()
             shown = true
         }
-        if (s.rotateSpreads != old.rotateSpreads) {
-            updateSpreadRotation()
+        if (s.widePages != old.widePages || s.leftHanded != old.leftHanded) {
+            applyWidePages()
             shown = true
         }
         if (s.joinSpreads != old.joinSpreads) {
@@ -2397,18 +2407,33 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
     }
 
     /**
-     * Turns the screen for the wide page on screen, or back, as [spreadRotation] says; during
-     * a swipe, once the pager comes to rest: resized while it settles, it snaps back to the
-     * page the swipe left.
+     * Turns the screen for the wide page on screen, or back, as [spreadRotation] says, and
+     * locks it for a page drawn turned, or lets it go, as [imageTurn] says; during a swipe,
+     * once the pager comes to rest: resized while it settles, it snaps back to the page the
+     * swipe left.
      */
     private fun updateSpreadRotation() {
         rotationAfterSwipe = swiping
         if (swiping) return
         // With auto-rotate off, the system turns back to the reader's lock whatever the sensor.
         val unsure = spreadRotation.held >= 0 && autoRotate() && upright().unsure()
-        spreadRotation.show(widePageShown(), prefs.rotateSpreads, landscape(), screenOrientation(), unsure)?.let { requestedOrientation = it }
+        // A lock let go first: a turn to landscape asked for after it wins.
+        updateImageLock()
+        spreadRotation.show(widePageShown(), prefs.widePages == WidePages.ORIENTATION, landscape(), screenOrientation(), unsure)?.let { requestedOrientation = it }
         adapter?.turned = spreadRotation.held >= 0
         watchUpright()
+    }
+
+    /** Locks the screen while the page on screen is drawn turned ([imageTurn]); lets it go back to the reader's own orientation otherwise. */
+    private fun updateImageLock() {
+        imageTurn.show(widePageShown(), prefs.widePages == WidePages.IMAGE, landscape(), spreadRotation.user)?.let { requestedOrientation = it }
+    }
+
+    /** The wide-pages setting or the hand changed: pages are turned, and the screen turned or locked, as they now say. */
+    private fun applyWidePages() {
+        adapter?.imageTurn = ImageTurn.quarter(prefs.leftHanded)
+        updateSpreadRotation()
+        adapter?.rekey()
     }
 
     private fun upright(): UprightWatch = uprightWatch ?: UprightWatch(this) {
@@ -2516,7 +2541,12 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         a.fitMode = effectiveFit()
         a.tallPages = if (mode == MODE_PAGED) tallPages else emptySet()
         // Each page is decoded at the size it shows at once the screen turned for a wide page, or back.
-        if (mode == MODE_PAGED) a.turnsFor = { item -> spreadRotation.turnsFor(widePageOf(item), prefs.rotateSpreads) }
+        if (mode == MODE_PAGED) {
+            a.turnsFor = { item -> spreadRotation.turnsFor(widePageOf(item), prefs.widePages == WidePages.ORIENTATION) }
+            // Decided as each item binds, so a wide page slides in already turned.
+            a.turnsImage = { item -> imageTurn.turns(widePageOf(item), prefs.widePages == WidePages.IMAGE, landscape()) }
+            a.imageTurn = ImageTurn.quarter(prefs.leftHanded)
+        }
         a.turned = spreadRotation.held >= 0
         a.filter = filter
         a.adjustments = adjustments
@@ -2734,6 +2764,13 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         if (source != null && useSpread() != spread) {
             attach()
             syncSheet()
+        }
+        // In landscape no page is drawn turned, so none locks the screen.
+        if (source != null) updateImageLock()
+        if (landscape() != turnsLandscape) {
+            turnsLandscape = landscape()
+            // Pages are turned for one orientation only, also where the window keeps its size.
+            if (prefs.widePages == WidePages.IMAGE) adapter?.rekey()
         }
         sheetDialog?.behavior?.peekHeight = sheetPeek()
     }
@@ -3680,7 +3717,14 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         if (mode == MODE_PAGED && !spread) attach()
     }
 
+    private fun setWidePages(value: WidePages) {
+        if (prefs.widePages == value) return
+        prefs.widePages = value
+        applyWidePages()
+    }
+
     private fun setOrientationLock(value: Int) {
+        imageTurn.choose()
         requestedOrientation = spreadRotation.choose(value)
         adapter?.let {
             it.turned = false
@@ -3780,6 +3824,11 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
                 ),
                 { spreadRotation.user }
             ) { setOrientationLock(it) },
+            Segments(
+                R.id.sheet_wide_pages,
+                listOf(R.id.btn_wide_nothing to WidePages.NOTHING, R.id.btn_wide_orientation to WidePages.ORIENTATION, R.id.btn_wide_image to WidePages.IMAGE),
+                { prefs.widePages }
+            ) { setWidePages(it) },
             Segments(R.id.sheet_ai_scope, listOf(R.id.btn_ai_book to true, R.id.btn_ai_default to false), { aiOwn() != null }) { setAiOwn(it) },
             Segments(R.id.sheet_ai_kind, listOf(R.id.btn_ai_manga to ChainKind.MANGA, R.id.btn_ai_other to ChainKind.OTHER), { aiKind() }) { setAiKind(it) }
         )
@@ -3808,10 +3857,6 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         switch(R.id.sheet_join_spreads) {
             prefs.joinSpreads = it
             applyJoinSpreads()
-        }
-        switch(R.id.sheet_rotate_spreads) {
-            prefs.rotateSpreads = it
-            updateSpreadRotation()
         }
         switch(R.id.sheet_night) { setNight(it) }
         switch(R.id.sheet_auto_next) { setAutoNext(it) }
@@ -3878,7 +3923,6 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
                 isChecked = ignoreSeams
                 isEnabled = sideways && prefs.joinSpreads && favoriteFile() != null && (spread || spreadDisplay == SpreadDisplay.MERGE)
             }
-            view.findViewById<MaterialSwitch>(R.id.sheet_rotate_spreads).isChecked = prefs.rotateSpreads
             view.findViewById<MaterialSwitch>(R.id.sheet_auto_crop).apply {
                 isChecked = autoCrop
                 isEnabled = !slicesShown()
@@ -4970,6 +5014,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         private const val STATE_PATH = "state_path"
         private const val STATE_PAGE = "state_page"
         private const val STATE_ROTATION = "state_rotation"
+        private const val STATE_IMAGE_TURN = "state_image_turn"
 
         /** How long [learnSize] gathers sizes before laying the book out again. */
         private const val LEARN_DELAY_MS = 300L

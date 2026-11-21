@@ -22,6 +22,7 @@ import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ResumeMode
 import com.infinity.comicreader.data.SpreadDisplay
 import com.infinity.comicreader.data.TwoPage
+import com.infinity.comicreader.data.WidePages
 import com.infinity.comicreader.reader.Fixtures
 import com.infinity.comicreader.reader.TestImages
 import org.junit.Assert.assertEquals
@@ -64,6 +65,8 @@ class ViewerActivitySpreadsTest {
         context.getSharedPreferences("library", Context.MODE_PRIVATE).edit().clear().commit()
         prefs = Prefs(context)
         prefs.resumeMode = ResumeMode.NO
+        // The screen turns for wide pages here ("Change orientation"); ViewerActivityWideImageTest covers "Rotate image".
+        prefs.widePages = WidePages.ORIENTATION
         dir = tmp.newFolder("shelf")
     }
 
@@ -268,8 +271,8 @@ class ViewerActivitySpreadsTest {
     }
 
     @Test
-    fun rotateForSpreadsOffLeavesTheScreenAlone() {
-        prefs.rotateSpreads = false
+    fun widePagesDoingNothingLeaveTheScreenAlone() {
+        prefs.widePages = WidePages.NOTHING
         val viewer = launch(book(numbered(1, 6), setOf("Tale 001-003")))
         sizesRead()
         repeat(2) { viewer.next() }

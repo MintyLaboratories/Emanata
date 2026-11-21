@@ -643,11 +643,16 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - **Spreads:** *Merge* (default) shows a wide page whole, and a spread in two
   files as one; *Split* shows a wide page as two pages, each numbered and fitted
   on its own (one page at a time only).
-- **Rotate for spreads** (on by default): a wide page or a merged spread shown
-  whole turns the screen to landscape, either way up, until a page that is not
-  wide shows; then the reader's own orientation is back. Lying flat, where the
-  sensor cannot tell which way is up, the screen turns back to the way it was
-  and stays so until the device is picked up.
+- **Wide pages in portrait:** what a wide page or a merged spread shown whole
+  does in portrait. *Rotate image* (default) draws it turned a quarter to fill
+  the screen, its top to the right (to the left when left-handed), and locks
+  the screen while it shows, so you turn the device to read it; swipes and tap
+  zones stay with the device, pinch and pan follow the picture. *Change
+  orientation* turns the screen to landscape, either way up, until a page that
+  is not wide shows; then the reader's own orientation is back. Lying flat,
+  where the sensor cannot tell which way is up, the screen turns back to the
+  way it was and stays so until the device is picked up. *Do nothing* shows it
+  as it is. In landscape nothing turns.
 - **Page thumbnails:** grid picker to jump straight to any page.
 - **Crop:** crop the current page to a PNG.
 - **Reading direction:** left-to-right, right-to-left (left/right tap zones

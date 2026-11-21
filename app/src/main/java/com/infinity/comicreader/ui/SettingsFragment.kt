@@ -32,6 +32,7 @@ import com.infinity.comicreader.ai.Models
 import com.infinity.comicreader.ai.PageTimes
 import com.infinity.comicreader.ai.UserModels
 import com.infinity.comicreader.data.BookCaches
+import com.infinity.comicreader.data.CropAnchor
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.LibraryData
 import com.infinity.comicreader.data.FabAction
@@ -202,6 +203,11 @@ class SettingsFragment : PreferenceFragmentCompat() {
             Locales.apply(value as String)
             activity?.recreate()
             true
+        }
+
+        // An unknown stored anchor shows as the one it reads as.
+        findPreference<ListPreference>("pref_crop_anchor")?.apply {
+            if (findIndexOfValue(value) < 0) value = CropAnchor.of(value).key
         }
 
         findPreference<ListPreference>("pref_startup_location")?.let { setUpStartupLocation(it, prefs) }

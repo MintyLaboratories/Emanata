@@ -27,17 +27,20 @@ private fun leftoverScreens(): List<Activity> {
     return Stage.values().flatMap { monitor.getActivitiesInStage(it) }
 }
 
-/** True while [this] works in the background: a library screen listing, reading facts or making covers; a cleanup screen searching or making covers. */
+/** True while [this] works in the background: a library screen listing, reading facts, planning file work or making covers; a cleanup screen searching or making covers. */
 private fun Activity.working(): Boolean = when (this) {
     is ListActivity -> {
         val busy = if (lifecycle.currentState == Lifecycle.State.DESTROYED) {
             // All canceled with the screen: each still runs until its blocking step returns.
             lifecycleScope.coroutineContext[Job]!!.children.any { !it.isCompleted }
         } else {
-            // A live screen's facts job waits, not works, while the screen is out of sight.
+            // Its scope also holds collectors that run as long as it lives, so only its work counts,
+            // a job told to stop included until it has. Its facts job waits, not works, while the
+            // screen is out of sight.
             val started = lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
-            listJob?.isActive == true || listOf(classifyJob, presenceJob, moreLook, markJob, factsLoad).any { it?.isActive == true } ||
-                (started && factsJob?.isActive == true)
+            listOf(listJob, classifyJob, presenceJob, moreLook, markJob, factsLoad).any { it?.isCompleted == false } ||
+                (started && factsJob?.isCompleted == false) ||
+                (lifecycle.currentState.isAtLeast(Lifecycle.State.CREATED) && fileActions.busy)
         }
         busy || (findViewById<RecyclerView>(R.id.recycler)?.adapter as? BookAdapter)?.coversBusy == true
     }

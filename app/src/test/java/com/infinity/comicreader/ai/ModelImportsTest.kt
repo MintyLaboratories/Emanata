@@ -298,25 +298,29 @@ class ModelImportsTest {
         val checking = CountDownLatch(1)
         val release = CountDownLatch(1)
         lateinit var files: ModelFiles
-        // Whether the checked files were there at each run of the check after the tidy was queued.
+        // A leftover the tidy deletes.
+        lateinit var stale: File
+        // Whether the checked files and the leftover were there at each run of the check after the tidy was queued.
         val kept = CopyOnWriteArrayList<Boolean>()
         ModelImports.runtime = FakeRuntime(make = { onGpu, _ ->
             FakeModel(onGpu = onGpu, onRun = {
                 checking.countDown()
                 release.await()
-                kept += files.param.exists() && files.bin.exists()
+                kept += files.param.exists() && files.bin.exists() && stale.exists()
             })
         })
         try {
             ModelImports.start(context, pair())
             awaitUntil("the check to run") { checking.count == 0L }
             files = store.userFiles(store.staging("x").parentFile!!.listFiles()!!.single())
+            stale = File(store.root, "stale").apply { mkdirs() }
             ModelImports.tidyAtStart(store)
         } finally {
             release.countDown()
         }
         settle("the import and the tidy")
         assertTrue("the checked files stay: $kept", kept.isNotEmpty() && kept.all { it })
+        assertFalse("the tidy ran after the import", stale.exists())
         assertTrue(ModelImports.state.value is ImportState.Fit)
     }
 

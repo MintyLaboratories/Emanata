@@ -346,7 +346,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
     private var sortValues: SortValues? = null
 
     /** The listing being loaded; a newer one cancels it, so only the latest is shown. */
-    private var listJob: Job? = null
+    internal var listJob: Job? = null
+        private set
 
     /** Compact or Make compatible finding the books in selected folders; taps wait for it, and ending the selection stops it. */
     private var rebuildWalk: Job? = null

@@ -48,6 +48,7 @@ import java.io.InputStream
 import java.nio.file.FileAlreadyExistsException
 import java.util.concurrent.CancellationException
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.Executor
 import java.util.concurrent.Future
 import java.util.Locale
 
@@ -95,7 +96,13 @@ internal class FileJobs(
      * a failure where the lookup failed.
      */
     fun look(paths: List<String>): Future<List<Result<Node?>>> =
-        CompletableFuture.supplyAsync({ paths.map { runCatching { FileSpaces.of(it).stat(it) } } }, AppDispatchers.io.asExecutor())
+        CompletableFuture.supplyAsync({ paths.map { runCatching { FileSpaces.of(it).stat(it) } } }, Looks.executor)
+
+    /** Where [look] runs: the I/O threads; tests may stand in another. */
+    internal object Looks {
+        @Volatile
+        var executor: Executor = AppDispatchers.io.asExecutor()
+    }
 
     /**
      * Why [path] is no longer what was [chosen] there: gone, or changed or replaced; null when it

@@ -172,7 +172,7 @@ class PageAdapter(
         }
 
     /**
-     * Items the screen turns to landscape for while they show ("Rotate for spreads"), as the
+     * Items the screen turns to landscape for while they show ("Change orientation"), as the
      * reader decides; null when it turns for none. In a portrait layout ([home]), each page is
      * decoded at the size it shows at once the screen settled: those items at [home] turned a
      * quarter, the others at [home], so turning the screen and back re-decodes neither.
@@ -182,6 +182,27 @@ class PageAdapter(
             field = value
             rekey()
         }
+
+    /**
+     * Items whose picture is drawn turned a quarter to fill the screen ("Rotate image"), as
+     * the reader decides; null for none. Their pages are decoded for the item's size swapped.
+     */
+    var turnsImage: ((Int) -> Boolean)? = null
+        set(value) {
+            field = value
+            rekey()
+        }
+
+    /** The way a picture [turnsImage] names is turned: 1 clockwise (its top to the right), -1 counter-clockwise. */
+    var imageTurn = 1
+        set(value) {
+            if (field == value) return
+            field = value
+            rekey()
+        }
+
+    /** Quarter turns item [position]'s picture shows at ([TurnFrame.turn]). */
+    private fun turnOf(position: Int): Int = if (turnsImage?.invoke(position) == true) imageTurn else 0
 
     /** The portrait item size the screen comes back to from a turn; null when none is known, or it is not portrait. */
     private var home: IntArray? = null
@@ -226,9 +247,13 @@ class PageAdapter(
         home = if (w < h) intArrayOf(w, h) else null
     }
 
-    /** The item size [part] is decoded for: as [turnsFor] says once the screen settles, else the size now. */
+    /**
+     * The item size [part] is decoded for: swapped for a picture [turnsImage] names; as
+     * [turnsFor] says once the screen settles; else the size now.
+     */
     private fun sizeFor(part: PageLayout.Part): IntArray {
         val now = itemSize()
+        if (turnOf(layout.itemOf(part)) != 0) return intArrayOf(now[1], now[0])
         val turns = turnsFor ?: return now
         val h = home ?: return now
         val across = intArrayOf(h[1], h[0])
@@ -472,9 +497,12 @@ class PageAdapter(
     private val end get() = strip.end
     private var released = false
 
-    /** An item's [images], by slot; [joined] when they show one picture, laid over each other. */
-    inner class PageHolder(val container: View, val images: List<ZoomImageView>, val joined: Boolean = false) :
-        RecyclerView.ViewHolder(container) {
+    /**
+     * An item's [images], by slot, in [container]; [joined] when they show one picture, laid
+     * over each other. In paged reading [turner] holds the container, to turn it ([turnsImage]).
+     */
+    inner class PageHolder(val container: View, val images: List<ZoomImageView>, val joined: Boolean = false, val turner: TurnFrame? = null) :
+        RecyclerView.ViewHolder(turner ?: container) {
         /** The decode each image is waiting for, and the coroutine waiting for it. */
         internal val decodes = arrayOfNulls<Pending>(images.size)
         val waiters = arrayOfNulls<Job>(images.size)
@@ -558,7 +586,7 @@ class PageAdapter(
             val right = makeImage(context)
             row.addView(left, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
             row.addView(right, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
-            return PageHolder(row, listOf(left, right))
+            return PageHolder(row, listOf(left, right), turner = turnerOf(row))
         }
         if (viewType == JOINED) {
             // Both pages over the whole item: the left one lays out both and takes the gestures.
@@ -575,7 +603,7 @@ class PageAdapter(
             frame.addView(right, whole)
             frame.addView(left, FrameLayout.LayoutParams(whole))
             left.joinWith(right)
-            return PageHolder(frame, listOf(left, right), joined = true)
+            return PageHolder(frame, listOf(left, right), joined = true, turner = turnerOf(frame))
         }
         val container = FrameLayout(context).apply {
             layoutParams = RecyclerView.LayoutParams(
@@ -591,7 +619,17 @@ class PageAdapter(
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
         )
-        return PageHolder(container, listOf(image))
+        return PageHolder(container, listOf(image), turner = turnerOf(container))
+    }
+
+    /** In paged reading, a [TurnFrame] holding [content] as the item; null otherwise. */
+    private fun turnerOf(content: View): TurnFrame? {
+        if (mode != Mode.PAGED) return null
+        content.layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+        return TurnFrame(content.context).apply {
+            layoutParams = RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+            addView(content)
+        }
     }
 
     private fun makeImage(context: Context): ZoomImageView = ZoomImageView(context).apply {
@@ -719,21 +757,32 @@ class PageAdapter(
      * Passes on a tap at ([x], [y]), fractions of [image], as fractions of the list's
      * area, so the zones span the screen even across a spread's two pages.
      */
-    private fun tapped(image: View, x: Float, y: Float) = inList(image, x, y, onTap)
+    private fun tapped(image: ZoomImageView, x: Float, y: Float) = inList(image, x, y, onTap)
 
-    /** Calls [to] with ([x], [y]), fractions of [image], as fractions of the list's area. */
-    private inline fun <T> inList(image: View, x: Float, y: Float, to: (Float, Float) -> T): T {
+    /**
+     * Calls [to] with ([x], [y]), fractions of [image], as fractions of the list's area: a
+     * turned image's along the device's axes, so tap zones stay with the device.
+     */
+    private inline fun <T> inList(image: ZoomImageView, x: Float, y: Float, to: (Float, Float) -> T): T {
         val list = recycler
         if (list == null || list.width <= 0 || list.height <= 0) return to(x, y)
+        // The image's own origin on screen, wherever a turn put it.
         image.getLocationOnScreen(tapAt)
         list.getLocationOnScreen(listAt)
+        val ix = x * image.width
+        val iy = y * image.height
         return to(
-            (tapAt[0] - listAt[0] + x * image.width) / list.width,
-            (tapAt[1] - listAt[1] + y * image.height) / list.height
+            (tapAt[0] - listAt[0] + TurnFrame.deviceX(image.turn, ix, iy)) / list.width,
+            (tapAt[1] - listAt[1] + TurnFrame.deviceY(image.turn, ix, iy)) / list.height
         )
     }
 
     override fun onBindViewHolder(holder: PageHolder, position: Int) {
+        // Turned before it shows: a page slides in as it will stay.
+        holder.turner?.let { turner ->
+            turner.turn = turnOf(position)
+            for (image in holder.images) image.turn = turner.turn
+        }
         // A one-page item of a merged layout has one image for its row's first slot.
         val parts = strip.parts(position).let { if (holder.images.size < it.size) arrayOf(it.firstOrNull { p -> p != null }) else it }
         for (slot in parts.indices) {

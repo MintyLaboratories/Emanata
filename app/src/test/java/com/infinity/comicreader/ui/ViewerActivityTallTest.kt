@@ -172,7 +172,7 @@ class ViewerActivityTallTest {
         val pager = findViewById<ViewPager2>(R.id.viewer_pager)
         val list = pager.getChildAt(0) as RecyclerView
         val holder = list.findViewHolderForAdapterPosition(pager.currentItem)!!
-        return (holder.itemView as android.view.ViewGroup).getChildAt(0) as ZoomImageView
+        return (holder as PageAdapter.PageHolder).images[0]
     }
 
     private fun ViewerActivity.next() {

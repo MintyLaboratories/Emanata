@@ -1,21 +1,26 @@
 package com.infinity.comicreader.ai
 
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.Bitmap
+import android.os.BatteryManager
 import android.os.Build
 import android.os.PowerManager
 import android.os.SystemClock
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.Thrift
 import com.infinity.comicreader.reader.BitmapUtils
+import com.infinity.comicreader.reader.Calibration
 import com.infinity.comicreader.reader.Cancellation
 import com.infinity.comicreader.reader.Plan
 import com.infinity.comicreader.reader.Scaling
 
 /**
  * When AI runs stop: with battery saver on, unless the Battery settings let AI run under it
- * ([Thrift.pausedAi]), once the device is [HOT] or hotter, or once the thermal headroom forecast
- * [FORECAST_S] seconds ahead reaches [MAX_HEADROOM].
+ * ([Thrift.pausedAi]), once the device is [HOT] or hotter ([Heat]: by battery temperature
+ * where there is no thermal status), or once the thermal headroom forecast [FORECAST_S] seconds
+ * ahead reaches [MAX_HEADROOM].
  */
 object AiConditions {
     /** The thermal status that stops runs: moderate, where the system starts throttling. */
@@ -33,6 +38,9 @@ object AiConditions {
     /** The least time between headroom readings: the system answers NaN to more frequent ones. */
     const val HEADROOM_EVERY_MS = 1_000L
 
+    /** The least time between battery temperature readings: it changes slowly, and each is a call to the system. */
+    const val BATTERY_EVERY_MS = 10_000L
+
     /** Why to stop for battery saver [saver], thermal status [thermal] and forecast [headroom] (NaN: unknown); null to go on. */
     fun stop(saver: Boolean, thermal: Int, headroom: Float = Float.NaN): Fallback? =
         if (saver || thermal >= HOT || headroom >= MAX_HEADROOM) Fallback.PAUSED else null
@@ -41,24 +49,63 @@ object AiConditions {
     fun gate(context: Context): () -> Fallback? {
         val pm = context.getSystemService(PowerManager::class.java) ?: return { null }
         val prefs = Prefs(context)
-        val headroom = Headroom(SystemClock::elapsedRealtime) {
-            if (Build.VERSION.SDK_INT >= 30) pm.getThermalHeadroom(FORECAST_S) else Float.NaN
-        }
-        return {
-            val thermal = if (Build.VERSION.SDK_INT >= 29) pm.currentThermalStatus else PowerManager.THERMAL_STATUS_NONE
-            stop(Thrift.of(pm.isPowerSaveMode, prefs).pausedAi, thermal, headroom.get())
+        val sdk = Build.VERSION.SDK_INT
+        val heat = Heat(
+            sdk, SystemClock::elapsedRealtime,
+            thermal = { if (sdk >= 29) pm.currentThermalStatus else null },
+            headroom = { if (sdk >= 30) pm.getThermalHeadroom(FORECAST_S) else Float.NaN },
+            batteryTenthsC = { batteryTenthsC(context) }
+        )
+        return { stop(Thrift.of(pm.isPowerSaveMode, prefs).pausedAi, heat.status(), heat.headroom()) }
+    }
+
+    /** Battery temperature in tenths of a degree C from the last battery broadcast; null when there is none. */
+    private fun batteryTenthsC(context: Context): Int? =
+        context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            ?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, Int.MIN_VALUE)?.takeIf { it != Int.MIN_VALUE }
+
+    /**
+     * The heat [stop] reads, as calibration reads it ([Calibration.heatStatus]): the [thermal]
+     * status where a thermal HAL answers (the [headroom] forecast reads as a number), battery
+     * temperature's ([batteryTenthsC]) before Android 10 (no thermal status), and the higher of
+     * both where that cannot be told (Android 10, or no headroom read yet). [sdk] is the
+     * Android version; [clock] spaces the readings ([HEADROOM_EVERY_MS], [BATTERY_EVERY_MS]).
+     * The battery is not read where the thermal status is known to be real.
+     */
+    internal class Heat(
+        private val sdk: Int,
+        clock: () -> Long,
+        private val thermal: () -> Int?,
+        headroom: () -> Float,
+        batteryTenthsC: () -> Int?
+    ) {
+        private val forecast = Sampled(clock, HEADROOM_EVERY_MS, headroom)
+        private val battery = Sampled(clock, BATTERY_EVERY_MS) { batteryTenthsC()?.toFloat() ?: Float.NaN }
+
+        /** The forecast headroom ([FORECAST_S] seconds ahead); NaN while unknown. */
+        fun headroom(): Float = forecast.get()
+
+        /** The heat as a thermal status. */
+        fun status(): Int {
+            val known = when {
+                sdk < 29 -> false
+                sdk >= 30 && !forecast.get().isNaN() -> true
+                else -> null
+            }
+            val tenths = if (known == true) null else battery.get().takeUnless { it.isNaN() }?.toInt()
+            return Calibration.heatStatus(thermal(), known, tenths)
         }
     }
 
-    /** The headroom [read] gives, read at most every [HEADROOM_EVERY_MS] by [clock]; a NaN reading keeps the one before. */
-    internal class Headroom(private val clock: () -> Long, private val read: () -> Float) {
+    /** The number [read] gives, read at most every [everyMs] by [clock]; a NaN reading keeps the one before. */
+    internal class Sampled(private val clock: () -> Long, private val everyMs: Long = HEADROOM_EVERY_MS, private val read: () -> Float) {
         private var at = Long.MIN_VALUE
         private var last = Float.NaN
 
         @Synchronized
         fun get(): Float {
             val now = clock()
-            if (at == Long.MIN_VALUE || now - at >= HEADROOM_EVERY_MS) {
+            if (at == Long.MIN_VALUE || now - at >= everyMs) {
                 at = now
                 val h = read()
                 if (!h.isNaN()) last = h

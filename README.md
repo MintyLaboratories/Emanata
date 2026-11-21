@@ -1122,7 +1122,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   enough to show as seams). Opening is cancelable between runs. Between tiles a
   run stops when canceled, when battery saver is on, the device reaches thermal
   status moderate or its thermal headroom forecast 10 s ahead reaches 0.9
-  (`AiConditions`), and when its time (30 s by default) is up or, from the
+  (`AiConditions`; heat is read as calibration reads it: where there is no
+  thermal HAL, a battery at 42 °C counts as moderate, read at most every 10 s),
+  and when its time (30 s by default) is up or, from the
   fifth tile, the pace of the tiles after the first (which carries the GPU's
   warm-up) says it will be; the page then gets its plain Lanczos3 rendering
   (`AiPages`).

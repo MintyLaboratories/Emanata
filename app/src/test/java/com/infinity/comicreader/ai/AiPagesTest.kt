@@ -1,11 +1,14 @@
 package com.infinity.comicreader.ai
 
 import android.app.Application
+import android.content.Intent
 import android.graphics.Bitmap
+import android.os.BatteryManager
 import android.os.PowerManager
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.reader.BitmapUtils
+import com.infinity.comicreader.reader.Calibration
 import com.infinity.comicreader.reader.Plan
 import com.infinity.comicreader.reader.Scaling
 import org.junit.Assert.assertArrayEquals
@@ -157,7 +160,7 @@ class AiPagesTest {
         var now = 0L
         var reads = 0
         val answers = ArrayDeque(listOf(0.5f, Float.NaN, 0.95f))
-        val h = AiConditions.Headroom({ now }) { reads++; answers.removeFirst() }
+        val h = AiConditions.Sampled({ now }) { reads++; answers.removeFirst() }
         assertEquals(0.5f, h.get())
         now += AiConditions.HEADROOM_EVERY_MS - 1
         assertEquals(0.5f, h.get())
@@ -167,5 +170,81 @@ class AiPagesTest {
         now += AiConditions.HEADROOM_EVERY_MS
         assertEquals(0.95f, h.get())
         assertEquals(3, reads)
+    }
+
+    /** Heat read on Android [sdk] from [thermal], [headroom] and battery temperature [tenths], counting battery reads in [batteryReads]. */
+    private class HeatProbe(sdk: Int, var thermal: Int? = 0, var headroom: Float = Float.NaN, var tenths: Int? = null) {
+        var now = 0L
+        var batteryReads = 0
+        val heat = AiConditions.Heat(sdk, { now }, { thermal }, { headroom }, { batteryReads++; tenths })
+        fun stop() = AiConditions.stop(false, heat.status(), heat.headroom())
+    }
+
+    @Test
+    fun withoutThermalStatusBatteryTemperatureStandsForIt() {
+        val p = HeatProbe(28, thermal = null, tenths = Calibration.BATTERY_HOT_C * 10)
+        assertEquals(Calibration.HOT, p.heat.status())
+        assertEquals(Fallback.PAUSED, p.stop())
+        p.now += AiConditions.BATTERY_EVERY_MS
+        p.tenths = Calibration.BATTERY_HOT_C * 10 - 1
+        assertEquals(Calibration.LIGHT, p.heat.status())
+        assertNull("light heat goes on", p.stop())
+        p.now += AiConditions.BATTERY_EVERY_MS
+        p.tenths = null
+        assertEquals("no battery reading keeps the last", Calibration.LIGHT, p.heat.status())
+    }
+
+    @Test
+    fun onAndroid10TheHigherOfThermalStatusAndBatteryCounts() {
+        val p = HeatProbe(29, thermal = PowerManager.THERMAL_STATUS_NONE, tenths = 425)
+        assertEquals(Fallback.PAUSED, p.stop())
+        p.now += AiConditions.BATTERY_EVERY_MS
+        p.thermal = PowerManager.THERMAL_STATUS_MODERATE
+        p.tenths = 300
+        assertEquals(PowerManager.THERMAL_STATUS_MODERATE, p.heat.status())
+        p.thermal = PowerManager.THERMAL_STATUS_NONE
+        assertNull(p.stop())
+    }
+
+    @Test
+    fun aThermalHalIsTrustedAndTheBatteryLeftUnread() {
+        val p = HeatProbe(31, thermal = PowerManager.THERMAL_STATUS_NONE, headroom = 0.3f, tenths = 450)
+        assertNull(p.stop())
+        assertEquals(0, p.batteryReads)
+        p.thermal = PowerManager.THERMAL_STATUS_MODERATE
+        assertEquals(Fallback.PAUSED, p.stop())
+        assertEquals(0, p.batteryReads)
+    }
+
+    @Test
+    fun withoutHeadroomTheBatteryCountsToo() {
+        val p = HeatProbe(31, thermal = PowerManager.THERMAL_STATUS_NONE, tenths = 430)
+        assertEquals(Fallback.PAUSED, p.stop())
+        assertEquals(1, p.batteryReads)
+    }
+
+    @Test
+    fun batteryTemperatureIsReadAtMostEveryTenSeconds() {
+        val p = HeatProbe(28, thermal = null, tenths = 300)
+        repeat(5) { p.heat.status() }
+        p.now += AiConditions.BATTERY_EVERY_MS - 1
+        p.tenths = 450
+        assertEquals(0, p.heat.status())
+        assertEquals(1, p.batteryReads)
+        p.now += 1
+        assertEquals(Calibration.HOT, p.heat.status())
+        assertEquals(2, p.batteryReads)
+    }
+
+    @Test
+    @Config(sdk = [29])
+    fun theGatePausesOnAHotBatteryWhereThermalStatusCannotBeTrusted() {
+        val context = ApplicationProvider.getApplicationContext<Application>()
+        @Suppress("DEPRECATION")
+        context.sendStickyBroadcast(Intent(Intent.ACTION_BATTERY_CHANGED).putExtra(BatteryManager.EXTRA_TEMPERATURE, 300))
+        assertNull(AiConditions.gate(context)())
+        @Suppress("DEPRECATION")
+        context.sendStickyBroadcast(Intent(Intent.ACTION_BATTERY_CHANGED).putExtra(BatteryManager.EXTRA_TEMPERATURE, 430))
+        assertEquals(Fallback.PAUSED, AiConditions.gate(context)())
     }
 }

@@ -1,5 +1,6 @@
 package com.infinity.comicreader.reader
 
+import com.infinity.comicreader.testing.awaitUntil
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
@@ -494,7 +495,8 @@ class ResamplerTest {
         val names = java.util.concurrent.ConcurrentHashMap<Int, Long>()
         Resampler.inBands(1000, 4, { false }) { worker, _, _ ->
             names.putIfAbsent(worker, Thread.currentThread().id)
-            Thread.sleep(1)
+            // The caller holds its band until another worker took one: it could take them all.
+            if (worker == 0) awaitUntil("another worker to take a band") { names.size > 1 }
             true
         }
         assertEquals(caller, names[0])
@@ -527,7 +529,8 @@ class ResamplerTest {
             if (n <= 4) synchronized(firstBands) { firstBands += worker }
             // Waited on from the fourth band: the other workers join.
             if (n == 4) wanted.set(4)
-            Thread.sleep(2)
+            // Each later band is held until every worker took one: one could take them all.
+            if (n > 4) awaitUntil("every worker to take a band") { workers.size == 4 }
             true
         }
         // The calling thread alone until more were wanted.

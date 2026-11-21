@@ -2,6 +2,7 @@ package com.infinity.comicreader.reader
 
 import android.app.Application
 import android.graphics.Bitmap
+import com.infinity.comicreader.testing.awaitUntil
 import org.junit.After
 import org.junit.Before
 import org.junit.Assert.assertArrayEquals
@@ -18,7 +19,6 @@ import java.util.Collections
 import java.util.concurrent.CancellationException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.atomic.AtomicLong
 import kotlin.random.Random
 
 /**
@@ -215,14 +215,9 @@ class NativeResamplerTest {
         // Once on screen, the calling thread waits for a worker started then to take a band: bands this
         // small could all go to it before a busy pool runs one.
         val othersBanded = AtomicBoolean()
-        // One 5 s wait in all, from the first: workers that never grow fail the test soon.
-        val until = AtomicLong()
         val k = use(FakeKernels(beforeBand = { worker, _ ->
             if (worker != 0) othersBanded.set(true)
-            if (worker == 0 && polls.get() > 4) {
-                until.compareAndSet(0, System.currentTimeMillis() + 5_000)
-                while (!othersBanded.get() && System.currentTimeMillis() < until.get()) Thread.sleep(1)
-            }
+            if (worker == 0 && polls.get() > 4) awaitUntil("a worker started on screen to take a band") { othersBanded.get() }
         }))
         NativeResampler.laterThreads = 1
         // On screen after a few polls: the first bands ran on the calling thread alone.

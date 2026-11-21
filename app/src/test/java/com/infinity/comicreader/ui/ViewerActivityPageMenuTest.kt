@@ -23,6 +23,7 @@ import com.infinity.comicreader.data.TwoPage
 import com.infinity.comicreader.reader.Fixtures
 import com.infinity.comicreader.reader.TestImages
 import com.infinity.comicreader.testing.bookId
+import com.infinity.comicreader.testing.idleUntil
 import com.infinity.comicreader.testing.ref
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -70,11 +71,7 @@ class ViewerActivityPageMenuTest {
 
     private fun ViewerActivity.settle(): ViewerActivity {
         val progress = findViewById<View>(R.id.viewer_progress)
-        val deadline = System.currentTimeMillis() + 5_000
-        do {
-            Thread.sleep(10)
-            idle()
-        } while (progress.visibility == View.VISIBLE && System.currentTimeMillis() < deadline)
+        idleUntil("the book open") { progress.visibility != View.VISIBLE }
         return this
     }
 
@@ -178,13 +175,8 @@ class ViewerActivityPageMenuTest {
         val viewer = launch(book())
         val before = latestDialogOrNullOf(viewer)
         viewer.menu(2).row(PageAction.PAGE_INFO).performClick()
-        val deadline = System.currentTimeMillis() + 5_000
         fun message() = (latestDialogOf(viewer) as AlertDialog).findViewById<TextView>(android.R.id.message)?.text?.toString().orEmpty()
-        while (latestDialogOf(viewer) === before || message().isEmpty()) {
-            if (System.currentTimeMillis() > deadline) break
-            Thread.sleep(10)
-            idle()
-        }
+        idleUntil("Page info's text") { latestDialogOf(viewer) !== before && message().isNotEmpty() }
         val text = (latestDialogOf(viewer) as AlertDialog).findViewById<TextView>(android.R.id.message)!!.text.toString()
         assertTrue(text, text.contains("Page 03.png"))
         assertTrue(text, text.contains("26 × 40"))
@@ -200,11 +192,7 @@ class ViewerActivityPageMenuTest {
         viewer.holdProgress()
         val menu = viewer.menu(2)
         menu.row(PageAction.PAGE_INFO).performClick()
-        val deadline = System.currentTimeMillis() + 5_000
-        while (latestDialogOf(viewer) === menu && System.currentTimeMillis() < deadline) {
-            Thread.sleep(10)
-            idle()
-        }
+        idleUntil("Page info shown") { latestDialogOf(viewer) !== menu }
         assertTrue(latestDialogOf(viewer) !== menu)
         assertEquals(View.VISIBLE, progress.visibility)
         viewer.releaseProgress()

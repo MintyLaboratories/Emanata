@@ -1,5 +1,6 @@
 package com.infinity.comicreader.ui
 
+import com.infinity.comicreader.testing.idleUntil
 import com.infinity.comicreader.testing.ref
 import com.infinity.comicreader.testing.bookId
 import android.app.Application
@@ -66,11 +67,7 @@ class ViewerActivityHiddenPagesTest {
     /** Waits for the book to open, or open again. */
     private fun ViewerActivity.settle(): ViewerActivity {
         val progress = findViewById<View>(R.id.viewer_progress)
-        val deadline = System.currentTimeMillis() + 5_000
-        do {
-            Thread.sleep(10)
-            idle()
-        } while (progress.visibility == View.VISIBLE && System.currentTimeMillis() < deadline)
+        idleUntil("the book open") { progress.visibility != View.VISIBLE }
         return this
     }
 
@@ -87,11 +84,7 @@ class ViewerActivityHiddenPagesTest {
     private fun ViewerActivity.bookInfo(): AlertDialog {
         val before = latestDialogOrNullOf(this)
         shadowOf(this).clickMenuItem(R.id.menu_book_info)
-        val deadline = System.currentTimeMillis() + 5_000
-        while (latestDialogOrNullOf(this) === before && System.currentTimeMillis() < deadline) {
-            Thread.sleep(10)
-            idle()
-        }
+        idleUntil("Book info shown") { latestDialogOrNullOf(this) !== before }
         return latestDialogOf(this) as AlertDialog
     }
 

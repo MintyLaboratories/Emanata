@@ -2,6 +2,7 @@ package com.infinity.comicreader.ai
 
 import android.app.Application
 import android.graphics.Bitmap
+import com.infinity.comicreader.testing.awaitUntil
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -177,19 +178,26 @@ class ModelCheckTest {
 
     @Test
     fun timeWaitingForAPageIsNotCounted() {
-        // A page holds the engine while the clock passes the check's limit.
+        // A page holds the engine while the clock passes the check's limit, once the check waits for it.
         val now = AtomicLong()
         val held = CountDownLatch(1)
+        val waiting = CountDownLatch(1)
         val page = thread {
             TileEngine.exclusive({ false }) {
                 held.countDown()
-                Thread.sleep(300)
+                waiting.await()
                 now.addAndGet(ModelCheck.TIME_LIMIT_MS * 2)
             }
         }
-        assertTrue(held.await(10, TimeUnit.SECONDS))
-        assertTrue(check(FakeRuntime(), clock = now::get) is ModelCheck.Result.Fit)
-        page.join()
+        try {
+            assertTrue(held.await(10, TimeUnit.SECONDS))
+            // Asked first by the engine's lock, between tries while it waits for the page.
+            val r = ModelCheck.check(FakeRuntime(), fakeFiles(tmp.root), 4, Long.MAX_VALUE, canceled = { waiting.countDown(); false }, clock = now::get)
+            assertTrue(r is ModelCheck.Result.Fit)
+        } finally {
+            waiting.countDown()
+        }
+        awaitUntil("the page to end") { !page.isAlive }
     }
 
     @Test

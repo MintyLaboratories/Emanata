@@ -159,4 +159,15 @@ class NoticesTest {
         val text = "Copyright (c) 2026 A\nCopyright (c) 2026 B\n\nPermission\nis granted."
         assertEquals("Copyright (c) 2026 A\nCopyright (c) 2026 B\n\nPermission is granted.", Notices.reflow(text))
     }
+
+    @Test
+    fun theTextDetectorsOriginIsTheArchiveItsRepositoryNames() {
+        // The repository's manifest names the v0.3.0 archive; v0.3.1 came out after the repository took its copy.
+        val paddle = Notices.all.single { it.name == "PaddleOCR text detector" }.note!!
+        val readme = File("../README.md").readText().lines().single { it.contains("PP-OCRv5 mobile text detector") }
+        for (text in listOf(paddle, readme)) {
+            assertTrue(text, text.contains("v0.3.0 release archive") && text.contains("manifest"))
+            assertFalse(text, text.contains("v0.3.1") || text.contains("byte-identical"))
+        }
+    }
 }

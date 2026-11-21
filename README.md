@@ -1619,7 +1619,7 @@ app shows each license and NOTICE text under Settings → About (files in
 | [Bouncy Castle](https://www.bouncycastle.org/) (`bcprov`) | MIT (Bouncy Castle Licence) |
 | [OkHttp](https://github.com/square/okhttp), Okio | Apache-2.0 |
 | [MBassador](https://github.com/bennidi/mbassador) | MIT |
-| [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) PP-OCRv5 mobile text detector, not bundled: downloaded unchanged the first time a cover needs it, a third party's ncnn conversion from a [pinned Hugging Face repository](https://huggingface.co/qefro/pp-OCRv5-6-ncnn) (Apache-2.0; its weights file is byte-identical to the one in the [PaddleOCR-ncnn-CPP](https://github.com/Avafly/PaddleOCR-ncnn-CPP) v0.3.1 release archive, MIT) | Apache-2.0 |
+| [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) PP-OCRv5 mobile text detector, not bundled: downloaded unchanged the first time a cover needs it, a third party's ncnn conversion from a [pinned Hugging Face repository](https://huggingface.co/qefro/pp-OCRv5-6-ncnn) (Apache-2.0; its weights file is from the [PaddleOCR-ncnn-CPP](https://github.com/Avafly/PaddleOCR-ncnn-CPP) v0.3.0 release archive, MIT, as the repository's manifest states) | Apache-2.0 |
 | Material Symbols | Apache-2.0 |
 
 Dual-licensed components are used under Apache-2.0.

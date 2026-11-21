@@ -102,7 +102,7 @@ import kotlin.math.max
  *   headroom, until the time is up or the gate stops a page (`stoppedBy`). Each run's energy
  *   per page on battery alone is measured as ResampleCheckService's sustain measures it
  *   ([EnergyMeter]: refused on a charger; valid only with the cable out, adb over Wi-Fi),
- *   then the energy per page across rounds with its spread (`energy`).
+ *   then the energy per page across valid rounds with its spread (`energy`).
  * - download: per catalog model or shader chain, deletes it from the app's store, downloads it
  *   (stopping once after `cut` bytes when given, then resuming), checks it is installed, and for
  *   an ncnn model opens it and runs one page of `size` within the default page time (a shader
@@ -416,7 +416,7 @@ class AiCheckService : Service() {
         val gate = AiConditions.gate(this)
         val meter = EnergyMeter(this)
         val engine = if (s.model.onGpu) "gpu" else "cpu"
-        val runs = ArrayList<EnergyRuns.Run>()
+        val runs = EnergyRuns.Rounds()
         try {
             for (round in 0 until rounds) {
                 if (cooldown > 0) Thread.sleep(cooldown * 1000L)
@@ -443,7 +443,7 @@ class AiCheckService : Service() {
                     }
                     pages
                 }
-                runs += run
+                runs.add(run, heat.cool)
                 val line = JSONObject().put("sustained", engine).put("round", round).put("size", "${w}x$h").put("tile", s.size)
                     .put("stoppedBy", stopped?.name ?: JSONObject.NULL)
                 meter.json(run, idle).let { m -> m.keys().forEach { line.put(it, m.get(it)) } }

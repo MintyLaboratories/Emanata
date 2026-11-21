@@ -136,12 +136,15 @@ internal class EnergyMeter(private val context: Context, private val everyMs: Lo
         .put("mJPerPage", run.mJPerPage ?: JSONObject.NULL)
         .put("refused", run.refused ?: JSONObject.NULL)
 
-    /** One setup's energy per page across its rounds: those measured, and their spread ([EnergyRuns.spread]). */
-    fun summary(key: String, runs: List<EnergyRuns.Run>): JSONObject {
-        val mj = runs.mapNotNull { it.mJPerPage }
-        val s = EnergyRuns.spread(mj)
-        return JSONObject().put("energy", key).put("rounds", runs.size).put("measured", mj.size)
-            .put("mJPerPage", JSONArray(mj.map { Stats.round1(it) }))
+    /**
+     * One setup's energy per page across its [rounds]: the valid ones measured, and their
+     * spread ([EnergyRuns.Rounds]); those measured but not valid listed apart (`invalidMj`).
+     */
+    fun summary(key: String, rounds: EnergyRuns.Rounds): JSONObject {
+        val s = rounds.spread
+        return JSONObject().put("energy", key).put("rounds", rounds.count).put("measured", rounds.measured).put("valid", rounds.valid.size)
+            .put("mJPerPage", JSONArray(rounds.valid.map { Stats.round1(it) }))
+            .put("invalidMj", JSONArray(rounds.invalid.map { Stats.round1(it) }))
             .put("meanMj", s?.let { Stats.round1(it.mean) } ?: JSONObject.NULL)
             .put("minMj", s?.let { Stats.round1(it.min) } ?: JSONObject.NULL)
             .put("maxMj", s?.let { Stats.round1(it.max) } ?: JSONObject.NULL)

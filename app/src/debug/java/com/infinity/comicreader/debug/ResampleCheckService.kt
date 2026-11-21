@@ -81,7 +81,7 @@ import kotlin.random.Random
  *   [EnergyMeter]: current and voltage sampled together every 100 ms, the thermal status and
  *   charger every second; pages per second, energy per page above idle, and the distinct
  *   current values per 10 s at idle (a slow fuel gauge repeats itself). Then per setup the
- *   energy per page across rounds with its spread (`energy`).
+ *   energy per page across valid rounds with its spread (`energy`).
  *   Valid only on battery alone: unplug the cable (adb over Wi-Fi). A charger keeps
  *   supplying power under `dumpsys battery unplug`, so a battery reporting a charger (its
  *   status or its plug), or any sample not draining, refuses the estimate.
@@ -519,7 +519,7 @@ class ResampleCheckService : Service() {
     private fun sustain(setups: List<Setup>, seconds: Int, rounds: Int, cooldown: Int, idle: Int, source: Pair<Int, Int>, size: Pair<Int, Int>, scaling: Scaling) {
         val page = SyntheticPage.draw(source.first, source.second)
         val meter = EnergyMeter(this)
-        val runs = setups.associateWith { ArrayList<EnergyRuns.Run>() }
+        val runs = setups.associateWith { EnergyRuns.Rounds() }
         try {
             for ((round, order) in ResampleRuns.interleaved(setups, rounds).withIndex()) {
                 for (s in order) {
@@ -533,17 +533,17 @@ class ResampleCheckService : Service() {
                         }
                         pages
                     }
-                    runs.getValue(s) += run
                     val after = state()
                     heat.see(after.getInt("thermal"))
                     val conditions = conditions()
+                    val valid = conditions.getBoolean("valid") && heat.cool
+                    runs.getValue(s).add(run, valid)
                     val line = JSONObject().put("sustain", s.key).put("round", round)
                         .put("source", "${source.first}x${source.second}").put("to", "${size.first}x${size.second}")
                         .put("filter", scaling.filter.key).put("downRing", scaling.downRing)
                     meter.json(run, idle).let { m -> m.keys().forEach { line.put(it, m.get(it)) } }
                     log(
-                        line.put("after", after).put("thermalPeak", heat.peak).put("conditions", conditions)
-                            .put("valid", conditions.getBoolean("valid") && heat.cool)
+                        line.put("after", after).put("thermalPeak", heat.peak).put("conditions", conditions).put("valid", valid)
                     )
                 }
             }

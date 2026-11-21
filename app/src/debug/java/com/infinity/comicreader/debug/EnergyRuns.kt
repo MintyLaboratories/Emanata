@@ -95,6 +95,25 @@ internal object EnergyRuns {
         val cpuMsPerPage: Double get() = cpuMs.toDouble() / maxOf(pages, 1)
     }
 
+    /**
+     * One setup's rounds, each a run and whether it was valid (cool, the app in front, a
+     * bench build): the energy per page of the [valid] ones and of those measured but not
+     * valid ([invalid]), in round order. Only valid rounds count toward the [spread].
+     */
+    class Rounds {
+        private val runs = ArrayList<Pair<Run, Boolean>>()
+
+        fun add(run: Run, valid: Boolean) {
+            runs += run to valid
+        }
+
+        val count: Int get() = runs.size
+        val valid: List<Double> get() = runs.filter { it.second }.mapNotNull { it.first.mJPerPage }
+        val invalid: List<Double> get() = runs.filterNot { it.second }.mapNotNull { it.first.mJPerPage }
+        val measured: Int get() = valid.size + invalid.size
+        val spread: Spread? get() = spread(valid)
+    }
+
     /** The [mean], [min] and [max] of values, and half their range as a share of the mean ([pct], ±%). */
     data class Spread(val mean: Double, val min: Double, val max: Double, val pct: Double)
 

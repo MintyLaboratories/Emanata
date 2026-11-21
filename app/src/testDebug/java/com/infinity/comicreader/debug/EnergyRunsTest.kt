@@ -113,6 +113,24 @@ class EnergyRunsTest {
     }
 
     @Test
+    fun onlyValidRoundsCountTowardTheSpread() {
+        val rounds = EnergyRuns.Rounds()
+        // 1000 mJ per page, valid; 2000 while warm (not valid); one refused on a charger.
+        rounds.add(Run(draw(-400.0), draw(-900.0), 10.0, 20, 0), true)
+        rounds.add(Run(draw(-400.0), draw(-1400.0), 10.0, 20, 0), false)
+        rounds.add(Run(draw(-400.0), draw(-900.0, charger = true), 10.0, 20, 0), true)
+        rounds.add(Run(draw(-400.0), draw(-950.0), 10.0, 20, 0), true)
+        assertEquals(4, rounds.count)
+        assertEquals(3, rounds.measured)
+        assertEquals(listOf(1000.0, 1100.0), rounds.valid.map { Math.round(it).toDouble() })
+        assertEquals(listOf(2000.0), rounds.invalid.map { Math.round(it).toDouble() })
+        val s = rounds.spread!!
+        assertEquals(1050.0, s.mean, 1e-6)
+        assertEquals(1100.0, s.max, 1e-6)
+        assertNull(EnergyRuns.Rounds().apply { add(Run(draw(-400.0), draw(-1400.0), 10.0, 20, 0), false) }.spread)
+    }
+
+    @Test
     fun spreadIsHalfTheRangeOverTheMean() {
         val s = EnergyRuns.spread(listOf(78.6, 81.3, 84.5))!!
         assertEquals(81.4667, s.mean, 1e-3)

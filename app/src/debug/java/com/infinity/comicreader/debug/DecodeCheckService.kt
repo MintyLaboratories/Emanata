@@ -84,7 +84,7 @@ import kotlin.math.max
  *   out) and each setup taking it, in `rounds` interleaved rounds, a `cooldown` s pause, an
  *   `idle` s baseline, then the group's pages decoded in turn back to back for `seconds`:
  *   pages per second, energy per page above idle, the distinct current values per 10 s at
- *   idle; then per setup the energy per page across rounds with its spread (`energy`).
+ *   idle; then per setup the energy per page across valid rounds with its spread (`energy`).
  *   Refused on a charger; valid only with the cable out (adb over Wi-Fi). Compares platform
  *   JPEG pinned or not (`platform,platform/big`) and JPEG XL threads (`page/4/big,page/8/any`).
  *
@@ -339,7 +339,7 @@ class DecodeCheckService : Service() {
             val jxl = group.pages.firstOrNull()?.jxl ?: continue
             val taking = setups.filter { it.takes(jxl) }
             if (taking.isEmpty()) continue
-            val runs = taking.associateWith { ArrayList<EnergyRuns.Run>() }
+            val runs = taking.associateWith { EnergyRuns.Rounds() }
             for ((round, order) in ResampleRuns.interleaved(taking, energy.rounds).withIndex()) {
                 for (setup in order) {
                     SystemClock.sleep(energy.cooldown * 1000L)
@@ -353,14 +353,14 @@ class DecodeCheckService : Service() {
                         }
                         pages
                     }
-                    runs.getValue(setup) += run
                     val after = conditions()
                     heat.see(meter.thermal())
+                    val valid = before.getBoolean("valid") && after.getBoolean("valid") && heat.cool
+                    runs.getValue(setup).add(run, valid)
                     val line = JSONObject().put("sustain", setup.key).put("group", group.name).put("round", round).put("groupPages", group.pages.size)
                     meter.json(run, energy.idle).let { m -> m.keys().forEach { line.put(it, m.get(it)) } }
                     log(
-                        line.put("before", before).put("after", after).put("thermalPeak", heat.peak)
-                            .put("valid", before.getBoolean("valid") && after.getBoolean("valid") && heat.cool)
+                        line.put("before", before).put("after", after).put("thermalPeak", heat.peak).put("valid", valid)
                     )
                 }
             }

@@ -2,6 +2,9 @@ package com.infinity.comicreader.ai
 
 import android.app.Application
 import com.infinity.comicreader.net.Metered
+import com.infinity.comicreader.testing.awaitJob
+import com.infinity.comicreader.testing.awaitUntil
+import kotlinx.coroutines.Job
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
@@ -57,8 +60,8 @@ class ModelDownloadsTest {
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
                 paths += request.path.orEmpty()
-                holds.getOrNull(requests.getAndIncrement())?.await(10, TimeUnit.SECONDS)
-                gate.await(10, TimeUnit.SECONDS)
+                holds.getOrNull(requests.getAndIncrement())?.await()
+                gate.await()
                 val data = files[request.path] ?: return MockResponse().setResponseCode(404)
                 return MockResponse().setBody(Buffer().write(data))
             }
@@ -72,6 +75,7 @@ class ModelDownloadsTest {
         Metered.probe = { Metered.Link(connected = true, notMetered = true, activeMetered = false) }
         Metered.forget()
         gate.countDown()
+        holds.forEach { it.countDown() }
         server.shutdown()
     }
 
@@ -86,20 +90,13 @@ class ModelDownloadsTest {
         return CatalogModel(id, id, AiStep.UPSCALE, 2, ModelSource.OPENCOMIC, serve("$id.param", 100), serve("$id.bin", 50_000))
     }
 
-    private fun waitForRequests(n: Int) {
-        val end = System.currentTimeMillis() + 10_000
-        while (requests.get() < n) {
-            assertTrue("timed out waiting for request $n", System.currentTimeMillis() < end)
-            Thread.sleep(10)
-        }
-    }
+    private fun waitForRequests(n: Int) = awaitUntil("request $n") { requests.get() >= n }
 
-    private fun waitFor(what: String, condition: (Downloads) -> Boolean) {
-        val end = System.currentTimeMillis() + 10_000
-        while (!condition(ModelDownloads.state.value)) {
-            assertTrue("timed out waiting for $what: ${ModelDownloads.state.value}", System.currentTimeMillis() < end)
-            Thread.sleep(10)
-        }
+    /** Waits for [job], [model]'s download, then checks it installed [model] and left the state. */
+    private fun assertInstalls(model: CatalogModel, job: Job?) {
+        awaitJob("${model.id}'s download", job!!)
+        val state = ModelDownloads.state.value
+        assertTrue("installed and gone from $state", model.id !in state.states && store.installed(model))
     }
 
     @Test
@@ -108,9 +105,7 @@ class ModelDownloadsTest {
         ModelDownloads.client = { OkHttpClient.Builder().addInterceptor { asked.incrementAndGet(); throw IOException("refused") }.build() }
         try {
             val m = model("dl-stand-in")
-            ModelDownloads.start(store, m)
-            val end = System.currentTimeMillis() + 5_000
-            while (ModelDownloads.state.value.states[m.id] !is DownloadState.Failed && System.currentTimeMillis() < end) Thread.sleep(10)
+            awaitJob("the stand-in's refusal", ModelDownloads.start(store, m)!!)
             assertTrue(ModelDownloads.state.value.states[m.id] is DownloadState.Failed)
             assertTrue(asked.get() > 0)
             assertEquals(0, server.requestCount)
@@ -130,7 +125,9 @@ class ModelDownloadsTest {
         // Asking again while it runs starts nothing new: it hands back the job on its way.
         assertSame(job, ModelDownloads.start(store, m))
         gate.countDown()
-        waitFor("install") { m.id !in it.states && it.generation > generation }
+        awaitJob("the download", job)
+        val state = ModelDownloads.state.value
+        assertTrue("installed and gone from $state", m.id !in state.states && state.generation > generation)
         assertTrue(store.installed(m))
         assertNull("nothing runs for a model in place", ModelDownloads.start(store, m))
     }
@@ -138,8 +135,8 @@ class ModelDownloadsTest {
     @Test
     fun aFailedDownloadStaysShownUntilRetried() {
         val m = model("dl-missing", missing = true)
-        ModelDownloads.start(store, m)
-        waitFor("failure") { it.states[m.id] is DownloadState.Failed }
+        awaitJob("the download", ModelDownloads.start(store, m)!!)
+        assertTrue(ModelDownloads.state.value.states[m.id] is DownloadState.Failed)
         assertEquals(DownloadFailure.SERVER, (ModelDownloads.state.value.states[m.id] as DownloadState.Failed).failure)
         assertFalse(store.installed(m))
     }
@@ -159,8 +156,7 @@ class ModelDownloadsTest {
         // The app may try again by itself, as it may not after another failure.
         assertTrue(ModelDownloads.mayStartBySelf(ModelDownloads.state.value, m.id))
         assertFalse(ModelDownloads.mayStartBySelf(Downloads(mapOf(m.id to DownloadState.Failed(DownloadFailure.SERVER))), m.id))
-        ModelDownloads.start(store, m)
-        waitFor("install") { m.id !in it.states && store.installed(m) }
+        assertInstalls(m, ModelDownloads.start(store, m))
     }
 
     @Test
@@ -199,18 +195,16 @@ class ModelDownloadsTest {
     @Test
     fun anOptionalDownloadRunsUnmetered() {
         val m = model("dl-unmetered")
-        ModelDownloads.start(store, m, optional = true)
-        waitFor("install") { m.id !in it.states && store.installed(m) }
+        assertInstalls(m, ModelDownloads.start(store, m, optional = true))
     }
 
     @Test
     fun deleteStopsAndRemovesAModel() {
         val m = model("dl-delete")
-        ModelDownloads.start(store, m)
-        waitFor("install") { m.id !in it.states && store.installed(m) }
+        assertInstalls(m, ModelDownloads.start(store, m))
         val generation = ModelDownloads.state.value.generation
         ModelDownloads.delete(store, m)
-        waitFor("delete") { it.generation > generation }
+        awaitUntil("the delete") { ModelDownloads.state.value.generation > generation }
         assertFalse(store.installed(m))
         assertFalse(store.dir(m).exists())
     }
@@ -252,19 +246,18 @@ class ModelDownloadsTest {
     /** Returns once everything queued so far ran: downloads run one at a time in the order asked. */
     private fun afterQueued() {
         val last = model("dl-last-${System.nanoTime()}")
-        ModelDownloads.start(store, last)
-        waitFor("queue") { last.id !in it.states && store.installed(last) }
+        assertInstalls(last, ModelDownloads.start(store, last))
     }
 
     @Test
     fun cancelKeepsWhatArrivedAndClearsTheState() {
         val m = model("dl-cancel")
         gate = CountDownLatch(1)
-        ModelDownloads.start(store, m)
+        val job = ModelDownloads.start(store, m)!!
         ModelDownloads.cancel(m.id)
         assertFalse(m.id in ModelDownloads.state.value.states)
         gate.countDown()
-        Thread.sleep(200)
+        awaitJob("the canceled download", job)
         assertFalse(m.id in ModelDownloads.state.value.states)
     }
 
@@ -277,14 +270,14 @@ class ModelDownloadsTest {
         ModelDownloads.start(store, m)
         waitForRequests(1)
         ModelDownloads.cancel(m.id)
-        ModelDownloads.start(store, m)
+        val successor = ModelDownloads.start(store, m)!!
         // The first download ends on its canceled answer, then the second asks.
         first.countDown()
         waitForRequests(2)
         assertTrue(ModelDownloads.state.value.states[m.id] is DownloadState.Running)
         ModelDownloads.cancel(m.id)
         second.countDown()
-        Thread.sleep(300)
+        awaitJob("the canceled successor", successor)
         assertFalse(store.installed(m))
         assertFalse(m.id in ModelDownloads.state.value.states)
     }

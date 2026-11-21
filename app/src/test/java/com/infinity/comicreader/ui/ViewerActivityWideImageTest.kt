@@ -265,6 +265,28 @@ class ViewerActivityWideImageTest {
     }
 
     @Test
+    fun aWindowChangeDuringASwipeLetsTheLockGoOnceItEnds() {
+        val viewer = launch()
+        repeat(2) { viewer.next() }
+        val pager = viewer.pager()
+        val forward = if (pager.layoutDirection == View.LAYOUT_DIRECTION_RTL) 1f else -1f
+        pager.beginFakeDrag()
+        pager.fakeDragBy(forward * pager.width / 10f)
+        idle()
+        shadowOf(viewer).setInMultiWindowMode(true)
+        viewer.onConfigurationChanged(viewer.resources.configuration)
+        idle()
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_LOCKED, viewer.requestedOrientation)
+        // Back on the page it left, the lock goes.
+        pager.endFakeDrag()
+        repeat(100) { if (pager.scrollState != ViewPager2.SCROLL_STATE_IDLE) idleFor(20) }
+        idleFor(100)
+        assertEquals("3 / 6", viewer.indicator())
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED, viewer.requestedOrientation)
+        assertEquals(0, viewer.turnOf())
+    }
+
+    @Test
     fun aLockedReaderStoppedAndStartedStaysLockedAndLetsGoAfter() {
         val controller = Robolectric.buildActivity(ViewerActivity::class.java, intent()).setup()
         val viewer = controller.get()

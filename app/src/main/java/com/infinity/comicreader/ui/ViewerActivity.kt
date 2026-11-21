@@ -2434,9 +2434,16 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
      */
     private fun sideways(): Boolean = landscape() || isInMultiWindowMode || displayLandscape(shownDisplay())
 
-    /** The window's shape or mode changed: pages are turned, and the screen locked, as [sideways] now says. */
+    /**
+     * The window's shape or mode changed: pages are turned, and the screen locked, as
+     * [sideways] now says; during a swipe, once the pager comes to rest ([updateSpreadRotation]).
+     */
     private fun windowChanged() {
         if (source == null) return
+        if (swiping) {
+            rotationAfterSwipe = true
+            return
+        }
         updateImageLock()
         // A resize shows the pages again; a window that kept its size turns them here, once laid out.
         pager.post { adapter?.refreshTurns() }

@@ -7,13 +7,14 @@ import kotlin.math.ceil
 import kotlin.math.sqrt
 
 /**
- * The reader's AI indicator: a small dot in the bottom right corner of the screen, shown while the
+ * The reader's AI indicator: a small dot in the bottom right corner of the screen as the page is
+ * read ([Corner.of]: a page drawn turned is read with the device turned), shown while the
  * setting is on ([enabled]) and models work on a page of the open book ([busy], as
  * [com.infinity.comicreader.ai.AiQueue.working] tells it). It shows once the work has gone on for
  * [showDelayMs], so a page put off or given up at once never blinks it, and hides at once. Only its
  * visibility changes, never per tile; hidden while enabled it stays laid out (invisible), so showing
  * it costs no layout. [place] keeps it clear of the window's edges and a rounded screen corner,
- * and above the bars while they show, by translation alone: placing it lays nothing out.
+ * and clear of the bars while they show, by translation alone: placing it lays nothing out.
  */
 internal class AiDot(
     private val view: View,
@@ -53,21 +54,42 @@ internal class AiDot(
     }
 
     /**
-     * Puts the dot, laid out in its parent's bottom right corner, in the window's: its parent
-     * [awayRight] and [awayBottom] px from the window's edges (the system bars and a display
-     * cutout, in a window that fits them), the window's bottom right corner rounded at [radius]
-     * px (0: square), and above [barTop] (in its parent) while a bar shows there, else null.
+     * Puts the dot, laid out in its parent's bottom right corner, in the window's [corner]: its
+     * parent [awayX] and [awayY] px from the window's edges on that corner's sides (the system bars
+     * and a display cutout, in a window that fits them), that corner rounded at [radius] px (0:
+     * square), and clear of a bar while one shows on its side, else null: above [bar], the bar's
+     * top, at the bottom; below it, the bar's bottom, at the top (in its parent).
      */
-    fun place(awayRight: Int, awayBottom: Int, radius: Int, barTop: Int?) {
-        val (right, bottom) = offsets(awayRight, awayBottom, radius, margin)
-        val dx = (right - awayRight).coerceAtLeast(0)
-        val dy = (bottom - awayBottom).coerceAtLeast(0)
-        view.translationX = -dx.toFloat()
-        view.translationY = (-dy + lift(view.bottom - dy, barTop, margin)).toFloat()
+    fun place(corner: Corner, awayX: Int, awayY: Int, radius: Int, bar: Int?) {
+        val (x, y) = offsets(awayX, awayY, radius, margin)
+        val dx = (x - awayX).coerceAtLeast(0)
+        val dy = (y - awayY).coerceAtLeast(0)
+        view.translationX = (if (corner.right) -dx else dx - view.left).toFloat()
+        view.translationY = (if (corner.bottom) -dy + lift(view.bottom - dy, bar, margin) else dy - view.top + drop(dy, bar, margin)).toFloat()
     }
 
     /** Stops a pending show; the reader is going away. */
     fun release() = handler.removeCallbacks(show)
+
+    /** A corner of the window, by its sides. */
+    enum class Corner(val right: Boolean, val bottom: Boolean) {
+        BOTTOM_RIGHT(true, true),
+        BOTTOM_LEFT(false, true),
+        TOP_RIGHT(true, false);
+
+        companion object {
+            /**
+             * The window's corner at the bottom right of a page drawn turned [turn] quarters
+             * ([TurnFrame.turn]): its bottom to the left with 1, so its bottom right corner is the
+             * window's bottom left; its bottom to the right with -1, so the window's top right.
+             */
+            fun of(turn: Int): Corner = when (turn) {
+                1 -> BOTTOM_LEFT
+                -1 -> TOP_RIGHT
+                else -> BOTTOM_RIGHT
+            }
+        }
+    }
 
     companion object {
         /** How long models work on a page before the dot shows. */
@@ -89,5 +111,9 @@ internal class AiDot(
         /** How far up a dot whose bottom is at [dotBottom] moves to sit [margin] above [barTop]; 0 with no bar. */
         fun lift(dotBottom: Int, barTop: Int?, margin: Int): Int =
             if (barTop == null) 0 else minOf(0, barTop - margin - dotBottom)
+
+        /** How far down a dot whose top is at [dotTop] moves to sit [margin] below [barBottom]; 0 with no bar. */
+        fun drop(dotTop: Int, barBottom: Int?, margin: Int): Int =
+            if (barBottom == null) 0 else maxOf(0, barBottom + margin - dotTop)
     }
 }

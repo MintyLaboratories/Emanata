@@ -193,6 +193,45 @@ class ViewerActivityWideImageTest {
         repeat(100) { if (pager.scrollState != ViewPager2.SCROLL_STATE_IDLE) idleFor(20) }
     }
 
+    /** Where [viewer]'s AI indicator is, in its parent: left and top. */
+    private fun dotAt(viewer: ViewerActivity): Pair<Float, Float> {
+        val dot = viewer.findViewById<View>(R.id.ai_dot)
+        return dot.left + dot.translationX to dot.top + dot.translationY
+    }
+
+    @Test
+    fun theAiDotSitsAtTheBottomRightOfThePageAsItIsRead() {
+        prefs.aiDot = true
+        val viewer = launch()
+        val root = viewer.findViewById<View>(R.id.viewer_root)
+        val bar = viewer.findViewById<View>(R.id.viewer_bottom)
+        viewer.next()
+        val (x, y) = dotAt(viewer)
+        assertTrue("upright: right", x > root.width / 2)
+        assertTrue("upright: bottom, above the bar", y > root.height / 2 && y < bar.top)
+        viewer.next()
+        assertEquals(1, viewer.turnOf())
+        val (tx, ty) = dotAt(viewer)
+        assertTrue("turned clockwise: the left edge, $tx", tx < root.width / 2)
+        assertEquals("the same height", y, ty, 0f)
+        viewer.next()
+        assertEquals(x to y, dotAt(viewer))
+    }
+
+    @Test
+    fun leftHandedTheAiDotSitsAtTheTopRightBelowTheToolbar() {
+        prefs.aiDot = true
+        prefs.leftHanded = true
+        val viewer = launch()
+        val root = viewer.findViewById<View>(R.id.viewer_root)
+        val toolbar = viewer.findViewById<View>(R.id.viewer_toolbar)
+        repeat(2) { viewer.next() }
+        assertEquals(-1, viewer.turnOf())
+        val (x, y) = dotAt(viewer)
+        assertTrue("right, $x", x > root.width / 2)
+        assertTrue("top, below the toolbar: $y", y < root.height / 2 && y >= toolbar.bottom)
+    }
+
     @Test
     fun withAnotherChoiceNothingIsTurned() {
         prefs.widePages = WidePages.NOTHING

@@ -924,7 +924,10 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   while models work on a page of the open book, read-ahead included. It
   shows after 0.3 s of work and hides once the queue is done, put off (heat,
   battery saver) or gave up; pages read back from disk don't show it. It
-  stays inside the screen's insets and rounded corner, above the bars.
+  stays inside the screen's insets and rounded corner, clear of the bars. On
+  a page drawn turned (*Rotate image*) it moves to the corner that is the
+  page's bottom right as it is read: the screen's bottom left, or its top
+  right when left-handed.
 - **Optimizing for this device**: at first launch, once the library shows, a
   full-screen calibration times how fast the device decodes and resizes pages
   (about 40 s; a comic page whose gutters slide one at a time keeps it company)

@@ -37,7 +37,7 @@
         android:scaleX="0"
         android:visibility="gone" />
 
-    <!-- Shown while AI works on a page (AiDot): bottom right, kept inside the insets and above the bars. -->
+    <!-- Shown while AI works on a page (AiDot): bottom right as the page is read, kept inside the insets and clear of the bars. -->
     <View
         android:id="@+id/ai_dot"
         android:layout_width="@dimen/ai_dot_size"

@@ -964,26 +964,41 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
     }
 
     /**
-     * Puts the AI indicator in the window's bottom right corner, above the preview strip or the
-     * bottom bar while one shows. The window fits the system bars and the display cutout, so the
-     * root's distance from its edges keeps the dot clear of them.
+     * Puts the AI indicator in the window's corner at the bottom right of the page as it is read
+     * ([AiDot.Corner.of] the turn of the page on screen), clear of the preview strip or the bottom
+     * bar while one shows at the bottom, of the toolbar while it shows at the top. The window fits
+     * the system bars and the display cutout, so the root's distance from its edges keeps the dot
+     * clear of them.
      */
     private fun placeAiDot() {
         val root = findViewById<View>(R.id.viewer_root)
         val window = root.rootView
         val at = IntArray(2).also(root::getLocationInWindow)
-        val barTop = when {
+        val corner = AiDot.Corner.of(shownTurn())
+        val bar = when {
+            !corner.bottom -> toolbar.bottom.takeIf { toolbar.visibility == View.VISIBLE }
             seekPanel.visibility == View.VISIBLE -> seekPanel.top + seekPanel.translationY.toInt()
             bottomBar.visibility == View.VISIBLE -> bottomBar.top
             else -> null
         }
-        aiDot.place(window.width - at[0] - root.width, window.height - at[1] - root.height, screenCorner(), barTop)
+        val awayX = if (corner.right) window.width - at[0] - root.width else at[0]
+        val awayY = if (corner.bottom) window.height - at[1] - root.height else at[1]
+        aiDot.place(corner, awayX, awayY, screenCorner(corner), bar)
     }
 
-    /** The radius of the screen's rounded bottom right corner in px, as the window's own insets tell it; 0 when square or unknown. */
-    internal var screenCorner: () -> Int = {
+    /** Quarter turns the page on screen is drawn at ([ImageTurn.quarter]); 0 when upright. */
+    private fun shownTurn(): Int =
+        if (imageTurn.turns(widePageShown(), prefs.widePages == WidePages.IMAGE, sideways())) ImageTurn.quarter(prefs.leftHanded) else 0
+
+    /** The radius of the screen's rounded [corner] in px, as the window's own insets tell it; 0 when square or unknown. */
+    internal var screenCorner: (AiDot.Corner) -> Int = { corner ->
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            window.decorView.rootWindowInsets?.getRoundedCorner(android.view.RoundedCorner.POSITION_BOTTOM_RIGHT)?.radius ?: 0
+            val position = when (corner) {
+                AiDot.Corner.BOTTOM_RIGHT -> android.view.RoundedCorner.POSITION_BOTTOM_RIGHT
+                AiDot.Corner.BOTTOM_LEFT -> android.view.RoundedCorner.POSITION_BOTTOM_LEFT
+                AiDot.Corner.TOP_RIGHT -> android.view.RoundedCorner.POSITION_TOP_RIGHT
+            }
+            window.decorView.rootWindowInsets?.getRoundedCorner(position)?.radius ?: 0
         } else {
             0
         }
@@ -2423,6 +2438,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         spreadRotation.show(widePageShown(), prefs.widePages == WidePages.ORIENTATION, landscape(), screenOrientation(), unsure)?.let { requestTurn(it) }
         adapter?.turned = spreadRotation.held >= 0
         watchUpright()
+        placeAiDot()
     }
 
     /** Locks the screen while the page on screen is drawn turned ([imageTurn]); lets it go back to the reader's own orientation otherwise. */
@@ -2448,6 +2464,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
             return
         }
         updateImageLock()
+        placeAiDot()
         // A resize shows the pages again; a window that kept its size turns them here, once laid out.
         pager.post { adapter?.refreshTurns() }
     }

@@ -18,6 +18,7 @@ import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.net.ShareSpeed
 import com.infinity.comicreader.reader.TestImages
 import com.infinity.comicreader.testing.bookId
+import com.infinity.comicreader.testing.idleUntil
 import com.infinity.comicreader.testing.ref
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -81,15 +82,6 @@ class ViewerActivityRollOnTest {
 
     private fun idle() = shadowOf(Looper.getMainLooper()).idle()
 
-    /** Waits up to five seconds for [done]. */
-    private fun await(done: () -> Boolean) {
-        val deadline = System.currentTimeMillis() + 5_000
-        while (!done() && System.currentTimeMillis() < deadline) {
-            Thread.sleep(10)
-            idle()
-        }
-    }
-
     private lateinit var controller: ActivityController<ViewerActivity>
 
     private fun launch(file: File): ViewerActivity {
@@ -97,7 +89,7 @@ class ViewerActivityRollOnTest {
         controller = Robolectric.buildActivity(ViewerActivity::class.java, intent).setup()
         val viewer = controller.get()
         val progress = viewer.findViewById<View>(R.id.viewer_progress)
-        await { progress.visibility != View.VISIBLE }
+        idleUntil("the book open") { progress.visibility != View.VISIBLE }
         return viewer
     }
 
@@ -105,23 +97,18 @@ class ViewerActivityRollOnTest {
 
     private fun ViewerActivity.openPath(): String? = intent.getStringExtra(ViewerActivity.EXTRA_PATH)
 
-    /** Scrolls the strip down a screen at a time until [done]. */
-    private fun ViewerActivity.scrollUntil(done: () -> Boolean) {
+    /** Scrolls the strip down half a screen at a time until [done], named [what]. */
+    private fun ViewerActivity.scrollUntil(what: String, done: () -> Boolean) {
         val strip = strip()
-        val deadline = System.currentTimeMillis() + 5_000
-        while (!done() && System.currentTimeMillis() < deadline) {
-            strip.scrollBy(0, strip.height / 2)
-            Thread.sleep(10)
-            idle()
-        }
+        idleUntil(what, step = { strip.scrollBy(0, strip.height / 2); idle() }, done = done)
     }
 
     /** Opens [first], waits for [second] to be laid in behind it and scrolls on into it. */
     private fun rollOn(): ViewerActivity {
         val viewer = launch(first)
-        await { (viewer.strip().adapter?.itemCount ?: 0) >= 6 }
+        idleUntil("the second book laid in behind") { (viewer.strip().adapter?.itemCount ?: 0) >= 6 }
         assertEquals(6, viewer.strip().adapter?.itemCount)
-        viewer.scrollUntil { viewer.openPath() == second.absolutePath }
+        viewer.scrollUntil("the second book open") { viewer.openPath() == second.absolutePath }
         assertEquals(second.absolutePath, viewer.openPath())
         return viewer
     }
@@ -145,7 +132,7 @@ class ViewerActivityRollOnTest {
         val b = bookId(second)
         val viewer = rollOn()
         assertFalse(library.isRead(b))
-        viewer.scrollUntil { library.isRead(b) }
+        viewer.scrollUntil("the book read") { library.isRead(b) }
         assertTrue(library.isRead(b))
     }
 
@@ -163,19 +150,19 @@ class ViewerActivityRollOnTest {
     fun theNextChapterRunsItsOwnDefaultChain() {
         library.setChainKind(ref(second), ChainKind.MANGA)
         val viewer = launch(first)
-        await { (viewer.strip().adapter?.itemCount ?: 0) >= 6 }
+        idleUntil("the second book laid in behind") { (viewer.strip().adapter?.itemCount ?: 0) >= 6 }
         assertEquals(ChainKind.OTHER, viewer.aiKindRun())
         assertEquals(ChainKind.MANGA, viewer.aiKindRun(ahead = true))
-        viewer.scrollUntil { viewer.openPath() == second.absolutePath }
+        viewer.scrollUntil("the second book open") { viewer.openPath() == second.absolutePath }
         assertEquals(ChainKind.MANGA, viewer.aiKindRun())
     }
 
-    /** Opens the first book from a share set to [speed] and waits a moment for its next chapter. */
-    private fun fromShare(speed: ShareSpeed): Int {
+    /** Opens the first book from a share set to [speed], waits until it is [ready] (named [what]), and returns the strip's page count. */
+    private fun fromShare(speed: ShareSpeed, what: String, ready: ViewerActivity.() -> Boolean): Int {
         Remotes.serve(listOf(FakeRemoteFs.share().copy(speed = speed))) { FakeRemoteFs(first.parentFile!!) }
         try {
             val viewer = launch(Remotes.file("/net/s1/a.cbz"))
-            await { (viewer.strip().adapter?.itemCount ?: 0) >= 6 }
+            idleUntil(what) { viewer.ready() }
             return viewer.strip().adapter?.itemCount ?: 0
         } finally {
             controller.pause().stop().destroy()
@@ -185,7 +172,8 @@ class ViewerActivityRollOnTest {
 
     @Test
     fun onAShareWhereReadAheadIsSkippedTheNextChapterOpensOnlyWhenReached() {
-        assertEquals(3, fromShare(ShareSpeed.SLOW))
-        assertEquals(6, fromShare(ShareSpeed.FAST))
+        // Read-ahead is decided as the open lays the book out: once all the open started is done, none comes.
+        assertEquals(3, fromShare(ShareSpeed.SLOW, "all the open started done") { openSettled() })
+        assertEquals(6, fromShare(ShareSpeed.FAST, "the second book laid in behind") { (strip().adapter?.itemCount ?: 0) >= 6 })
     }
 }

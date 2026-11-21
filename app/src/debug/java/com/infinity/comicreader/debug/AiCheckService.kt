@@ -102,7 +102,9 @@ import kotlin.math.max
  *   headroom, until the time is up or the gate stops a page (`stoppedBy`). Each run's energy
  *   per page on battery alone is measured as ResampleCheckService's sustain measures it
  *   ([EnergyMeter]: refused on a charger; valid only with the cable out, adb over Wi-Fi),
- *   then the energy per page across valid rounds with its spread (`energy`).
+ *   then the energy per page across valid rounds with its spread (`energy`). A run is
+ *   valid when it stayed cool, from a bench build, with the app in front from before it
+ *   started to after it ended (`before`, `after`: as ResampleCheckService's `conditions`).
  * - download: per catalog model or shader chain, deletes it from the app's store, downloads it
  *   (stopping once after `cut` bytes when given, then resuming), checks it is installed, and for
  *   an ncnn model opens it and runs one page of `size` within the default page time (a shader
@@ -421,6 +423,7 @@ class AiCheckService : Service() {
             for (round in 0 until rounds) {
                 if (cooldown > 0) Thread.sleep(cooldown * 1000L)
                 val heat = ResampleRuns.Heat().apply { see(meter.thermal()) }
+                val before = conditions()
                 log(JSONObject().put("sustain", engine).put("round", round).put("start", state()))
                 var stopped: Fallback? = null
                 val run = meter.measure(idle, seconds, heat) { until ->
@@ -443,11 +446,14 @@ class AiCheckService : Service() {
                     }
                     pages
                 }
-                runs.add(run, heat.cool)
+                val after = conditions()
+                heat.see(meter.thermal())
+                val valid = before.getBoolean("valid") && after.getBoolean("valid") && heat.cool
+                runs.add(run, valid)
                 val line = JSONObject().put("sustained", engine).put("round", round).put("size", "${w}x$h").put("tile", s.size)
                     .put("stoppedBy", stopped?.name ?: JSONObject.NULL)
                 meter.json(run, idle).let { m -> m.keys().forEach { line.put(it, m.get(it)) } }
-                log(line.put("thermalPeak", heat.peak).put("valid", heat.cool).put("end", state()))
+                log(line.put("before", before).put("after", after).put("thermalPeak", heat.peak).put("valid", valid).put("end", state()))
             }
             log(meter.summary(engine, runs))
         } finally {
@@ -892,10 +898,11 @@ class AiCheckService : Service() {
         Debug.MemoryInfo().also { Debug.getMemoryInfo(it) }.getMemoryStat("summary.graphics").toLong()
     }.getOrDefault(0L)
 
+    /** Whether timings taken now count: not debuggable, and the process in the foreground app's cpuset. */
     private fun conditions(): JSONObject {
         val cpuset = runCatching { File("/proc/self/cpuset").readText().trim() }.getOrDefault("?")
         val debuggable = applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
-        return JSONObject().put("cpuset", cpuset).put("debuggable", debuggable)
+        return JSONObject().put("cpuset", cpuset).put("debuggable", debuggable).put("valid", !debuggable && cpuset == "/top-app")
     }
 
     private fun state(): JSONObject {

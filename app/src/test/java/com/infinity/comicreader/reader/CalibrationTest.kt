@@ -712,16 +712,17 @@ class CalibrationTest {
     fun timeOnSamplesMadeAgainIsCounted() {
         val a = pixels(1, true)
         var n = 0
-        // The first sample is disturbed; each run takes 5 ms.
+        var now = 0L
+        // The first sample is disturbed; each run takes 5 ms on the run's clock.
         val probe = object : CalibrationProbe {
             override fun time(candidate: Candidate): RunTime {
-                Thread.sleep(5)
+                now += 5_000_000
                 return RunTime(5.0, 5.0)
             }
             override fun awaitFair() = true
             override fun stillFair() = n++ > 0
         }
-        val run = CalibrationRun(probe, listOf(a), rounds = 1, burst = 1, warm = false)
+        val run = CalibrationRun(probe, listOf(a), rounds = 1, burst = 1, warm = false, nanos = { now })
         assertNotNull(run.run())
         assertEquals(1, run.redone)
         assertTrue("${run.redoneMs}", run.redoneMs in 5L..500L)

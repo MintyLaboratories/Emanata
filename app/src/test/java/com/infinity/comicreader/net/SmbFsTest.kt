@@ -137,10 +137,9 @@ class SmbFsTest {
                 }
             }
             val socket = silent.accepted.poll(Waits.LIVENESS_MS, TimeUnit.MILLISECONDS) ?: throw AssertionError("Gave up waiting for the listing's connection")
-            val started = System.nanoTime()
             fs.close()
-            val tookMs = (System.nanoTime() - started) / 1_000_000
-            assertTrue("close took $tookMs ms", tookMs < 1_000)
+            // The connect ends only once the socket below closes, or after the answer timeout.
+            assertTrue("close waited for the connect", listing.isAlive)
             socket.close()
             awaitUntil("the listing to fail") { !listing.isAlive }
             assertTrue("failed with ${failure.get()}", failure.get() is RemoteException)

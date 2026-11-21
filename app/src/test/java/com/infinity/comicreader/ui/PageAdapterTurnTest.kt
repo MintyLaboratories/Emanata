@@ -9,6 +9,7 @@ import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.reader.PageSource
 import com.infinity.comicreader.reader.Target
+import com.infinity.comicreader.testing.idleUntil
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -41,14 +42,14 @@ class PageAdapterTurnTest {
         rv.layout(0, 0, w, h)
     }
 
-    private fun settle(rv: RecyclerView, w: Int, h: Int, ms: Long = 400) {
-        val deadline = System.currentTimeMillis() + ms
-        while (System.currentTimeMillis() < deadline) {
-            Thread.sleep(10)
-            shadowOf(Looper.getMainLooper()).idle()
-            layOut(rv, w, h)
+    /**
+     * Idles and lays [rv] out at [w] x [h], as a window would after items change, until nothing
+     * more is due: no decode under way, no main-thread work, no layout asked for.
+     */
+    private fun settle(rv: RecyclerView, w: Int, h: Int) =
+        idleUntil("decodes and layouts to settle", step = { layOut(rv, w, h) }) {
+            !(rv.adapter as PageAdapter).decoding && shadowOf(Looper.getMainLooper()).isIdle && !rv.isLayoutRequested
         }
-    }
 
     private fun sizes(loads: List<Pair<Int, Target>>, page: Int) = loads.filter { it.first == page }.map { it.second.width to it.second.height }
 
@@ -64,7 +65,7 @@ class PageAdapterTurnTest {
         }
         layOut(rv, 1200, 1800)
         rv.scrollToPosition(1)
-        settle(rv, 1200, 1800, ms = 1_000)
+        settle(rv, 1200, 1800)
         // Page 2, which the screen turns for, is read ahead turned; the others upright.
         assertEquals(listOf(1800 to 1200), sizes(source.loads, 2))
         assertEquals(listOf(1200 to 1800), sizes(source.loads, 1))
@@ -168,9 +169,9 @@ class PageAdapterTurnTest {
         // Turned back, but the screen stays in landscape: once the wait ends, pages show at its size.
         adapter.turned = false
         rv.scrollToPosition(3)
-        settle(rv, 1800, 1200, ms = 300)
+        settle(rv, 1800, 1200)
         shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(2_000))
-        settle(rv, 1800, 1200, ms = 300)
+        settle(rv, 1800, 1200)
         assertEquals(1800 to 1200, sizes(source.loads, 3).last())
         adapter.release()
     }

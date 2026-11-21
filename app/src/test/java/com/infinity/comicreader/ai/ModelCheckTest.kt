@@ -1,7 +1,6 @@
 package com.infinity.comicreader.ai
 
 import android.app.Application
-import android.graphics.Bitmap
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -17,7 +16,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.concurrent.thread
 
-/** Checking a model to import: it opens as every model does, resembles its input, and is timed. */
+/** Checking a model to import: it opens as every model does, runs on a picture, and is timed. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = Application::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -38,12 +37,21 @@ class ModelCheckTest {
     }
 
     @Test
-    fun outputUnlikeItsInputIsFitWithAWarning() {
-        // Mid-gray whatever the input: a restyle, or pixels scaled otherwise.
+    fun outputUnlikeItsInputIsFitWithoutAWarning() {
+        // Mid-gray whatever the input: how output looks is the user's to judge.
         val runtime = FakeRuntime(gpu = null, make = { onGpu, _ -> FakeModel(onGpu = onGpu, wrong = true) })
         val r = check(runtime) as ModelCheck.Result.Fit
-        assertEquals(setOf(ImportWarning.UNLIKE), r.warnings)
-        assertEquals(emptySet<ImportWarning>(), (check(FakeRuntime()) as ModelCheck.Result.Fit).warnings)
+        assertEquals(emptySet<ImportWarning>(), r.warnings)
+    }
+
+    @Test
+    fun aSlowModelIsFitWithTheSlowWarning() {
+        // Each tile run takes 2 s on the check's clock: a page of a few dozen tiles takes about a minute.
+        val now = AtomicLong()
+        val runtime = FakeRuntime(gpu = null, make = { onGpu, _ -> FakeModel(onGpu = onGpu, onRun = { now.addAndGet(2_000) }) })
+        val r = check(runtime, clock = now::get) as ModelCheck.Result.Fit
+        assertTrue("${r.pageMs}", r.pageMs in ModelCheck.WARN_PAGE_MS + 1..ReaderAi.MAX_TIMEOUT_MS)
+        assertEquals(setOf(ImportWarning.SLOW), r.warnings)
     }
 
     @Test
@@ -52,26 +60,16 @@ class ModelCheckTest {
         val most = ReaderAi.MAX_TIMEOUT_MS
         assertEquals(30_000L, slow)
         assertEquals(120_000L, most)
-        assertEquals(ModelCheck.Result.Fit(2, slow, warnings = emptySet()), ModelCheck.judge(2, slow, 0.0))
-        assertEquals(setOf(ImportWarning.SLOW), (ModelCheck.judge(2, slow + 1, 0.0) as ModelCheck.Result.Fit).warnings)
-        assertEquals(setOf(ImportWarning.SLOW), (ModelCheck.judge(2, most, 0.0) as ModelCheck.Result.Fit).warnings)
-        assertEquals(ModelCheck.Result.Refused(ModelRefusal.TOO_SLOW, pageMs = most + 1), ModelCheck.judge(2, most + 1, 0.0))
-        // Refused however like its input.
-        assertEquals(ModelRefusal.TOO_SLOW, (ModelCheck.judge(1, most + 1, 99.0) as ModelCheck.Result.Refused).why)
+        assertEquals(ModelCheck.Result.Fit(2, slow, warnings = emptySet()), ModelCheck.judge(2, slow))
+        assertEquals(setOf(ImportWarning.SLOW), (ModelCheck.judge(2, slow + 1) as ModelCheck.Result.Fit).warnings)
+        assertEquals(setOf(ImportWarning.SLOW), (ModelCheck.judge(2, most) as ModelCheck.Result.Fit).warnings)
+        assertEquals(ModelCheck.Result.Refused(ModelRefusal.TOO_SLOW, pageMs = most + 1), ModelCheck.judge(2, most + 1))
     }
 
     @Test
-    fun outputPastTheDifferenceLimitIsWarnedOf() {
-        val limit = ModelCheck.UNLIKE_MEAN
-        assertEquals(24.0, limit, 0.0)
-        assertEquals(emptySet<ImportWarning>(), (ModelCheck.judge(1, 1000, limit) as ModelCheck.Result.Fit).warnings)
-        assertEquals(setOf(ImportWarning.UNLIKE), (ModelCheck.judge(1, 1000, limit + 0.1) as ModelCheck.Result.Fit).warnings)
-    }
-
-    @Test
-    fun aSlowRestylingModelGetsBothWarnings() {
-        val r = ModelCheck.judge(2, 45_000, 60.0, headroom = 0.4f) as ModelCheck.Result.Fit
-        assertEquals(setOf(ImportWarning.SLOW, ImportWarning.UNLIKE), r.warnings)
+    fun aSlowModelKeepsItsTimeAndHeadroom() {
+        val r = ModelCheck.judge(2, 45_000, headroom = 0.4f) as ModelCheck.Result.Fit
+        assertEquals(setOf(ImportWarning.SLOW), r.warnings)
         assertEquals(45_000L, r.pageMs)
         assertEquals(0.4f, r.headroom, 0f)
     }
@@ -139,14 +137,5 @@ class ModelCheckTest {
         assertEquals(1, ModelCheck.shrink(1))
         assertEquals(1, ModelCheck.shrink(4))
         assertEquals(2, ModelCheck.shrink(8))
-    }
-
-    @Test
-    fun theDifferenceIsTakenOverBlocks() {
-        val src = ModelCheck.picture(16)
-        val same = Bitmap.createScaledBitmap(src, 32, 32, false)
-        assertEquals(0.0, ModelCheck.meanDifference(src, same, 2), 0.0)
-        val gray = Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888).apply { eraseColor(0xFF808080.toInt()) }
-        assertTrue(ModelCheck.meanDifference(src, gray, 2) > ModelCheck.UNLIKE_MEAN)
     }
 }

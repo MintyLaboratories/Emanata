@@ -228,7 +228,6 @@ object ModelText {
     fun warnings(context: Context, s: ImportState.Fit): String = s.warnings.sorted().joinToString("\n\n") { w ->
         when (w) {
             ImportWarning.SLOW -> context.getString(R.string.ai_import_warn_slow, pageSeconds(s), ModelCheck.WARN_PAGE_MS / 1000)
-            ImportWarning.UNLIKE -> context.getString(R.string.ai_import_warn_unlike)
         }
     }
 
@@ -250,8 +249,8 @@ object ModelText {
  * downloading. Imported models (marked so, no license) after them, deleted after asking.
  * "Import a model…" takes the user's own: its two files picked ([ModelImports]), copied and
  * checked with progress, then named and given a step, or refused with the reason; a slow
- * model, or one whose output differs strongly from its input, is imported only once the user
- * picks "Import anyway" (Cancel, or Back, drops it). A model's row opens what is known of it.
+ * model is imported only once the user picks "Import anyway" (Cancel, or Back, drops it). A
+ * model's row opens what is known of it.
  */
 class ModelsActivity : AppCompatActivity() {
     private lateinit var store: ModelStore

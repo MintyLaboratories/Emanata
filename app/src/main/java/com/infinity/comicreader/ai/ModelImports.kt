@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
+import android.os.SystemClock
 import android.provider.OpenableColumns
 import android.util.Log
 import com.infinity.comicreader.reader.NativeResampler
@@ -45,10 +46,7 @@ enum class ImportFailure {
 /** What a fit model's check found that the user weighs before taking it in ([ModelCheck]). */
 enum class ImportWarning {
     /** A page takes longer than [ModelCheck.WARN_PAGE_MS] here. */
-    SLOW,
-
-    /** Its output differs strongly from its input: a deliberate restyle, a model expecting pixels scaled otherwise, or mismatched files. */
-    UNLIKE
+    SLOW
 }
 
 /** Where an import is. */
@@ -94,9 +92,9 @@ sealed interface ImportState {
  * Imports the user's own models, one at a time, in the app's process: an ncnn `.param` and
  * `.bin` picked through the system's file picker, copied into the store's staging folder
  * (no conversion), then checked ([ModelCheck]) on this device's engine within its model
- * memory ([ModelMemory]). A fit model with warnings (slow, or output unlike its input) waits
- * for the user to import it anyway ([accept]) or cancel ([dismiss]); then every fit model
- * waits for the user to name it and pick its step, then
+ * memory ([ModelMemory]). A fit model warned of as slow waits for the user to import it
+ * anyway ([accept]) or cancel ([dismiss]); then every fit model waits for the user to name
+ * it and pick its step, then
  * moves among the imported models ([UserModels]). While a check runs, a marker names the
  * model, so a check that ends the app is told of next time ([crashed]).
  */
@@ -131,6 +129,10 @@ object ModelImports {
     /** The model memory of the device; tests stand in their own. */
     @Volatile
     internal var memory: (Context) -> Long = ModelMemory::of
+
+    /** The clock checks are timed by; tests stand in their own. */
+    @Volatile
+    internal var clock: () -> Long = SystemClock::elapsedRealtime
 
     /**
      * Takes in the picked [uris]: with a [ImportState.Half] under way, its file and this one;
@@ -303,7 +305,7 @@ object ModelImports {
             val marker = File(store.root, CHECKING)
             marker.writeText(name)
             val result = try {
-                ModelCheck.check(runtime, files, NativeResampler.threads, budget, canceled, headroom = { headroom(context) })
+                ModelCheck.check(runtime, files, NativeResampler.threads, budget, canceled, clock, headroom = { headroom(context) })
             } finally {
                 marker.delete()
             }

@@ -2,6 +2,7 @@ package com.infinity.comicreader.ai
 
 import android.app.Application
 import android.net.Uri
+import android.os.SystemClock
 import androidx.test.core.app.ApplicationProvider
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -21,6 +22,7 @@ import java.io.File
 import java.util.concurrent.CancellationException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 
 /** Importing the user's own models: picked files copied, checked, then named and given a step. */
 @RunWith(RobolectricTestRunner::class)
@@ -47,8 +49,16 @@ class ModelImportsTest {
     fun tearDown() {
         ModelImports.runtime = LibNcnn
         ModelImports.memory = ModelMemory::of
+        ModelImports.clock = SystemClock::elapsedRealtime
         store.root.deleteRecursively()
         UserModels.load(store)
+    }
+
+    /** Checks run a model whose every tile takes 2 s on the check's clock: a page of about a minute, warned of as slow. */
+    private fun slow() {
+        val now = AtomicLong()
+        ModelImports.clock = now::get
+        ModelImports.runtime = FakeRuntime(gpu = null, make = { onGpu, _ -> FakeModel(onGpu = onGpu, onRun = { now.addAndGet(2_000) }) })
     }
 
     /** A picked pair: a `.param` named [name] and its `.bin`, as file URIs. */
@@ -78,29 +88,29 @@ class ModelImportsTest {
 
     @Test
     fun aModelWithWarningsIsNamedOnlyOnceAccepted() {
-        ModelImports.runtime = FakeRuntime(gpu = null, make = { onGpu, _ -> FakeModel(onGpu = onGpu, wrong = true) })
-        ModelImports.start(context, pair("Sepia"))
+        slow()
+        ModelImports.start(context, pair("Slow lines"))
         val until = System.currentTimeMillis() + 20_000
         while (ModelImports.state.value !is ImportState.Fit && System.currentTimeMillis() < until) Thread.sleep(10)
         val fit = ModelImports.state.value as ImportState.Fit
-        assertEquals(setOf(ImportWarning.UNLIKE), fit.warnings)
+        assertEquals(setOf(ImportWarning.SLOW), fit.warnings)
         assertTrue(fit.warned)
         // Not saved while its warnings wait.
-        ModelImports.save(context, "Sepia", AiStep.UPSCALE)
+        ModelImports.save(context, "Slow lines", AiStep.UPSCALE)
         assertEquals(fit, ModelImports.state.value)
         ModelImports.accept()
         val accepted = ModelImports.state.value as ImportState.Fit
         assertFalse(accepted.warned)
         assertEquals(fit.copy(accepted = true), accepted)
-        ModelImports.save(context, "Sepia", AiStep.UPSCALE)
+        ModelImports.save(context, "Slow lines", AiStep.UPSCALE)
         while (ModelImports.state.value !is ImportState.Imported && System.currentTimeMillis() < until) Thread.sleep(10)
-        assertEquals("Sepia", (ModelImports.state.value as ImportState.Imported).model.name)
+        assertEquals("Slow lines", (ModelImports.state.value as ImportState.Imported).model.name)
     }
 
     @Test
     fun aModelWithWarningsCanceledKeepsNothing() {
-        ModelImports.runtime = FakeRuntime(gpu = null, make = { onGpu, _ -> FakeModel(onGpu = onGpu, wrong = true) })
-        ModelImports.start(context, pair("Sepia"))
+        slow()
+        ModelImports.start(context, pair("Slow lines"))
         val until = System.currentTimeMillis() + 20_000
         while (ModelImports.state.value !is ImportState.Fit && System.currentTimeMillis() < until) Thread.sleep(10)
         val fit = ModelImports.state.value as ImportState.Fit
@@ -127,8 +137,8 @@ class ModelImportsTest {
 
     @Test
     fun aFitModelReplacedByAnotherImportKeepsNothing() {
-        ModelImports.runtime = FakeRuntime(gpu = null, make = { onGpu, _ -> FakeModel(onGpu = onGpu, wrong = true) })
-        ModelImports.start(context, pair("Sepia"))
+        slow()
+        ModelImports.start(context, pair("Slow lines"))
         val until = System.currentTimeMillis() + 20_000
         while (ModelImports.state.value !is ImportState.Fit && System.currentTimeMillis() < until) Thread.sleep(10)
         val fit = ModelImports.state.value as ImportState.Fit

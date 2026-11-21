@@ -10,15 +10,12 @@ import android.os.SystemClock
 import android.util.Log
 import com.infinity.comicreader.reader.SyntheticPage
 import java.util.concurrent.CancellationException
-import kotlin.math.abs
 
 /**
  * Checks a model the user imports before it is taken in: it opens as every model does
  * ([Sessions.attempt]: scale, edge trim, context, memory, the GPU against the CPU), then
- * - its output is compared with its input: a smooth picture with a few hard shapes, run
- *   through it and averaged back down to the input's size; past [UNLIKE_MEAN] codes on
- *   average it is fit with a warning ([ImportWarning.UNLIKE]: a deliberate restyle, a
- *   model expecting pixels scaled otherwise, or a `.param` and `.bin` not of one model);
+ * - it runs on a small RGB picture, a smooth gradient with a few hard shapes; how its output
+ *   looks is not judged;
  * - it is timed on a synthetic [PAGE_W] x [PAGE_H] page, the size catalog models are timed
  *   on: the whole page while its pace says it takes at most [FULL_PAGE_MS], else from its
  *   first [TIMED_TILES] tiles, the first (the GPU's warm-up) counted once and the rest at
@@ -35,9 +32,6 @@ internal object ModelCheck {
     /** The longest a check may take. */
     const val TIME_LIMIT_MS = 120_000L
 
-    /** Mean difference, in codes, past which output is warned of as unlike its input. */
-    const val UNLIKE_MEAN = 24.0
-
     /** The page time past which a model is warned of as slow. */
     const val WARN_PAGE_MS = 30_000L
 
@@ -50,8 +44,8 @@ internal object ModelCheck {
     const val PAGE_W = 1000
     const val PAGE_H = 1500
 
-    /** The side of the picture output is compared on. */
-    private const val LIKE_SIDE = 96
+    /** The side of the picture it is first run on. */
+    private const val PICTURE_SIDE = 96
 
     sealed interface Result {
         /**
@@ -97,12 +91,11 @@ internal object ModelCheck {
             val opening = Sessions.attempt(runtime, files, threads, memoryBytes = memoryBytes, canceled = stop)
             val session = opening.session ?: return Result.Refused(opening.refusal ?: ModelRefusal.NOT_LOADED, opening.bytes, opening.limit)
             session.use { s ->
-                val unlike = unlikeness(s, stop) ?: return Result.Refused(ModelRefusal.DOES_NOT_RUN)
-                Log.i(TAG, "${files.param.name}: output differs from its input by $unlike on average")
+                if (!runs(s, stop)) return Result.Refused(ModelRefusal.DOES_NOT_RUN)
                 val heat = headroom()
                 val ms = pageMs(s, stop, clock) ?: return Result.Refused(ModelRefusal.DOES_NOT_RUN)
                 Log.i(TAG, "${files.param.name}: about $ms ms for a ${PAGE_W}x$PAGE_H page, from thermal headroom $heat")
-                return judge(s.geometry.scale, ms, unlike, heat)
+                return judge(s.geometry.scale, ms, heat)
             }
         } catch (e: CancellationException) {
             if (!canceled() && late()) return Result.Refused(ModelRefusal.TOO_SLOW)
@@ -111,57 +104,25 @@ internal object ModelCheck {
     }
 
     /**
-     * A model of [scale] whose page takes [pageMs] here, timed at [headroom], its output [unlike]
-     * its input by that many codes: refused past [ReaderAi.MAX_TIMEOUT_MS], else fit, warned of
-     * past [WARN_PAGE_MS] and [UNLIKE_MEAN].
+     * A model of [scale] whose page takes [pageMs] here, timed at [headroom]: refused past
+     * [ReaderAi.MAX_TIMEOUT_MS], else fit, warned of past [WARN_PAGE_MS].
      */
-    internal fun judge(scale: Int, pageMs: Long, unlike: Double, headroom: Float = Float.NaN): Result {
+    internal fun judge(scale: Int, pageMs: Long, headroom: Float = Float.NaN): Result {
         if (pageMs > ReaderAi.MAX_TIMEOUT_MS) return Result.Refused(ModelRefusal.TOO_SLOW, pageMs = pageMs)
-        val warnings = buildSet {
-            if (pageMs > WARN_PAGE_MS) add(ImportWarning.SLOW)
-            if (unlike > UNLIKE_MEAN) add(ImportWarning.UNLIKE)
-        }
+        val warnings = if (pageMs > WARN_PAGE_MS) setOf(ImportWarning.SLOW) else emptySet()
         return Result.Fit(scale, pageMs, headroom, warnings)
     }
 
-    /** How far [s]'s output, averaged back to its input's size, is from its input, in codes; null when it fails. */
-    private fun unlikeness(s: Session, canceled: () -> Boolean): Double? {
-        val src = picture(LIKE_SIDE)
+    /** True when [s] runs on an RGB picture and gives output. */
+    private fun runs(s: Session, canceled: () -> Boolean): Boolean {
+        val src = picture(PICTURE_SIDE)
         try {
-            val out = TileEngine.run(s, src, PageLimits(timeoutMs = TIME_LIMIT_MS), canceled).bitmap ?: return null
-            try {
-                return meanDifference(src, out, s.geometry.scale)
-            } finally {
-                out.recycle()
-            }
+            val out = TileEngine.run(s, src, PageLimits(timeoutMs = TIME_LIMIT_MS), canceled).bitmap ?: return false
+            out.recycle()
+            return true
         } finally {
             src.recycle()
         }
-    }
-
-    /** The mean channel difference, in codes, between [src] and [out] (it [scale] times larger) averaged over each [scale] x [scale] block. */
-    internal fun meanDifference(src: Bitmap, out: Bitmap, scale: Int): Double {
-        val w = src.width
-        val h = src.height
-        val a = IntArray(w * h).also { src.getPixels(it, 0, w, 0, 0, w, h) }
-        val ow = out.width
-        val b = IntArray(ow * out.height).also { out.getPixels(it, 0, ow, 0, 0, ow, out.height) }
-        val n = scale * scale
-        var sum = 0L
-        for (y in 0 until h) for (x in 0 until w) {
-            var r = 0
-            var g = 0
-            var bl = 0
-            for (dy in 0 until scale) for (dx in 0 until scale) {
-                val p = b[(y * scale + dy) * ow + x * scale + dx]
-                r += (p shr 16) and 0xFF
-                g += (p shr 8) and 0xFF
-                bl += p and 0xFF
-            }
-            val q = a[y * w + x]
-            sum += abs(r / n - ((q shr 16) and 0xFF)) + abs(g / n - ((q shr 8) and 0xFF)) + abs(bl / n - (q and 0xFF))
-        }
-        return sum.toDouble() / (3L * w * h)
     }
 
     /** An opaque [side] x [side] picture: a smooth two-way gradient with a few hard dark and light shapes, as line art has. */

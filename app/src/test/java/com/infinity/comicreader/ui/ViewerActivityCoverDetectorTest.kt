@@ -4,7 +4,6 @@ import android.app.Application
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Color
-import android.os.Looper
 import android.view.View
 import androidx.preference.PreferenceManager
 import androidx.test.core.app.ApplicationProvider
@@ -18,6 +17,7 @@ import com.infinity.comicreader.data.ResumeMode
 import com.infinity.comicreader.data.Thumbs
 import com.infinity.comicreader.reader.Fixtures
 import com.infinity.comicreader.testing.coverText
+import com.infinity.comicreader.testing.idleUntil
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -28,7 +28,6 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.io.ByteArrayOutputStream
@@ -47,6 +46,7 @@ class ViewerActivityCoverDetectorTest {
     private val detector = Thumbs.detector
 
     /** Runs of the stand-in detector. */
+    @Volatile
     private var usualRuns = 0
 
     @Before
@@ -91,17 +91,8 @@ class ViewerActivityCoverDetectorTest {
         val intent = Intent(context, ViewerActivity::class.java).putExtra(ViewerActivity.EXTRA_PATH, book.absolutePath)
         val viewer = Robolectric.buildActivity(ViewerActivity::class.java, intent).setup().get()
         val progress = viewer.findViewById<View>(R.id.viewer_progress)
-        idleUntil { progress.visibility != View.VISIBLE }
+        idleUntil("the book open") { progress.visibility != View.VISIBLE }
         return viewer
-    }
-
-    /** Runs the main looper until [done], for up to ten seconds. */
-    private fun idleUntil(done: () -> Boolean) {
-        val deadline = System.currentTimeMillis() + 10_000
-        while (!done() && System.currentTimeMillis() < deadline) {
-            Thread.sleep(10)
-            shadowOf(Looper.getMainLooper()).idle()
-        }
     }
 
     private fun ViewerActivity.pagerDirection() = findViewById<View>(R.id.viewer_pager).layoutDirection
@@ -110,7 +101,7 @@ class ViewerActivityCoverDetectorTest {
     fun aCoverThatTurnsTheBookRightToLeftIsLookedAtOnce() {
         val book = book()
         val first = open(book)
-        idleUntil { first.pagerDirection() == View.LAYOUT_DIRECTION_RTL }
+        idleUntil("the first open turned right to left, all it started done") { first.pagerDirection() == View.LAYOUT_DIRECTION_RTL && first.openSettled() }
         assertEquals(View.LAYOUT_DIRECTION_RTL, first.pagerDirection())
         val runs = usualRuns
         assertTrue("the detector looked", runs > 0)
@@ -118,9 +109,8 @@ class ViewerActivityCoverDetectorTest {
 
         val second = open(book)
         assertEquals("right to left before the first page", View.LAYOUT_DIRECTION_RTL, second.pagerDirection())
-        // Late detection, if any, gets its chance.
-        val until = System.currentTimeMillis() + 500
-        idleUntil { System.currentTimeMillis() > until }
+        // Late detection, if any, has run.
+        idleUntil("all the second open started done") { second.openSettled() }
         assertEquals("not looked at again", runs, usualRuns)
         assertEquals(View.LAYOUT_DIRECTION_RTL, second.pagerDirection())
     }

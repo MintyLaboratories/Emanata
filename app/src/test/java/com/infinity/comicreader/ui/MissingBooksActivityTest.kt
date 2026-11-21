@@ -15,6 +15,7 @@ import com.infinity.comicreader.R
 import com.infinity.comicreader.data.BookId
 import com.infinity.comicreader.data.BookRef
 import com.infinity.comicreader.data.Library
+import com.infinity.comicreader.testing.idleUntil
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -46,14 +47,6 @@ class MissingBooksActivityTest {
 
     private fun idle() = shadowOf(Looper.getMainLooper()).idle()
 
-    private fun awaitUntil(done: () -> Boolean) {
-        repeat(200) {
-            idle()
-            if (done()) return
-            Thread.sleep(20)
-        }
-    }
-
     @Test
     fun aBookFoundNowhereIsListedTickedAndForgottenOnceConfirmed() {
         val root = Environment.getExternalStorageDirectory()
@@ -63,7 +56,7 @@ class MissingBooksActivityTest {
 
         val activity = Robolectric.buildActivity(MissingBooksActivity::class.java).setup().get()
         val list = activity.findViewById<RecyclerView>(R.id.cleanup_list)
-        awaitUntil { list.adapter!!.itemCount == 1 && list.childCount == 1 }
+        idleUntil("the missing book's row") { list.adapter!!.itemCount == 1 && list.childCount == 1 }
         val row = list.getChildAt(0)
         assertEquals("gone.cbz", row.findViewById<TextView>(R.id.title).text.toString())
         assertTrue(row.findViewById<TextView>(R.id.subtitle).text.contains("Read"))
@@ -82,7 +75,7 @@ class MissingBooksActivityTest {
         forget.performClick()
         idle()
         (ShadowDialog.getLatestDialog() as AlertDialog).getButton(DialogInterface.BUTTON_POSITIVE).performClick()
-        awaitUntil { !library.hasData(gone.id) && list.adapter!!.itemCount == 0 }
+        idleUntil("the book forgotten and its row gone") { !library.hasData(gone.id) && list.adapter!!.itemCount == 0 }
         assertFalse(library.hasData(gone.id))
         assertTrue(library.history().isEmpty())
     }
@@ -94,7 +87,7 @@ class MissingBooksActivityTest {
         library.setRead(gone, true)
         val activity = Robolectric.buildActivity(MissingBooksActivity::class.java).setup().get()
         val list = activity.findViewById<RecyclerView>(R.id.cleanup_list)
-        awaitUntil { list.childCount == 1 }
+        idleUntil("the missing book's row") { list.childCount == 1 }
         list.getChildAt(0).performClick()
         assertFalse(list.getChildAt(0).findViewById<CheckBox>(R.id.check).isChecked)
         assertFalse(activity.findViewById<MaterialButton>(R.id.cleanup_delete).isEnabled)
@@ -109,12 +102,12 @@ class MissingBooksActivityTest {
         library.setRead(second, true)
         val activity = Robolectric.buildActivity(MissingBooksActivity::class.java).setup().get()
         val list = activity.findViewById<RecyclerView>(R.id.cleanup_list)
-        awaitUntil { list.childCount == 2 }
+        idleUntil("both missing books' rows") { list.childCount == 2 }
         list.getChildAt(1).performClick()
         activity.findViewById<MaterialButton>(R.id.cleanup_delete).performClick()
         idle()
         (ShadowDialog.getLatestDialog() as AlertDialog).getButton(DialogInterface.BUTTON_POSITIVE).performClick()
-        awaitUntil { list.adapter!!.itemCount == 1 && list.childCount == 1 }
+        idleUntil("the ticked book forgotten, one row left") { list.adapter!!.itemCount == 1 && list.childCount == 1 }
         assertFalse(library.hasData(first.id))
         assertEquals("b.cbz", list.getChildAt(0).findViewById<TextView>(R.id.title).text.toString())
         assertFalse(list.getChildAt(0).findViewById<CheckBox>(R.id.check).isChecked)
@@ -128,12 +121,12 @@ class MissingBooksActivityTest {
         library.setRead(gone, true)
         val controller = Robolectric.buildActivity(MissingBooksActivity::class.java).setup()
         var list = controller.get().findViewById<RecyclerView>(R.id.cleanup_list)
-        awaitUntil { list.childCount == 1 }
+        idleUntil("the missing book's row") { list.childCount == 1 }
         list.getChildAt(0).performClick()
 
         controller.recreate()
         list = controller.get().findViewById(R.id.cleanup_list)
-        awaitUntil { list.childCount == 1 }
+        idleUntil("the row after the recreate") { list.childCount == 1 }
         assertFalse(list.getChildAt(0).findViewById<CheckBox>(R.id.check).isChecked)
         assertEquals(context.getString(R.string.missing_select_all), controller.get().findViewById<MaterialButton>(R.id.cleanup_select).text.toString())
     }

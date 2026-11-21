@@ -25,7 +25,6 @@ import com.infinity.comicreader.net.NetRules
 import com.infinity.comicreader.net.NetSkip
 import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.net.ShareSpeed
-import com.infinity.comicreader.testing.awaitUntil
 import com.infinity.comicreader.testing.idleUntil
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -173,9 +172,6 @@ class BookAdapterCoversTest {
         recycler.layout(0, 0, WIDTH, HEIGHT)
     }
 
-    /** Runs what is due on the main thread: the cover requests a layout posts there. */
-    private fun idle() = shadowOf(Looper.getMainLooper()).idle()
-
     private fun drawn(position: Int) = (recycler.findViewHolderForAdapterPosition(position) as BookAdapter.BookHolder?)?.thumb?.drawable
 
     private fun shareBook(name: String) = BookEntry(Remotes.file("/net/s1/$name", askNetwork = false), name, false, EntryType.ARCHIVE, 100, 1L)
@@ -192,6 +188,8 @@ class BookAdapterCoversTest {
             idleUntil("device.cbz's cover started, made.cbz's drawn, a.cbz's looked for") {
                 fake.started.isNotEmpty() && drawn(1) != null && "a.cbz" in fake.looked
             }
+            // A held cover would be made only after its look ends and the load goes on on the main thread.
+            idleUntil("covers settled") { !adapter.coversBusy }
             assertEquals(listOf("device.cbz"), fake.started.toList())
             assertNotNull(drawn(1))
             // With covers not skipped on metered connections they are made.
@@ -217,6 +215,7 @@ class BookAdapterCoversTest {
             adapter.submit(listOf(shareBook("a.cbz"), shareBook("b.cbz")))
             layout()
             idleUntil("both covers looked for") { fake.looked.containsAll(listOf("a.cbz", "b.cbz")) }
+            idleUntil("covers settled") { !adapter.coversBusy }
             assertTrue(fake.started.isEmpty())
             Metered.probe = { Metered.Link(connected = true, notMetered = true, activeMetered = false) }
             Metered.forget()
@@ -243,6 +242,7 @@ class BookAdapterCoversTest {
             adapter.submit(listOf(shareBook("c.cbz")))
             layout()
             idleUntil("c.cbz's cover looked for") { "c.cbz" in fake.looked }
+            idleUntil("covers settled") { !adapter.coversBusy }
             assertTrue("c.cbz" !in fake.started)
         } finally {
             NetPolicy.rules = NetRules()
@@ -293,6 +293,7 @@ class BookAdapterCoversTest {
         // A row shows its first layer, then would ask for its full cover at once.
         idleUntil("every row red") { shown.all { (drawn(it) as? BitmapDrawable)?.bitmap?.getPixel(0, 0) == Color.RED } }
         // No full cover was asked for.
+        idleUntil("first layers settled") { !adapter.coversBusy }
         assertEquals((1..3).map { "first $it.cbz" }.toSet(), layered.steps.toSet())
         adapter.firstLayerOnly = false
         layout()
@@ -329,7 +330,7 @@ class BookAdapterCoversTest {
         // The next tab's view redraws the old rows before its own list arrives; they ask on the main thread.
         adapter.options = RowOptions(density = com.infinity.comicreader.data.ListDensity.LARGE)
         layout()
-        idle()
+        idleUntil("old rows settled") { !adapter.coversBusy }
         assertEquals(4, layered.steps.size)
         adapter.submit(listOf(book("3.cbz")))
         layout()
@@ -353,8 +354,7 @@ class BookAdapterCoversTest {
         assertTrue("the slow covers were told to stop", fake.stops.all { it() })
         release.countDown()
         // The slow covers end and give their places back; those waiting their turn ended as they were dropped.
-        awaitUntil("the slow covers ended") { fake.ended.size == 3 }
-        idle()
+        idleUntil("the slow covers ended") { fake.ended.size == 3 && !adapter.coversBusy }
         assertEquals("the covers waiting their turn never started " + fake.started, 3, fake.started.size)
     }
 

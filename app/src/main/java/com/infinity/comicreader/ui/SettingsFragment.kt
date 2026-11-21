@@ -229,6 +229,9 @@ class SettingsFragment : PreferenceFragmentCompat() {
         results.entries = found
         resultsView?.visibility = if (text.isBlank()) View.GONE else View.VISIBLE
         resultsEmpty?.visibility = if (text.isNotBlank() && found.isEmpty()) View.VISIBLE else View.GONE
+        // The settings under the results are out of reach of screen readers too.
+        listView?.importantForAccessibility =
+            if (text.isBlank()) View.IMPORTANT_FOR_ACCESSIBILITY_AUTO else View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
     }
 
     /** The search results listed now. */

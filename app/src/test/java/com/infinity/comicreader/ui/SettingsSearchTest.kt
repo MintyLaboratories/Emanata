@@ -169,6 +169,20 @@ class SettingsSearchTest {
     }
 
     @Test
+    fun theResultsHideTheSettingsUnderThemFromAccessibility() {
+        val (controller, fragment) = open()
+        search(controller.get(), "gap")
+        assertEquals(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS, fragment.listView.importantForAccessibility)
+        (controller.get().item(R.id.settings_search).actionView as SearchView).setQuery("", false)
+        idle()
+        assertEquals(View.IMPORTANT_FOR_ACCESSIBILITY_AUTO, fragment.listView.importantForAccessibility)
+        search(controller.get(), "gap")
+        controller.get().item(R.id.settings_search).collapseActionView()
+        idle()
+        assertEquals(View.IMPORTANT_FOR_ACCESSIBILITY_AUTO, fragment.listView.importantForAccessibility)
+    }
+
+    @Test
     fun theButtonCollapsesAllWhileAnySectionIsExpandedElseExpandsAll() {
         val (controller, fragment) = open()
         val activity = controller.get()

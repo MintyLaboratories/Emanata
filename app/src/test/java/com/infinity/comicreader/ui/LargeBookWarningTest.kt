@@ -8,6 +8,7 @@ import android.text.format.Formatter
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import androidx.preference.PreferenceManager
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.R
@@ -16,6 +17,7 @@ import com.infinity.comicreader.net.FakeRemoteFs
 import com.infinity.comicreader.net.Metered
 import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.testing.idleUntil
+import kotlinx.coroutines.Job
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -143,7 +145,9 @@ class LargeBookWarningTest {
         LargeBookWarning.check(activity, Remotes.file("/net/s1/Small.cbz", askNetwork = false), 0)
         LargeBookWarning.check(activity, Remotes.file("/net/s1/Small.cbz", askNetwork = false), 0)
         // The second tap asked nothing as it came; the first opens the book once its size is known.
-        idleUntil("the small book opened") { opened > 0 }
+        // Every size lookup ended: a second one the guard let through would have opened the book again.
+        idleUntil("both taps answered") { opened > 0 && activity.lifecycleScope.coroutineContext[Job]!!.children.none { !it.isCompleted } }
+        idle()
         assertEquals(1, opened)
     }
 

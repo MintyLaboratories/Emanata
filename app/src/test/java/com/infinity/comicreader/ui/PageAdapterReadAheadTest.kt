@@ -157,8 +157,9 @@ class PageAdapterReadAheadTest {
             }
         })
         idleLaidOut(rv, "page 1's measure to start") { source.started.any { it.first == 1 } }
-        // Page 0's measure ends meanwhile; nothing after the pair starts, nor is asked for.
-        idleLaidOut(rv, "page 0's measure handled") { 0 in changed && adapter.running == 0 }
+        // Page 0's measure ends meanwhile; nothing after the pair starts, nor is asked for:
+        // no decode runs and no measure but page 1's (reading ahead would add measures at once).
+        idleLaidOut(rv, "page 0's measure handled, only page 1's measure left") { 0 in changed && adapter.running == 0 && adapter.measures == 1 }
         assertTrue(source.started.toList().toString(), source.started.all { it.first <= 1 })
 
         source.open()

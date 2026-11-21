@@ -57,7 +57,7 @@ object Thumbs {
     }
 
     /**
-     * Covers in [memory] whose focus was found without the detector running ([CoverFocus.keep]),
+     * Covers in [memory] whose text was looked for without the detector running ([CoverFocus.keep]),
      * by key: the [arrivals] they were made at. One made before the detector's model arrived is
      * made again ([fromMemory]).
      */
@@ -117,7 +117,7 @@ object Thumbs {
         val known = barcodes.get(k)
         val barcode = if (known != null) Wraparound.Half.entries.getOrNull(known)
         else CoverArt.frontOf(src).also { if (find) barcodes.put(k, it?.ordinal ?: NO_FRONT) }
-        val version = SmartCrop.version(detector.id)
+        val version = CoverText.version(detector.id)
         val focus = { s: Bitmap, region: Rect -> focusOf(context, entry, s, region, find, detector) }
         val open = find && page != null && fronts.get(frontKey(key(entry), idOf(entry), page))?.version != version
         if (barcode == null) {
@@ -141,7 +141,7 @@ object Thumbs {
         if (id != null) runCatching { BookFactsCache(context).keepCover(id, front) }
     }
 
-    /** Where the Smart crop anchor looks on each cover, by [imageKey], the part shown and the cover-focus version; kept across sessions in [focusStore]. */
+    /** The tallest text of each wraparound half, by [imageKey], the half and the cover-focus version; kept across sessions in [focusStore]. */
     private val focuses = LruCache<String, CoverFocus>(1024)
     private const val FOCUS_PREFIX = "cover-focus"
 
@@ -164,7 +164,7 @@ object Thumbs {
     }
 
     /**
-     * Finds text on covers for the Smart crop anchor, and on a book's cover for its direction
+     * Finds text on wraparound covers for their front, and on a book's cover for its direction
      * ([CoverTextDetectors.detector]). Tests stand in their own. Asked on every cover key, list
      * binds on the main thread included: once made (off the main thread at the app's start, as
      * making it reads storage) it answers at once, without I/O.
@@ -172,21 +172,21 @@ object Thumbs {
     @Volatile
     internal var detector: (Context) -> CoverTextDetector = { CoverTextDetectors.shared(it).detector() }
 
-    /** The cover-focus version ([SmartCrop.version]) of the [detector] in use. */
-    fun coverVersion(context: Context): String = SmartCrop.version(detector(context).id)
+    /** The cover-focus version ([CoverText.version]) of the [detector] in use. */
+    fun coverVersion(context: Context): String = CoverText.version(detector(context).id)
 
     /** [style]'s part of the key ([CoverStyle.key]) of a cover, under the [detector]. */
     fun styleKey(context: Context, style: CoverStyle): String = style.key(detector(context).id)
 
     /**
-     * Where the Smart crop anchor looks in [region] of [entry]'s cover image [src], found once per
-     * cover by [detector] and kept unless it did not run ([CoverFocus.keep]); without [find],
-     * only one found before ([CoverFocus.NONE] when none was).
+     * The tallest text in [region] of [entry]'s cover image [src], found once per cover part by
+     * [detector] and kept unless it did not run ([CoverFocus.keep]); without [find], only one
+     * found before ([CoverFocus.NONE] when none was).
      */
     private fun focusOf(context: Context, entry: BookEntry, src: Bitmap, region: Rect, find: Boolean, detector: CoverTextDetector): CoverFocus {
         val part = listOf(region.left.toDouble() / src.width, region.top.toDouble() / src.height, region.right.toDouble() / src.width, region.bottom.toDouble() / src.height)
             .joinToString(",") { "%.3f".format(Locale.ROOT, it) }
-        val version = SmartCrop.version(detector.id)
+        val version = CoverText.version(detector.id)
         val k = "${imageKey(context, entry)}|$part|$version"
         focuses.get(k)?.let { return it }
         val store = focusStore(context, version)
@@ -303,8 +303,8 @@ object Thumbs {
             full.recycle()
             return null
         }
-        // A focus found without the detector holds for this cover in memory only; one found while
-        // the detector waits for its model, on disk too, as a waiting cover ([waitingFile]).
+        // A front looked for without the detector holds for this cover in memory only; one looked
+        // for while the detector waits for its model, on disk too, as a waiting cover ([waitingFile]).
         var lasting = true
         var waiting = true
         // Whether the detector's text may shape the cover, or settle a wraparound's direction: kept under its key then.
@@ -314,19 +314,10 @@ object Thumbs {
                 full, width, height, style, made.innerRatio,
                 front = { src ->
                     byText = true
+                    // A quick cover from a first layer uses text already found; its full cover finds it.
                     frontOf(context, entry, src, made.innerRatio, coverPage, made.full, detector) { w ->
                         lasting = false
                         if (!w) waiting = false
-                    }
-                },
-                // A quick cover from a first layer uses a focus already found; its full cover finds one.
-                focus = { src, region ->
-                    byText = true
-                    focusOf(context, entry, src, region, made.full, detector).also {
-                        if (!it.keep) {
-                            lasting = false
-                            if (it !== CoverFocus.WAITING) waiting = false
-                        }
                     }
                 }
             )
@@ -445,9 +436,9 @@ object Thumbs {
 
     /**
      * A cover's keys ([coverKeys]): [shaped], under its detector, for a cover whose text that
-     * detector looked for (a Smart crop, a wraparound: the half one without a barcode shows, and
-     * the direction a book's cover settles); [plain], under none, for any other, which a change
-     * of detector leaves as it is.
+     * detector looked for (a wraparound: the half one without a barcode shows, and the direction
+     * a book's cover settles); [plain], under none, for any other, which a change of detector
+     * leaves as it is.
      */
     private class Keys(val shaped: String, val plain: String) {
         fun of(byText: Boolean): String = if (byText) shaped else plain
@@ -683,7 +674,7 @@ object Thumbs {
 
     /**
      * Where the cover kept in [disk] is kept while made as its detector waited for its model
-     * ([CoverFocus.WAITING]): cropped as Top does, made again once the model is there.
+     * ([CoverFocus.WAITING]): a wraparound without a barcode shown whole, made again once the model is there.
      */
     private fun waitingFile(disk: File): File = File(disk.parentFile, disk.nameWithoutExtension + WAITING + "." + disk.extension)
 

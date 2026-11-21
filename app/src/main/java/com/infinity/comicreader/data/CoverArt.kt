@@ -13,7 +13,6 @@ import com.infinity.comicreader.reader.Plan
 import com.infinity.comicreader.reader.Scaling
 import com.infinity.comicreader.reader.Target
 import com.infinity.comicreader.reader.Wraparound
-import kotlin.math.floor
 import kotlin.math.roundToInt
 
 /**
@@ -70,8 +69,7 @@ object CoverArt {
      * front, the half [front] tells (the one without the barcode by default, [frontOf]),
      * one inner page wide from the outer edge, so the spine is left out; when [front]
      * tells none, the whole wraparound over a blurred copy of itself, whatever [style]
-     * says. [focus] tells the Smart crop anchor where to look in the part shown, asked
-     * only when it crops.
+     * says.
      */
     fun cover(
         src: Bitmap,
@@ -79,13 +77,12 @@ object CoverArt {
         height: Int,
         style: CoverStyle,
         innerRatio: Double? = null,
-        front: (Bitmap) -> Wraparound.Half? = ::frontOf,
-        focus: (Bitmap, Rect) -> CoverFocus = { _, _ -> CoverFocus.NONE }
+        front: (Bitmap) -> Wraparound.Half? = ::frontOf
     ): Bitmap {
-        if (!Wraparound.isWraparound(src.width, src.height, innerRatio)) return compose(src, width, height, style, focus = focus)
+        if (!Wraparound.isWraparound(src.width, src.height, innerRatio)) return compose(src, width, height, style)
         val half = front(src) ?: return compose(src, width, height, style, fit = true)
         val (left, right) = Wraparound.frontColumns(src.width, src.height, half, innerRatio)
-        return compose(src, width, height, style, Rect(left, 0, right, src.height), focus = focus)
+        return compose(src, width, height, style, Rect(left, 0, right, src.height))
     }
 
     /** `[left, right]` halves of wraparound [src] as shown, each one inner page of [innerRatio] wide from its outer edge. */
@@ -94,7 +91,7 @@ object CoverArt {
     }
 
     /**
-     * The front half of wraparound [src] by its tallest text ([SmartCrop.textFront]), from
+     * The front half of wraparound [src] by its tallest text ([CoverText.textFront]), from
      * [focus] of each of its [halves]. Null when the text does not tell, and when either focus
      * was found without the detector ([CoverFocus.keep]): then [unsure] too.
      */
@@ -106,32 +103,24 @@ object CoverArt {
             unsure()
             return null
         }
-        return SmartCrop.textFront(l, left.width(), r, right.width(), src.height)
+        return CoverText.textFront(l, left.width(), r, right.width(), src.height)
     }
 
     /**
-     * Where the Smart crop anchor looks in [region] of [src]: its text, as [detector] finds it on
-     * the region stretched to its input ([SmartCrop.inputSize]; none without [detector]),
-     * and its detail. When [detector] gives null or fails, detail alone, not to be kept
-     * ([CoverFocus.keep]); while it is not [CoverTextDetector.ready], nothing to go by (Smart
-     * crops as Top does), not to be kept either.
+     * The tallest text in [region] of [src], as [detector] finds it on the region stretched to its
+     * input ([CoverText.inputSize]); [CoverFocus.NONE] without [detector]. When [detector] gives
+     * null or fails, none, not to be kept ([CoverFocus.keep]); while it is not
+     * [CoverTextDetector.ready], [CoverFocus.WAITING].
      */
     fun focusOf(src: Bitmap, region: Rect, detector: CoverTextDetector?): CoverFocus {
-        if (detector != null && !detector.ready()) return CoverFocus.WAITING
-        val (w, h) = SmartCrop.inputSize(region.width(), region.height()).let { it[0] to it[1] }
+        if (detector == null) return CoverFocus.NONE
+        if (!detector.ready()) return CoverFocus.WAITING
+        val (w, h) = CoverText.inputSize(region.width(), region.height()).let { it[0] to it[1] }
         val plan = Target(w, h, Fit.STRETCH).plan(region.width().toDouble(), region.height().toDouble(), region.left.toDouble(), region.top.toDouble())
         val small = render(src, plan, false)
         try {
-            val luma = ByteArray(w * h)
-            val row = IntArray(w)
-            for (y in 0 until h) {
-                small.getPixels(row, 0, w, 0, y, w, 1)
-                Wraparound.luminance(row, w, luma, y * w)
-            }
-            val (rows, columns) = SmartCrop.detail(luma, w, h).let { it[0] to it[1] }
-            if (detector == null) return CoverFocus(null, emptyList(), rows, columns)
-            val lines = runCatching { detector.lines(small) }.getOrNull() ?: return CoverFocus(null, emptyList(), rows, columns, keep = false)
-            return SmartCrop.focus(lines, w, h, rows, columns)
+            val lines = runCatching { detector.lines(small) }.getOrNull() ?: return CoverFocus(null, keep = false)
+            return CoverText.focus(lines, w, h)
         } finally {
             small.recycle()
         }
@@ -161,8 +150,7 @@ object CoverArt {
 
     /**
      * [region] of [src] (all of it when null) as a [width] x [height] cover; [fit]
-     * forces the whole region over a blurred copy whatever [style] says. [focus] is
-     * asked where the Smart crop anchor looks when it crops. Leaves [src] as it is.
+     * forces the whole region over a blurred copy whatever [style] says. Leaves [src] as it is.
      */
     fun compose(
         src: Bitmap,
@@ -170,17 +158,13 @@ object CoverArt {
         height: Int,
         style: CoverStyle,
         region: Rect? = null,
-        fit: Boolean = false,
-        focus: (Bitmap, Rect) -> CoverFocus = { _, _ -> CoverFocus.NONE }
+        fit: Boolean = false
     ): Bitmap {
         val r = region ?: Rect(0, 0, src.width, src.height)
         val fill = !fit && style.fills(r.width(), r.height(), width, height)
         val plan = { t: Target -> t.plan(r.width().toDouble(), r.height().toDouble(), r.left.toDouble(), r.top.toDouble()) }
         if (fill) {
-            val anchored = plan(Target(width, height, Fit.COVER, anchorTop = style.anchor != CropAnchor.CENTER))
-            val crops = anchored.spanW < r.width() || anchored.spanH < r.height()
-            val shown = if (style.anchor == CropAnchor.SMART && crops) smart(anchored, r, focus(src, r)) else anchored
-            return render(src, shown, style.linear, style.scaling)
+            return render(src, plan(Target(width, height, Fit.COVER, anchorTop = style.anchor == CropAnchor.TOP)), style.linear, style.scaling)
         }
         val out = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(out)
@@ -189,17 +173,6 @@ object CoverArt {
         canvas.drawBitmap(front, ((width - front.width) / 2).toFloat(), ((height - front.height) / 2).toFloat(), null)
         front.recycle()
         return out
-    }
-
-    /** [plan], a crop of region [r], moved along each axis it crops to where [focus] says ([SmartCrop.offset]). */
-    private fun smart(plan: Plan, r: Rect, focus: CoverFocus): Plan {
-        // At scale 1 a whole-pixel start keeps the result a plain crop.
-        fun start(at: Double, span: Double, out: Int) = if (span == out.toDouble()) floor(at) else at
-        val w = r.width().toDouble()
-        val h = r.height().toDouble()
-        val x = if (plan.spanW < w) r.left + start(SmartCrop.offset(focus, w, plan.spanW, vertical = false), plan.spanW, plan.width) else plan.x
-        val y = if (plan.spanH < h) r.top + start(SmartCrop.offset(focus, h, plan.spanH, vertical = true), plan.spanH, plan.height) else plan.y
-        return plan.copy(x = x, y = y)
     }
 
     /** The region filling the box, shrunk, blurred, stretched back and dimmed. */

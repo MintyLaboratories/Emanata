@@ -82,6 +82,7 @@ import com.infinity.comicreader.data.BookRef
 import com.infinity.comicreader.data.Bookmark
 import com.infinity.comicreader.data.CopyMatch
 import com.infinity.comicreader.data.CoverFront
+import com.infinity.comicreader.data.CoverText
 import com.infinity.comicreader.data.EntryType
 import com.infinity.comicreader.data.Crumbs
 import com.infinity.comicreader.data.FolderLayout
@@ -98,7 +99,6 @@ import com.infinity.comicreader.data.ReaderLayout
 import com.infinity.comicreader.data.ReaderSettings
 import com.infinity.comicreader.data.RemovalNotices
 import com.infinity.comicreader.data.SettingsRepository
-import com.infinity.comicreader.data.SmartCrop
 import com.infinity.comicreader.data.Thrift
 import com.infinity.comicreader.data.SpreadDisplay
 import com.infinity.comicreader.data.SpreadOverrides
@@ -1614,7 +1614,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
      * kept with its facts; null when never looked at under it.
      */
     private fun knownCover(book: File, src: PageSource): CoverFront? {
-        val version = SmartCrop.version(Thumbs.detector(applicationContext).id)
+        val version = CoverText.version(Thumbs.detector(applicationContext).id)
         val page = HiddenPages.bookIndex(src, 0)
         return Thumbs.knownFront(book, page)?.takeIf { it.version == version }
             ?: factsCache.cover(BookIds.known(book), version)?.takeIf { it.page == page }

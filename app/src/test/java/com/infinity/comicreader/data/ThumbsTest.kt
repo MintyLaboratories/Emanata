@@ -148,8 +148,8 @@ class ThumbsTest {
         var runs = 0
     }
 
-    /** Stands [w] in as the detector, seeing text across rows [top] to [bottom] (shares of the height) once its model is in place. */
-    private fun waitingDetector(w: Waiting, top: Double = 0.85, bottom: Double = 0.92) {
+    /** Stands [w] in as the detector, seeing a title on blue halves ([titleMap]) once its model is in place. */
+    private fun waitingDetector(w: Waiting) {
         val stand = object : CoverTextDetector {
             override val id = "waiting"
 
@@ -158,10 +158,10 @@ class ThumbsTest {
                 return w.ready
             }
 
-            override fun lines(src: Bitmap): List<SmartCrop.TextBox> {
+            override fun lines(src: Bitmap): List<CoverText.TextBox> {
                 check(w.ready) { "looked without its model" }
                 w.runs++
-                return SmartCrop.lines(textMap(src, top, bottom), src.width, src.height)
+                return CoverText.lines(titleMap(src), src.width, src.height)
             }
         }
         Thumbs.detector = { stand }
@@ -169,51 +169,47 @@ class ThumbsTest {
 
     private fun coverFiles(): List<String> = File(context.cacheDir, "covers").listFiles().orEmpty().map { it.name }.sorted()
 
-    @Test
-    fun smartKeepsTheTallestTextFoundOncePerCover() {
-        val calls = textAt(0.85, 0.92)
-        val entry = cover()
-        val thumb = Thumbs.load(context, entry, "UTF-8", 120, 60, CoverStyle(ThumbFit.FILL, CropAnchor.SMART))!!
-        // The text sits in the blue bottom third: the crop moves down to keep it.
-        assertEquals(Color.BLUE, thumb.getPixel(60, 30))
-        assertEquals(Color.BLUE, thumb.getPixel(60, 58))
-        assertTrue(Color.red(thumb.getPixel(60, 2)) < 128)
-        assertEquals(1, calls[0])
-        // Another size uses the focus found.
-        Thumbs.load(context, entry, "UTF-8", 100, 40, CoverStyle(ThumbFit.FILL, CropAnchor.SMART))
-        assertEquals(1, calls[0])
+    /** A score map of [bitmap] with a title near its top when its middle is blue, else none. */
+    private fun titleMap(bitmap: Bitmap): ScoreMap =
+        if (Color.blue(bitmap.getPixel(bitmap.width / 2, bitmap.height / 2)) > 200) textMap(bitmap, 0.1, 0.25) else textMap(bitmap, 0.0, 0.0)
+
+    /** Stands in a detector known as [id] seeing a title on blue halves only ([titleMap]); counts its calls. */
+    private fun titleOnBlue(id: String = "fake"): IntArray {
+        val calls = intArrayOf(0)
+        standIn(id) { bitmap ->
+            calls[0]++
+            titleMap(bitmap)
+        }
+        return calls
     }
 
-    @Test
-    fun anotherDetectorFindsFocusesAndSmartCoversAgain() {
-        val entry = cover()
-        val smart = CoverStyle(ThumbFit.FILL, CropAnchor.SMART)
-        val first = textAt(0.85, 0.92, id = "a")
-        assertEquals(Color.BLUE, Thumbs.load(context, entry, "UTF-8", 120, 60, smart)!!.getPixel(60, 30))
-        assertEquals(1, first[0])
-        val storeA = File(context.cacheDir, Thumbs.focusFile(SmartCrop.version("a")))
-        assertTrue(storeA.isFile)
-        assertEquals(SmartCrop.version("a"), Thumbs.coverVersion(context))
-        // Another detector sees the text at the top: its own focus, store and cover.
-        val second = textAt(0.02, 0.1, id = "b")
-        assertEquals(Color.RED, Thumbs.load(context, entry, "UTF-8", 120, 60, smart)!!.getPixel(60, 30))
-        assertEquals(1, second[0])
-        assertTrue(File(context.cacheDir, Thumbs.focusFile(SmartCrop.version("b"))).isFile)
+    /** A 1300 x 1000 wraparound without a barcode, its left half blue, its right half red, as an image book. */
+    private fun uncoded(name: String): BookEntry {
+        val file = File(context.cacheDir, name)
+        file.writeBytes(bands(1300, 1000, 650, Color.BLUE, Color.BLUE, Color.RED))
+        return BookEntry(file, file.name, false, EntryType.IMAGE, file.length(), file.lastModified())
     }
+
+    /** True when [thumb], a cover of an [uncoded] wraparound, shows its blue half alone: its front by its title. */
+    private fun showsBlueFront(thumb: Bitmap): Boolean =
+        thumb.getPixel(5, thumb.height / 2) == Color.BLUE && thumb.getPixel(thumb.width - 6, thumb.height / 2) == Color.BLUE
+
+    /** True when [thumb], a 130 x 200 cover of an [uncoded] wraparound, shows it whole: blue beside red. */
+    private fun showsWhole(thumb: Bitmap): Boolean = thumb.getPixel(30, 100) == Color.BLUE && thumb.getPixel(100, 100) == Color.RED
 
     @Test
     fun focusesOfOtherVersionsAreDeleted() {
-        val old = File(context.cacheDir, Thumbs.focusFile("${SmartCrop.RULES - 1}-${TextDetector.ID}")).apply { writeText("") }
-        val gone = File(context.cacheDir, Thumbs.focusFile("${SmartCrop.RULES - 1}-other-detector")).apply { writeText("") }
-        textAt(0.85, 0.92, id = TextDetector.ID)
-        Thumbs.load(context, cover(), "UTF-8", 120, 60, CoverStyle(ThumbFit.FILL, CropAnchor.SMART))!!
+        val old = File(context.cacheDir, Thumbs.focusFile("${CoverText.RULES - 1}-${TextDetector.ID}")).apply { writeText("") }
+        val gone = File(context.cacheDir, Thumbs.focusFile("${CoverText.RULES - 1}-other-detector")).apply { writeText("") }
+        titleOnBlue(TextDetector.ID)
+        Thumbs.load(context, uncoded("versions.png"), "UTF-8", 130, 200, CoverStyle(ThumbFit.FILL))!!
         assertFalse(old.exists())
         assertFalse(gone.exists())
-        assertTrue(File(context.cacheDir, Thumbs.focusFile(SmartCrop.version(TextDetector.ID))).isFile)
+        assertTrue(File(context.cacheDir, Thumbs.focusFile(CoverText.version(TextDetector.ID))).isFile)
     }
 
     @Test
-    fun anotherDetectorShowsAnotherHalfOfAWraparoundWithoutBarcodeInAnyStyle() {
+    fun anotherDetectorFindsTextAgainAndShowsAnotherHalfOfAWraparoundWithoutBarcode() {
         val file = File(context.cacheDir, "switched.png")
         file.writeBytes(bands(1300, 1000, 650, Color.BLUE, Color.BLUE, Color.RED))
         val entry = BookEntry(file, file.name, false, EntryType.IMAGE, file.length(), file.lastModified(), direction = ReadingDirection.LTR)
@@ -221,57 +217,60 @@ class ThumbsTest {
         titledHalf(Color.BLUE, "a")
         assertEquals(Color.BLUE, Thumbs.load(context, entry, "UTF-8", 130, 200, top)!!.getPixel(65, 100))
         assertNotNull(Thumbs.inMemory(context, entry, 130, 200, top))
-        // Another detector sees the title on the red half: that cover is not the one made before.
+        assertTrue(File(context.cacheDir, Thumbs.focusFile(CoverText.version("a"))).isFile)
+        assertEquals(CoverText.version("a"), Thumbs.coverVersion(context))
+        // Another detector sees the title on the red half: its own text and store; that cover is not the one made before.
         titledHalf(Color.RED, "b")
         assertNull(Thumbs.inMemory(context, entry, 130, 200, top))
         assertEquals(Color.RED, Thumbs.load(context, entry, "UTF-8", 130, 200, top)!!.getPixel(65, 100))
+        assertTrue(File(context.cacheDir, Thumbs.focusFile(CoverText.version("b"))).isFile)
     }
 
     @Test
     fun coversNoDetectorShapedOutliveAChangeOfDetector() {
         val top = CoverStyle(ThumbFit.FILL, CropAnchor.TOP)
-        val smart = CoverStyle(ThumbFit.FILL, CropAnchor.SMART)
         val plain = cover(name = "plain.png")
         val barcoded = wraparound(true, "barcoded.png")
-        val a = textAt(0.85, 0.92, id = "a")
+        val titled = uncoded("titled.png")
+        val a = titleOnBlue("a")
         val first = Thumbs.load(context, plain, "UTF-8", 120, 60, top)!!
         val front = Thumbs.load(context, barcoded, "UTF-8", 130, 200, top)!!
-        val smartA = Thumbs.load(context, plain, "UTF-8", 120, 60, smart)!!
-        assertEquals("only the Smart crop looked", 1, a[0])
+        val shaped = Thumbs.load(context, titled, "UTF-8", 130, 200, top)!!
+        assertEquals("only the wraparound without a barcode looked", 2, a[0])
         val files = coverFiles()
         // Another detector: a cover from the top is the one made before.
-        val b = textAt(0.02, 0.1, id = "b")
+        val b = titleOnBlue("b")
         assertSame(first, Thumbs.inMemory(context, plain, 120, 60, top))
         assertSame(first, Thumbs.load(context, plain, "UTF-8", 120, 60, top))
-        // A Smart crop and a wraparound, whose text it looks for, are made again.
-        assertNull(Thumbs.inMemory(context, plain, 120, 60, smart))
+        // Wraparounds, whose text it looks for, are made again.
+        assertNull(Thumbs.inMemory(context, titled, 130, 200, top))
         assertNull(Thumbs.inMemory(context, barcoded, 130, 200, top))
-        assertFalse(smartA === Thumbs.load(context, plain, "UTF-8", 120, 60, smart))
+        assertFalse(shaped === Thumbs.load(context, titled, "UTF-8", 130, 200, top))
         assertFalse(front === Thumbs.load(context, barcoded, "UTF-8", 130, 200, top))
-        assertEquals(1, b[0])
+        assertEquals(2, b[0])
         assertEquals(files.size + 2, coverFiles().size)
     }
 
     @Test
     fun coversNoDetectorShapedComeFromDiskAfterAChangeOfDetector() {
         val top = CoverStyle(ThumbFit.FILL, CropAnchor.TOP)
-        val smart = CoverStyle(ThumbFit.FILL, CropAnchor.SMART)
         val plain = cover(name = "plain.png")
         val barcoded = wraparound(true, "barcoded.png")
-        textAt(0.85, 0.92, id = "a")
+        val titled = uncoded("titled.png")
+        titleOnBlue("a")
         val first = Thumbs.load(context, plain, "UTF-8", 120, 60, top)!!
         Thumbs.load(context, barcoded, "UTF-8", 130, 200, top)!!
-        Thumbs.load(context, plain, "UTF-8", 120, 60, smart)!!
+        Thumbs.load(context, titled, "UTF-8", 130, 200, top)!!
         val files = coverFiles()
         // A restart with another detector: memory is empty, the disk keeps what was made.
         Thumbs.dropMemory()
-        val b = textAt(0.02, 0.1, id = "b")
+        val b = titleOnBlue("b")
         assertNull(Thumbs.inMemory(context, plain, 120, 60, top))
         val again = Thumbs.cached(context, plain, 120, 60, top)
         assertNotNull("a cover from the top comes from disk", again)
         assertEquals(first.getPixel(60, 30), again!!.getPixel(60, 30))
-        // A Smart crop and a wraparound, whose text it looks for, are not served from the other's.
-        assertNull(Thumbs.cached(context, plain, 120, 60, smart))
+        // Wraparounds, whose text it looks for, are not served from the other's.
+        assertNull(Thumbs.cached(context, titled, 130, 200, top))
         assertNull(Thumbs.cached(context, barcoded, 130, 200, top))
         assertEquals("nothing looked", 0, b[0])
         assertEquals(files, coverFiles())
@@ -288,43 +287,31 @@ class ThumbsTest {
     }
 
     @Test
-    fun aBookMarkedRightToLeftFindsItsTextWithTheSameDetector() {
-        val smart = CoverStyle(ThumbFit.FILL, CropAnchor.SMART)
-        val calls = textAt(0.85, 0.92)
-        val left = cover(name = "left.png").copy(direction = ReadingDirection.LTR)
-        val right = cover(name = "right.png").copy(direction = ReadingDirection.RTL)
-        assertEquals(Color.BLUE, Thumbs.load(context, left, "UTF-8", 120, 60, smart)!!.getPixel(60, 30))
-        assertEquals(Color.BLUE, Thumbs.load(context, right, "UTF-8", 120, 60, smart)!!.getPixel(60, 30))
-        assertEquals(2, calls[0])
-    }
-
-    @Test
     fun theAppsDetectorIsPpOcr() {
         Thumbs.detector = detector
-        assertEquals(SmartCrop.version(TextDetector.ID), Thumbs.coverVersion(context))
+        assertEquals(CoverText.version(TextDetector.ID), Thumbs.coverVersion(context))
     }
 
     @Test
-    fun aFocusFoundWithoutTheDetectorIsNeitherKeptNorStored() {
+    fun textLookedForWithoutTheDetectorIsNeitherKeptNorStored() {
         var works = false
         val calls = intArrayOf(0)
         standIn { bitmap ->
             calls[0]++
-            if (!works) null else ScoreMap(bitmap.width, bitmap.height, FloatArray(bitmap.width * bitmap.height) { i -> if (i / bitmap.width >= bitmap.height * 17 / 20 && i / bitmap.width < bitmap.height * 92 / 100) 0.9f else 0f })
+            if (works) titleMap(bitmap) else null
         }
-        val entry = cover()
-        val smart = CoverStyle(ThumbFit.FILL, CropAnchor.SMART)
-        // Made from detail alone, and not written to disk.
-        assertNotNull(Thumbs.load(context, entry, "UTF-8", 120, 60, smart))
-        assertEquals(1, calls[0])
+        val entry = uncoded("unkept.png")
+        val fill = CoverStyle(ThumbFit.FILL)
+        // Whole, and not written to disk.
+        assertTrue(showsWhole(Thumbs.load(context, entry, "UTF-8", 130, 200, fill)!!))
+        assertEquals(2, calls[0])
         assertNull(File(context.cacheDir, "covers").listFiles()?.firstOrNull())
         works = true
-        val thumb = Thumbs.load(context, entry, "UTF-8", 100, 50, smart)!!
-        assertEquals(2, calls[0])
-        assertEquals(Color.BLUE, thumb.getPixel(50, 48))
+        assertTrue(showsBlueFront(Thumbs.load(context, entry, "UTF-8", 100, 150, fill)!!))
+        assertEquals(4, calls[0])
         assertEquals(1, File(context.cacheDir, "covers").listFiles()!!.size)
-        Thumbs.load(context, entry, "UTF-8", 80, 40, smart)!!
-        assertEquals(2, calls[0])
+        Thumbs.load(context, entry, "UTF-8", 80, 120, fill)!!
+        assertEquals(4, calls[0])
     }
 
     @Test
@@ -335,19 +322,19 @@ class ThumbsTest {
         var calls = 0
         standIn { bitmap ->
             calls++
-            if (works) textMap(bitmap, 0.85, 0.92) else null
+            if (works) titleMap(bitmap) else null
         }
-        val entry = cover()
-        val smart = CoverStyle(ThumbFit.FILL, CropAnchor.SMART)
-        assertNotNull(Thumbs.load(context, entry, "UTF-8", 120, 60, smart))
-        assertNotNull("kept in memory meanwhile", Thumbs.inMemory(context, entry, 120, 60, smart))
+        val entry = uncoded("arrives.png")
+        val fill = CoverStyle(ThumbFit.FILL)
+        assertTrue(showsWhole(Thumbs.load(context, entry, "UTF-8", 130, 200, fill)!!))
+        assertNotNull("kept in memory meanwhile", Thumbs.inMemory(context, entry, 130, 200, fill))
         works = true
         arrived++
-        assertNull(Thumbs.inMemory(context, entry, 120, 60, smart))
-        assertEquals(Color.BLUE, Thumbs.load(context, entry, "UTF-8", 120, 60, smart)!!.getPixel(60, 30))
-        assertEquals(2, calls)
+        assertNull(Thumbs.inMemory(context, entry, 130, 200, fill))
+        assertTrue(showsBlueFront(Thumbs.load(context, entry, "UTF-8", 130, 200, fill)!!))
+        assertEquals(4, calls)
         arrived++
-        assertNotNull("one found with the detector stays", Thumbs.inMemory(context, entry, 120, 60, smart))
+        assertNotNull("one found with the detector stays", Thumbs.inMemory(context, entry, 130, 200, fill))
     }
 
     @Test
@@ -359,10 +346,10 @@ class ThumbsTest {
             arrived++
             null
         }
-        val entry = cover()
-        val smart = CoverStyle(ThumbFit.FILL, CropAnchor.SMART)
-        assertNotNull(Thumbs.load(context, entry, "UTF-8", 120, 60, smart))
-        assertNull(Thumbs.inMemory(context, entry, 120, 60, smart))
+        val entry = uncoded("arriving.png")
+        val fill = CoverStyle(ThumbFit.FILL)
+        assertNotNull(Thumbs.load(context, entry, "UTF-8", 130, 200, fill))
+        assertNull(Thumbs.inMemory(context, entry, 130, 200, fill))
     }
 
     @Test
@@ -371,41 +358,41 @@ class ThumbsTest {
         Thumbs.arrivals = { arrived }
         val w = Waiting()
         waitingDetector(w)
-        val entry = cover()
-        val smart = CoverStyle(ThumbFit.FILL, CropAnchor.SMART)
-        // Cropped as Top does, and kept on disk as a waiting cover only.
-        assertEquals(Color.RED, Thumbs.load(context, entry, "UTF-8", 120, 60, smart)!!.getPixel(60, 2))
+        val entry = uncoded("missing.png")
+        val fill = CoverStyle(ThumbFit.FILL)
+        // Whole, and kept on disk as a waiting cover only.
+        assertTrue(showsWhole(Thumbs.load(context, entry, "UTF-8", 130, 200, fill)!!))
         assertEquals(0, w.runs)
         val files = coverFiles()
         assertEquals(1, files.size)
         assertTrue(files.toString(), files[0].substringBeforeLast('.').endsWith("-waiting"))
         // Out of memory (another arrival), it comes from disk while the model is still missing, which asks for it again.
         arrived++
-        assertNull(Thumbs.inMemory(context, entry, 120, 60, smart))
+        assertNull(Thumbs.inMemory(context, entry, 130, 200, fill))
         val asked = w.asked
-        assertEquals(Color.RED, Thumbs.cached(context, entry, 120, 60, smart)!!.getPixel(60, 2))
+        assertTrue(showsWhole(Thumbs.cached(context, entry, 130, 200, fill)!!))
         assertEquals(asked + 1, w.asked)
         assertEquals(0, w.runs)
         // The model arrives: the waiting cover goes, and the cover is made with its text and kept.
         w.ready = true
         arrived++
-        assertNull(Thumbs.cached(context, entry, 120, 60, smart))
+        assertNull(Thumbs.cached(context, entry, 130, 200, fill))
         assertTrue(coverFiles().isEmpty())
-        assertEquals(Color.BLUE, Thumbs.load(context, entry, "UTF-8", 120, 60, smart)!!.getPixel(60, 30))
-        assertEquals(1, w.runs)
+        assertTrue(showsBlueFront(Thumbs.load(context, entry, "UTF-8", 130, 200, fill)!!))
+        assertEquals(2, w.runs)
         assertEquals(1, coverFiles().size)
         assertFalse(coverFiles()[0].contains("-waiting"))
         arrived++
-        assertNotNull(Thumbs.inMemory(context, entry, 120, 60, smart))
+        assertNotNull(Thumbs.inMemory(context, entry, 130, 200, fill))
     }
 
     @Test
     fun aWaitingCoverFoundWithTheModelInPlaceIsMadeAgain() {
         val w = Waiting()
         waitingDetector(w)
-        val entry = cover()
-        val smart = CoverStyle(ThumbFit.FILL, CropAnchor.SMART)
-        Thumbs.load(context, entry, "UTF-8", 120, 60, smart)!!
+        val entry = uncoded("found.png")
+        val fill = CoverStyle(ThumbFit.FILL)
+        Thumbs.load(context, entry, "UTF-8", 130, 200, fill)!!
         // A later session: memory empty, the model downloaded meanwhile without any cover going without it.
         val waiting = File(context.cacheDir, "covers").listFiles()!!.single()
         val kept = waiting.readBytes()
@@ -413,17 +400,17 @@ class ThumbsTest {
         File(context.cacheDir, "covers").mkdirs()
         waiting.writeBytes(kept)
         w.ready = true
-        assertNull(Thumbs.cached(context, entry, 120, 60, smart))
+        assertNull(Thumbs.cached(context, entry, 130, 200, fill))
         assertFalse(waiting.exists())
-        assertEquals(Color.BLUE, Thumbs.load(context, entry, "UTF-8", 120, 60, smart)!!.getPixel(60, 30))
+        assertTrue(showsBlueFront(Thumbs.load(context, entry, "UTF-8", 130, 200, fill)!!))
     }
 
     @Test
     fun trimDeletesWaitingCoversOnceTheModelIsInPlace() {
         waitingDetector(Waiting())
-        Thumbs.load(context, cover(), "UTF-8", 120, 60, CoverStyle(ThumbFit.FILL, CropAnchor.SMART))!!
-        textAt(0.85, 0.92)
-        Thumbs.load(context, cover(name = "other.png"), "UTF-8", 120, 60, CoverStyle(ThumbFit.FILL, CropAnchor.SMART))!!
+        Thumbs.load(context, uncoded("waits.png"), "UTF-8", 130, 200, CoverStyle(ThumbFit.FILL))!!
+        titleOnBlue()
+        Thumbs.load(context, uncoded("other.png"), "UTF-8", 130, 200, CoverStyle(ThumbFit.FILL))!!
         assertEquals(2, coverFiles().size)
         Thumbs.modelInPlace = { false }
         Thumbs.trim(context)
@@ -438,8 +425,9 @@ class ThumbsTest {
     fun onlyCoversThatLookForTextAskForTheModel() {
         val w = Waiting()
         waitingDetector(w)
-        // A cover cropped from the top looks for no text: no download.
+        // A cover cropped by either anchor looks for no text: no download.
         Thumbs.load(context, cover(), "UTF-8", 120, 60, CoverStyle(ThumbFit.FILL))!!
+        Thumbs.load(context, cover(name = "center.png"), "UTF-8", 120, 60, CoverStyle(ThumbFit.FILL, CropAnchor.CENTER))!!
         assertEquals(0, w.asked)
         // A wraparound with a barcode under Top looks for text only to settle the reading direction.
         val (coded, codedId) = wrapBook(true, "waiting-coded.cbz")
@@ -448,18 +436,14 @@ class ThumbsTest {
         // That stays open while the model is missing; the barcode alone decides what shows, so that cover is kept.
         assertNull(Thumbs.knownFront(coded.file, 0))
         assertNull(BookFactsCache(context).get(codedId)?.cover)
-        // Kept: the plain cover's and this one.
-        assertEquals(2, coverFiles().count { !it.contains("-waiting") })
+        // Kept: the plain covers' and this one.
+        assertEquals(3, coverFiles().count { !it.contains("-waiting") })
         // A wraparound without a barcode under Top looks for its title to tell its front: it asks, shows whole, and waits.
         val asked = w.asked
         val (uncoded, _) = wrapBook(false, "waiting-uncoded.cbz")
         Thumbs.load(context, uncoded, "UTF-8", 130, 200, CoverStyle(ThumbFit.FILL))!!
         assertTrue(w.asked > asked)
         assertEquals(1, coverFiles().count { it.contains("-waiting") })
-        // The Smart crop asks too.
-        val smart = w.asked
-        Thumbs.load(context, cover(name = "smart.png"), "UTF-8", 120, 60, CoverStyle(ThumbFit.FILL, CropAnchor.SMART))!!
-        assertTrue(w.asked > smart)
         assertEquals(0, w.runs)
     }
 
@@ -467,37 +451,19 @@ class ThumbsTest {
     fun theStyleKeyIsUnderTheDetector() {
         val usual = coverText("usual") { null }
         Thumbs.detector = { usual }
-        val style = CoverStyle(ThumbFit.FILL, CropAnchor.SMART)
+        val style = CoverStyle(ThumbFit.FILL, CropAnchor.CENTER)
         assertEquals(style.key("usual"), Thumbs.styleKey(context, style))
     }
 
     @Test
-    fun smartLooksOnlyWhenItCrops() {
+    fun noCropAnchorLooksForText() {
         val calls = textAt(0.85, 0.92)
-        Thumbs.load(context, cover(), "UTF-8", 200, 300, CoverStyle(ThumbFit.FILL, CropAnchor.SMART))
-        Thumbs.load(context, cover(name = "other.png"), "UTF-8", 120, 60, CoverStyle(ThumbFit.FIT, CropAnchor.SMART))
+        for (anchor in CropAnchor.entries) {
+            val thumb = Thumbs.load(context, cover(name = "${anchor.key}.png"), "UTF-8", 120, 60, CoverStyle(ThumbFit.FILL, anchor))!!
+            // Text in the blue bottom third moves no crop.
+            assertEquals(if (anchor == CropAnchor.TOP) Color.RED else Color.GREEN, thumb.getPixel(60, 30))
+        }
         assertEquals(0, calls[0])
-    }
-
-    /** A [w] x [h] image of [color] at each pixel, as an image book. */
-    private fun image(w: Int, h: Int, name: String, color: (Int, Int) -> Int): BookEntry {
-        val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-        for (y in 0 until h) for (x in 0 until w) bitmap.setPixel(x, y, color(x, y))
-        val file = File(context.cacheDir, name)
-        file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
-        return BookEntry(file, file.name, false, EntryType.IMAGE, file.length(), file.lastModified())
-    }
-
-    @Test
-    fun smartWithoutTextKeepsTheMostDetailedPart() {
-        // Gray above, black and white stripes in the bottom third.
-        val striped = image(300, 450, "striped.png") { _, y -> if (y < 300) Color.GRAY else if ((y / 4) % 2 == 0) Color.WHITE else Color.BLACK }
-        val thumb = Thumbs.load(context, striped, "UTF-8", 120, 60, CoverStyle(ThumbFit.FILL, CropAnchor.SMART))!!
-        val column = (20 until 40).map { Color.green(thumb.getPixel(60, it)) }
-        assertTrue("stripes not shown: $column", column.max() - column.min() > 60)
-        // A blank cover keeps the top.
-        val flat = image(300, 450, "flat.png") { _, y -> if (y < 150) Color.RED else Color.rgb(250, 0, 0) }
-        assertEquals(Color.RED, Thumbs.load(context, flat, "UTF-8", 120, 60, CoverStyle(ThumbFit.FILL, CropAnchor.SMART))!!.getPixel(60, 30))
     }
 
     @Test
@@ -597,14 +563,14 @@ class ThumbsTest {
         titledHalf(Color.RED, "a")
         val (book, id) = wrapBook(true, "relooked.cbz")
         Thumbs.load(context, book, "UTF-8", 130, 200, CoverStyle(ThumbFit.FILL))!!
-        assertEquals(CoverFront(0, Wraparound.Half.RIGHT, SmartCrop.version("a")), Thumbs.knownFront(book.file, 0))
+        assertEquals(CoverFront(0, Wraparound.Half.RIGHT, CoverText.version("a")), Thumbs.knownFront(book.file, 0))
         // Another detector sees the title on the barcode's side: the barcode alone tells nothing.
         titledHalf(Color.WHITE, "b")
         Thumbs.load(context, book, "UTF-8", 130, 200, CoverStyle(ThumbFit.FILL))!!
-        val found = CoverFront(0, null, SmartCrop.version("b"))
+        val found = CoverFront(0, null, CoverText.version("b"))
         assertEquals(found, Thumbs.knownFront(book.file, 0))
-        assertEquals(found, BookFactsCache(context).cover(id, SmartCrop.version("b")))
-        assertNull(BookFactsCache(context).cover(id, SmartCrop.version("a")))
+        assertEquals(found, BookFactsCache(context).cover(id, CoverText.version("b")))
+        assertNull(BookFactsCache(context).cover(id, CoverText.version("a")))
     }
 
     @Test
@@ -653,7 +619,8 @@ class ThumbsTest {
         assertEquals(Color.BLUE, thumb.getPixel(5, 100))
         assertEquals(Color.BLUE, thumb.getPixel(125, 100))
         assertEquals(2, calls[0])
-        Thumbs.load(context, entry, "UTF-8", 130, 200, CoverStyle(ThumbFit.FILL, CropAnchor.SMART))!!
+        // Another size and anchor use the text found.
+        Thumbs.load(context, entry, "UTF-8", 100, 150, CoverStyle(ThumbFit.FILL, CropAnchor.CENTER))!!
         assertEquals(2, calls[0])
     }
 
@@ -818,19 +785,25 @@ class ThumbsTest {
 
     @Test
     fun aCoverPageMovedByHiddenPagesOrCharsetIsLookedAtAgain() {
-        val calls = textAt(0.85, 0.92)
-        val book = rgbBook("refocus.cbz")
-        val smart = CoverStyle(ThumbFit.FILL, CropAnchor.SMART)
-        Thumbs.load(context, book, "UTF-8", 100, 100, smart)!!
-        Thumbs.load(context, book, "UTF-8", 80, 80, smart)!!
-        assertEquals(1, calls[0])
-        Library(context).setHiddenPages(ref(book), setOf(0), 3)
-        Thumbs.load(context, book, "UTF-8", 100, 100, smart)!!
+        val calls = textAt(0.1, 0.25)
+        // Two wraparounds without a barcode, then inner pages: either is the cover.
+        val wrap = bands(1300, 1000, 650, Color.BLUE, Color.BLUE, Color.RED)
+        val file = Fixtures.zip(
+            File(context.cacheDir, "refocus.cbz"), Fixtures.entry("00.png", wrap), Fixtures.entry("01.png", wrap),
+            Fixtures.entry("02.png", png(Color.GRAY)), Fixtures.entry("03.png", png(Color.GRAY)), Fixtures.entry("04.png", png(Color.GRAY))
+        )
+        val book = BookEntry(file, file.name, false, EntryType.ARCHIVE, file.length(), file.lastModified())
+        val fill = CoverStyle(ThumbFit.FILL)
+        Thumbs.load(context, book, "UTF-8", 100, 150, fill)!!
+        Thumbs.load(context, book, "UTF-8", 80, 120, fill)!!
         assertEquals(2, calls[0])
+        Library(context).setHiddenPages(ref(book), setOf(0), 5)
+        Thumbs.load(context, book, "UTF-8", 100, 150, fill)!!
+        assertEquals(4, calls[0])
         try {
             Library(context).setNameCharset(ref(book), "windows-1251")
-            Thumbs.load(context, book, "UTF-8", 100, 100, smart)!!
-            assertEquals(3, calls[0])
+            Thumbs.load(context, book, "UTF-8", 100, 150, fill)!!
+            assertEquals(6, calls[0])
         } finally {
             Library(context).setNameCharset(ref(book), null)
         }

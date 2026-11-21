@@ -8,7 +8,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 
 /**
- * The text detector ([CoverTextDetector]) the Smart crop anchor finds cover text with, PP-OCR
+ * The text detector ([CoverTextDetector]) wraparound covers find their text with, PP-OCR
  * ([ppocr]), and the arrivals of its model ([modelArrived]), after which covers made without its
  * text are made again.
  */

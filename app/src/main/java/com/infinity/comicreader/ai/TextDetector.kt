@@ -3,7 +3,7 @@ package com.infinity.comicreader.ai
 import android.content.Context
 import android.graphics.Bitmap
 import android.util.Log
-import com.infinity.comicreader.data.SmartCrop
+import com.infinity.comicreader.data.CoverText
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
@@ -12,12 +12,12 @@ import java.util.concurrent.TimeUnit
  * Finds where text is in an image (not what it says), as a score map ([ScoreMap]: near 1 on
  * the core of each line of text): PaddleOCR's mobile text detector (PP-OCRv5 mobile det,
  * Apache-2.0), an ncnn conversion downloaded unchanged when first needed
- * ([ModelCatalog.TEXT_DETECTOR], [DetectorModel]). For the Smart crop anchor of covers. Opened
- * through [runtime] on first use from [files]; while they are missing it finds nothing and
- * [ready] says so, which asks for them ([inPlace]). Runs on the [gpu] or [threads] CPU threads,
+ * ([ModelCatalog.TEXT_DETECTOR], [DetectorModel]). For the text of wraparound covers
+ * ([CoverText]). Opened through [runtime] on first use from [files]; while they are missing it
+ * finds nothing and [ready] says so, which asks for them ([inPlace]). Runs on the [gpu] or [threads] CPU threads,
  * and closes after [idleMs] without use, so its memory goes when covers are done. Feed it
  * images whose sides are multiples of 32. Its [lines] are the map's text regions
- * ([SmartCrop.lines]).
+ * ([CoverText.lines]).
  */
 internal class TextDetector(
     private val runtime: InferenceRuntime,
@@ -33,9 +33,9 @@ internal class TextDetector(
     /** True where the runtime does not load (nothing to wait for) or the model is in place. */
     override fun ready(): Boolean = !runtime.available || (inPlace?.invoke() ?: (files() != null))
 
-    override fun lines(src: Bitmap): List<SmartCrop.TextBox>? {
+    override fun lines(src: Bitmap): List<CoverText.TextBox>? {
         val map = detect(src) ?: return null
-        return SmartCrop.lines(map, src.width, src.height)
+        return CoverText.lines(map, src.width, src.height)
     }
 
     private var model: TileModel? = null

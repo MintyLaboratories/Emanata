@@ -58,21 +58,23 @@ class CoverStyleTest {
         assertEquals(ThumbFit.AUTO, ThumbFit.of(null))
         assertEquals(CropAnchor.TOP, CropAnchor.of(null))
         assertEquals(CropAnchor.TOP, CropAnchor.of("bottom"))
-        assertEquals(CropAnchor.SMART, CropAnchor.of("smart"))
+        // The removed Smart anchor reads as the default.
+        assertEquals(CropAnchor.TOP, CropAnchor.of("smart"))
+        assertEquals(listOf("top", "center"), CropAnchor.entries.map { it.key })
     }
 
     @Test
     fun coversAreKnownByTheirRulesAndDetector() {
-        assertEquals("auto|smart|${SmartCrop.RULES}-$D", CoverStyle(anchor = CropAnchor.SMART).key(D))
-        assertEquals("auto|top|${SmartCrop.RULES}-$D", CoverStyle().key(D))
-        // Another detector finds other text: a Smart crop elsewhere, in any style another half of a wraparound.
+        assertEquals("auto|center|${CoverText.RULES}-$D", CoverStyle(anchor = CropAnchor.CENTER).key(D))
+        assertEquals("auto|top|${CoverText.RULES}-$D", CoverStyle().key(D))
+        // Another detector finds other text: in any style another half of a wraparound.
         for (f in ThumbFit.entries) for (a in CropAnchor.entries) assertNotEquals(CoverStyle(f, a).key(D), CoverStyle(f, a).key("other"))
     }
 
     @Test
     fun coversNoDetectorShapedAreKnownWithoutOne() {
         assertEquals("auto|top", CoverStyle().key(null))
-        assertEquals("fill|smart|linear", CoverStyle(ThumbFit.FILL, CropAnchor.SMART, linear = true).key(null))
+        assertEquals("fill|center|linear", CoverStyle(ThumbFit.FILL, CropAnchor.CENTER, linear = true).key(null))
         for (f in ThumbFit.entries) for (a in CropAnchor.entries) assertNotEquals(CoverStyle(f, a).key(D), CoverStyle(f, a).key(null))
     }
 

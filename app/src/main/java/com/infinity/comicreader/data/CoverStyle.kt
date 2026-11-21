@@ -26,10 +26,7 @@ enum class ThumbFit(val key: String) {
 /** Which part of a cover too tall for its box stays when it is cropped. */
 enum class CropAnchor(val key: String) {
     TOP("top"),
-    CENTER("center"),
-
-    /** Keeps the cover's tallest text, else its most detailed part ([SmartCrop]); experimental. */
-    SMART("smart");
+    CENTER("center");
 
     companion object {
         fun of(key: String?): CropAnchor = entries.firstOrNull { it.key == key } ?: TOP
@@ -45,12 +42,12 @@ data class CoverStyle(
 ) {
     /**
      * Part of the cache key: one token per setting a cover shows, and the cover-focus version
-     * ([SmartCrop.version]) under text [detector] ([CoverTextDetector.id]), which picks the Smart
-     * crop and, in every style, the half a wraparound without a barcode shows. Without
-     * [detector], the key of a cover no detector's text shaped.
+     * ([CoverText.version]) under text [detector] ([CoverTextDetector.id]), which picks the half
+     * a wraparound without a barcode shows. Without [detector], the key of a cover no detector's
+     * text shaped.
      */
     fun key(detector: String?): String =
-        "${fit.key}|${anchor.key}" + (detector?.let { "|" + SmartCrop.version(it) } ?: "") + (if (linear) "|linear" else "") +
+        "${fit.key}|${anchor.key}" + (detector?.let { "|" + CoverText.version(it) } ?: "") + (if (linear) "|linear" else "") +
             scaling.shrinkKey.let { if (it.isEmpty()) "" else "|$it" }
 
     /** True when a [srcW] x [srcH] cover fills a [boxW] x [boxH] box (cropped) rather than fits inside it. */

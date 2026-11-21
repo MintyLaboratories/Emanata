@@ -4,7 +4,7 @@ import android.app.Application
 import android.content.ContextWrapper
 import android.graphics.Bitmap
 import androidx.test.core.app.ApplicationProvider
-import com.infinity.comicreader.data.SmartCrop
+import com.infinity.comicreader.data.CoverText
 import java.lang.reflect.Modifier
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -22,7 +22,7 @@ import org.robolectric.annotation.Config
 class CoverTextDetectorsTest {
     private val ppocr = object : CoverTextDetector {
         override val id = "ppocr"
-        override fun lines(src: Bitmap): List<SmartCrop.TextBox>? = emptyList()
+        override fun lines(src: Bitmap): List<CoverText.TextBox>? = emptyList()
     }
 
     @After

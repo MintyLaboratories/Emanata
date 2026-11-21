@@ -9,7 +9,7 @@ import com.infinity.comicreader.ai.CoverTextDetector
 import com.infinity.comicreader.ai.ScoreMap
 import com.infinity.comicreader.ai.TextDetector
 import com.infinity.comicreader.data.CoverFront
-import com.infinity.comicreader.data.SmartCrop
+import com.infinity.comicreader.data.CoverText
 import com.infinity.comicreader.testing.coverText
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -118,7 +118,7 @@ class BookDirectionCoverTest {
                 return ready
             }
 
-            override fun lines(src: Bitmap): List<SmartCrop.TextBox>? = title.lines(src)
+            override fun lines(src: Bitmap): List<CoverText.TextBox>? = title.lines(src)
         }
         book().use { src ->
             assertNull(BookDirection.coverFrontOnce(src, null, waiting) { kept += it })
@@ -146,11 +146,11 @@ class BookDirectionCoverTest {
     @Test
     fun aCoverLookedAtByAnotherDetectorIsLookedAtAgain() {
         val kept = ArrayList<CoverFront>()
-        val other = CoverFront(0, Wraparound.Half.LEFT, SmartCrop.version("other"))
+        val other = CoverFront(0, Wraparound.Half.LEFT, CoverText.version("other"))
         book().use { assertEquals(Wraparound.Half.RIGHT, BookDirection.coverFrontOnce(it, other, titleOn(Color.RED)) { f -> kept += f }) }
         assertEquals(listOf(CoverFront(0, Wraparound.Half.RIGHT, V)), kept)
     }
 
     /** The cover-focus version of [coverText]'s detectors. */
-    private val V = SmartCrop.version("fake")
+    private val V = CoverText.version("fake")
 }

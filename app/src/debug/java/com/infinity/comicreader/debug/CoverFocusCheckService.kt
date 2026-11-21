@@ -25,7 +25,7 @@ import com.infinity.comicreader.ai.ModelStore
 import com.infinity.comicreader.ai.TextDetector
 import com.infinity.comicreader.data.CoverArt
 import com.infinity.comicreader.data.CoverFocus
-import com.infinity.comicreader.data.SmartCrop
+import com.infinity.comicreader.data.CoverText
 import com.infinity.comicreader.reader.Fit
 import com.infinity.comicreader.reader.PageSources
 import com.infinity.comicreader.reader.Target
@@ -38,8 +38,8 @@ import java.io.IOException
 import kotlin.concurrent.thread
 
 /**
- * Debug and bench builds only: finds the Smart crop anchor's focus on the covers of real books
- * and times the text detector. Only the shell may start it:
+ * Debug and bench builds only: times the cover text detector on the covers of real books and
+ * finds each cover's tallest text. Only the shell may start it:
  *
  * `adb shell am start-foreground-service -n <package>/com.infinity.comicreader.debug.CoverFocusCheckService
  *  --es dir /path [--ei books 40] [--es setups cpu1,cpu2,cpu4,gpu|none] [--ei reps 3] [--ez marked false]
@@ -49,11 +49,9 @@ import kotlin.concurrent.thread
  * and decodes each cover as the library does. For each: the detector's time on the cover's
  * input by each setup (`cpuN`: N threads of the large cores; `gpu`: Vulkan, fp16), 1 warm-up
  * and `reps` timed runs, the median; the app's own setup's `reps` runs, as asked (waits
- * included), median and most; the time of the whole focus (shrink, detail, detection, boxes) by
- * the app's own setup; the focus; and where Top, Center and Smart start a crop to a
- * 3:4 and a 1:1 box, as shares of the cover's height. With `marked`, a small copy of each cover
- * marked up (text boxes yellow, title green, the 1:1 crop by Smart cyan and by Top red) goes to
- * `files/bench/focus/<index>.jpg`. Books are named by index only. Results go to the log under
+ * included), median and most; the time of the whole focus (shrink, detection, boxes) by the
+ * app's own setup; and the focus. With `marked`, a small copy of each cover marked up (text
+ * boxes yellow, title green) goes to `files/bench/focus/<index>.jpg`. Books are named by index only. Results go to the log under
  * "CoverFocusCheck", one JSON object per line, ending with "done", and to
  * `files/bench/focus.jsonl` in the app's external files.
  *
@@ -62,14 +60,8 @@ import kotlin.concurrent.thread
  * GPU over and over, as AI tiles keep it busy; its runs and their median time are logged at the
  * end.
  *
- * With `--es mode crops`, every book under `dir` instead goes through [CoverCropSurvey] with the
- * app's setup; with `marked`, its Top and Smart covers go to `files/bench/focus/crops/`. Start it
- * with the app's library shown: with no window shown the system soon moves the process to fewer,
- * slower cores, which each line's `cpuset` tells. `--es pick 0,5,9` surveys only the books with
- * those indices, and `--ez lines true` logs each line found ([CoverCropSurvey]).
- *
- * Both modes run the model the app runs ([TextDetector.downloaded]), downloading it first when
- * it is not in place; a line's `model` holds its id ([TextDetector.ID]).
+ * It runs the model the app runs ([TextDetector.downloaded]), downloading it first when it is
+ * not in place; a line's `model` holds its id ([TextDetector.ID]).
  */
 class CoverFocusCheckService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
@@ -83,16 +75,11 @@ class CoverFocusCheckService : Service() {
         val marked = intent?.getBooleanExtra("marked", false) ?: false
         val shared = intent?.getStringExtra("lane") == "shared"
         val busy = intent?.getBooleanExtra("busy", false) ?: false
-        val crops = intent?.getStringExtra("mode") == "crops"
-        val pick = intent?.getStringExtra("pick")?.split(',')?.mapNotNull { it.trim().toIntOrNull() }?.toSet()
-        val lines = intent?.getBooleanExtra("lines", false) ?: false
         thread(name = "cover-focus-check") {
             try {
                 out.parentFile?.mkdirs()
                 if (dir == null) {
                     log(JSONObject().put("failed", "no dir"))
-                } else if (crops) {
-                    survey(File(dir), marked, pick, lines)
                 } else {
                     run(File(dir), count, setups, reps, marked, shared, busy)
                 }
@@ -126,17 +113,6 @@ class CoverFocusCheckService : Service() {
             load?.stop()
         }
         (detectors.values + app).forEach { it.close() }
-    }
-
-    private fun survey(dir: File, marked: Boolean, pick: Set<Int>?, lines: Boolean) {
-        val files = model() ?: return
-        val app = TextDetector(LibNcnn.cpuLane, { files })
-        try {
-            val cropsDir = if (marked) File(getExternalFilesDir(null), "bench/focus/crops") else null
-            CoverCropSurvey(this, app, cropsDir, ::log, pick, lines).run(dir)
-        } finally {
-            app.close()
-        }
     }
 
     /** The app's model, downloaded first when not in place, its id in the log; null, logged as failed, when there is none. */
@@ -196,7 +172,7 @@ class CoverFocusCheckService : Service() {
             try {
                 val region = Rect(0, 0, cover.width, cover.height)
                 val o = JSONObject().put("book", index).put("w", cover.width).put("h", cover.height)
-                val (iw, ih) = SmartCrop.inputSize(cover.width, cover.height).let { it[0] to it[1] }
+                val (iw, ih) = CoverText.inputSize(cover.width, cover.height).let { it[0] to it[1] }
                 val small = CoverArt.render(cover, Target(iw, ih, Fit.STRETCH).plan(cover.width.toDouble(), cover.height.toDouble()), false)
                 val times = JSONObject()
                 for ((name, d) in detectors) {
@@ -226,14 +202,6 @@ class CoverFocusCheckService : Service() {
                     .put("focusMs", Stats.round1(focusMs)).put("boxes", boxes.size)
                     .put("glyphMax", boxes.maxOfOrNull { it.glyph / minOf(iw, ih) }?.let { Stats.round1(it * 1000) / 1000 } ?: JSONObject.NULL)
                     .put("title", band(focus.title?.let { it.top to it.bottom }))
-                    .put("text", band(focus.text?.let { it.top to it.bottom }))
-                for ((label, ratio) in listOf("3:4" to 0.75, "1:1" to 1.0)) {
-                    // A box of this shape filled by the cover: the share of its height a crop keeps.
-                    val span = minOf(1.0, cover.width.toDouble() / ratio / cover.height)
-                    val h = cover.height.toDouble()
-                    val smart = SmartCrop.offset(focus, h, span * h, vertical = true) / h
-                    o.put(label, JSONObject().put("span", r3(span)).put("top", 0).put("center", r3((1 - span) / 2)).put("smart", r3(smart)))
-                }
                 if (marked) mark(cover, focus, boxes, iw, ih, File(markDir, "%03d.jpg".format(index)))
                 log(o)
             } finally {
@@ -247,7 +215,7 @@ class CoverFocusCheckService : Service() {
     private fun band(b: Pair<Double, Double>?): Any = b?.let { JSONArray(listOf(r3(it.first), r3(it.second))) } ?: JSONObject.NULL
 
     /** A copy of [cover] 480 px tall, marked up, written as a JPEG to [file]. */
-    private fun mark(cover: Bitmap, focus: CoverFocus, boxes: List<SmartCrop.TextBox>, mapW: Int, mapH: Int, file: File) {
+    private fun mark(cover: Bitmap, focus: CoverFocus, boxes: List<CoverText.TextBox>, mapW: Int, mapH: Int, file: File) {
         val h = 480
         val w = (cover.width * h.toDouble() / cover.height).toInt().coerceAtLeast(1)
         val small = CoverArt.render(cover, Target(w, h, Fit.STRETCH).plan(cover.width.toDouble(), cover.height.toDouble()), false)
@@ -260,12 +228,6 @@ class CoverFocusCheckService : Service() {
         p.color = Color.GREEN
         p.strokeWidth = 3f
         focus.title?.let { c.drawRect((it.left * w).toFloat(), (it.top * h).toFloat(), (it.right * w).toFloat(), (it.bottom * h).toFloat(), p) }
-        val span = minOf(1.0, cover.width.toDouble() / cover.height) * h
-        val smart = SmartCrop.offset(focus, h.toDouble(), span, vertical = true)
-        p.color = Color.RED
-        c.drawRect(1f, 1f, w - 1f, span.toFloat(), p)
-        p.color = Color.CYAN
-        c.drawRect(4f, smart.toFloat() + 3, w - 4f, (smart + span).toFloat() - 3, p)
         file.outputStream().use { out.compress(Bitmap.CompressFormat.JPEG, 85, it) }
         out.recycle()
     }

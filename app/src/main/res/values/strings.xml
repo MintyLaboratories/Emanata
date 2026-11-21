@@ -863,7 +863,7 @@
     <string name="menu_save_page">Save page to gallery</string>
     <string name="page_saved">Saved to Pictures/Emanata</string>
     <string name="menu_hide_page">Hide this page</string>
-    <string name="page_hidden">Page hidden; Book info can bring it back</string>
+    <string name="page_hidden">Page hidden; “%1$s” in the ⋮ menu brings it back</string>
     <string name="hide_which_page">Hide which page?</string>
     <string name="hide_last_page">The only page shown can\'t be hidden</string>
     <!-- The reader's page long-press menu: its top row's short labels, then its rows. -->

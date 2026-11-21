@@ -730,10 +730,10 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - **Hide this page:** a hidden page is left out of reading, page counts, the
   seek strip, page grids and peeks for that book; history and bookmarks keep
   their pages, except a bookmark on the hidden page, which moves to the next
-  shown page for good (joining its note to a bookmark already there). Book info
-  lists hidden pages (**Unhide pages…**) to show them again. Kept per book,
-  moved with it, and backed up; restoring a backup made without them shows
-  every page again.
+  shown page for good (joining its note to a bookmark already there).
+  **Unhide pages…** in the ⋮ menu (disabled while none is hidden) shows them
+  again. Kept per book, moved with it, and backed up; restoring a backup made
+  without them shows every page again.
 - **Apply to: This folder / All books** at the top of the reader settings:
   *This folder* keeps the whole layout (paged or continuous, direction, fit,
   two-page, spreads, auto-crop, page gap) for the book's folder; *All books* changes the defaults and
@@ -790,7 +790,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   Each single choice is a row of segmented buttons with one always selected. It
   opens over half the screen, so changes show behind it.
 - The overflow menu stays short: Go to page…, Chapters, Bookmarks, Favorites ▸,
-  Auto-scroll, Page ▸, Book info, Settings.
+  Auto-scroll, Page ▸, Unhide pages…, Book info, Settings.
 - **Resume where I left off:** Ask (default), Yes or No. Ask offers *Resume
   page* or *First page*, with the page number and percentage; ticking
   *Don't ask again* turns the answer into Yes or No. Only a book with a saved

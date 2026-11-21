@@ -4700,7 +4700,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         }
         keptBook() ?: return
         applyHidden(library.hiddenPages(bookId) + HiddenPages.bookIndex(src, page))
-        toast(R.string.page_hidden)
+        toast(getString(R.string.page_hidden, getString(R.string.menu_unhide_pages)))
     }
 
     /**

@@ -167,6 +167,10 @@ class ViewerActivityPageMenuTest {
         viewer.menu(4).row(PageAction.HIDE).performClick()
         viewer.settle()
         assertEquals(setOf(4), library.hiddenPages(bookId(book)))
+        // Unhiding is not in this menu: the toast names the overflow menu's entry.
+        val unhide = context.getString(R.string.menu_unhide_pages)
+        assertEquals(context.getString(R.string.page_hidden, unhide), ShadowToast.getTextOfLatestToast())
+        assertTrue(ShadowToast.getTextOfLatestToast().contains("“$unhide” in the ⋮ menu"))
     }
 
     @Test

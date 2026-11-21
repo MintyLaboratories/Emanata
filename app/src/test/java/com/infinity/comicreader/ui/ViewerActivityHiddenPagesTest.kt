@@ -117,7 +117,9 @@ class ViewerActivityHiddenPagesTest {
 
         shadowOf(viewer).clickMenuItem(R.id.menu_hide_page)
         viewer.settle()
-        assertEquals(context.getString(R.string.page_hidden), ShadowToast.getTextOfLatestToast())
+        // The toast names the overflow menu's entry that unhides, not Book info.
+        assertTrue(ShadowToast.getTextOfLatestToast().contains("“${context.getString(R.string.menu_unhide_pages)}” in the ⋮ menu"))
+        assertFalse(ShadowToast.getTextOfLatestToast().contains(context.getString(R.string.menu_book_info)))
         assertEquals(setOf(2), library.hiddenPages(id))
         assertEquals(4, viewer.pager().adapter!!.itemCount)
         // The next page shows where the hidden one was; the bookmark keeps its page.

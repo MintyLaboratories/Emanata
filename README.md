@@ -908,6 +908,12 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   the slider says what they do. Descreen, when chosen, runs at every size.
   With Keep it simple on, sizes set away from the defaults show in the AI
   processing switch's summary.
+- **AI indicator** (Settings → AI processing, advanced; off by default): a
+  small teal dot outlined in magenta in the reader's bottom right corner
+  while models work on a page of the open book, read-ahead included. It
+  shows after 0.3 s of work and hides once the queue is done, put off (heat,
+  battery saver) or gave up; pages read back from disk don't show it. It
+  stays inside the screen's insets and rounded corner, above the bars.
 - **Optimizing for this device**: at first launch, once the library shows, a
   full-screen calibration times how fast the device decodes and resizes pages
   (about 40 s; a comic page whose gutters slide one at a time keeps it company)

@@ -37,6 +37,17 @@
         android:scaleX="0"
         android:visibility="gone" />
 
+    <!-- Shown while AI works on a page (AiDot): bottom right, kept inside the insets and above the bars. -->
+    <View
+        android:id="@+id/ai_dot"
+        android:layout_width="@dimen/ai_dot_size"
+        android:layout_height="@dimen/ai_dot_size"
+        android:layout_gravity="bottom|right"
+        android:background="@drawable/ai_dot"
+        android:importantForAccessibility="no"
+        android:visibility="gone"
+        tools:ignore="RtlHardcoded" />
+
     <!-- Dims the page while the seek bar's preview strip is open; a tap closes the strip. -->
     <View
         android:id="@+id/seek_scrim"

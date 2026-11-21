@@ -44,6 +44,8 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
 import androidx.core.content.FileProvider
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -201,6 +203,9 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
     private lateinit var chapterText: TextView
     private lateinit var nightOverlay: View
     private lateinit var autoProgress: View
+
+    /** The AI indicator ([AiDot]). */
+    private lateinit var aiDot: AiDot
     private lateinit var progress: android.widget.ProgressBar
 
     /** Jobs besides opening a book that show [progress] until they end ([holdProgress]). */
@@ -871,6 +876,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
     override fun onDestroy() {
         super.onDestroy()
         storageWatcher.stop()
+        aiDot.release()
         handler.removeCallbacks(hideHint)
         hint.animate().cancel()
         handler.removeCallbacks(hideBrightness)
@@ -913,6 +919,19 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         chapterText = findViewById(R.id.viewer_chapter_text)
         nightOverlay = findViewById(R.id.night_overlay)
         autoProgress = findViewById(R.id.auto_progress)
+        val dot = findViewById<View>(R.id.ai_dot)
+        aiDot = AiDot(dot, resources.getDimensionPixelSize(R.dimen.ai_dot_margin))
+        ViewCompat.setOnApplyWindowInsetsListener(dot) { _, insets ->
+            val edges = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+            val corner = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                insets.toWindowInsets()?.getRoundedCorner(android.view.RoundedCorner.POSITION_BOTTOM_RIGHT)?.radius ?: 0
+            } else {
+                0
+            }
+            aiDot.inset(edges.right, edges.bottom, corner)
+            placeAiDot()
+            insets
+        }
         progress = findViewById(R.id.viewer_progress)
         fetched = findViewById(R.id.viewer_fetched)
         shareWait = findViewById(R.id.viewer_share_wait)
@@ -945,7 +964,21 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
             placeEndCard(root.height)
             placeHint(root.height)
             placeSeekPanel()
+            placeAiDot()
         }
+    }
+
+    /** Puts the AI indicator in the window's bottom right corner, above the preview strip or the bottom bar while one shows. */
+    private fun placeAiDot() {
+        val root = findViewById<View>(R.id.viewer_root)
+        val window = root.rootView
+        val at = IntArray(2).also(root::getLocationInWindow)
+        val barTop = when {
+            seekPanel.visibility == View.VISIBLE -> seekPanel.top + seekPanel.translationY.toInt()
+            bottomBar.visibility == View.VISIBLE -> bottomBar.top
+            else -> null
+        }
+        aiDot.place(window.width - at[0] - root.width, window.height - at[1] - root.height, barTop)
     }
 
     /** Puts the preview strip just above the bottom bar. */
@@ -980,6 +1013,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         applyKeepScreenOn()
         applyNight()
         if (prefs.fullscreen) applyFullscreen(true)
+        aiDot.enabled = prefs.aiDot
     }
 
     /**
@@ -1039,6 +1073,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
             rebuild = true
         }
         if (s.ai != old.ai) aiChanged()
+        if (s.aiDot != old.aiDot) aiDot.enabled = s.aiDot
         // Pages put off for battery saver go on at once once it lets them.
         if (old.thrift.pausedAi && !s.thrift.pausedAi) adapter?.aiWake()
         if (s.thrift.pausedScans != old.thrift.pausedScans) {
@@ -2485,6 +2520,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         a.adjustments = adjustments
         a.spacingPx = spacingPx()
         a.adopt(decoded, processed)
+        a.onAiBusy = { aiDot.busy = it }
         if (!started) a.pauseAi()
         adapter = a
 

@@ -551,6 +551,11 @@ class Prefs(context: Context) {
         get() = bool(KEY_AI, false)
         set(v) = put(KEY_AI, v)
 
+    /** The reader shows a small dot while AI works on its pages ([com.infinity.comicreader.ui.AiDot]); off by default. */
+    var aiDot: Boolean
+        get() = bool(KEY_AI_DOT, false)
+        set(v) = put(KEY_AI_DOT, v)
+
     /**
      * The id of [step]'s model ([com.infinity.comicreader.ai.Models]) in [kind]'s default chain; null for none. Only a
      * choice is stored: Upscale without one runs [ModelCatalog.DEFAULT_UPSCALE], the others none, in either chain.
@@ -789,6 +794,7 @@ class Prefs(context: Context) {
         private const val KEY_SAVER_SCANS = "pref_saver_scans"
         private const val KEY_SAVER_AI = "pref_saver_ai"
         const val KEY_AI = "pref_ai"
+        private const val KEY_AI_DOT = "pref_ai_dot"
         const val KEY_AI_UPSCALE_ABOVE = "pref_ai_upscale_above"
         const val KEY_AI_CLEANUP_ABOVE = "pref_ai_cleanup_above"
 

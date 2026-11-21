@@ -418,6 +418,15 @@
                 android:name="advanced"
                 android:value="true" />
         </com.infinity.comicreader.ui.AiSizePreference>
+        <SwitchPreferenceCompat
+            app:defaultValue="false"
+            app:key="pref_ai_dot"
+            app:summary="@string/pref_ai_dot_desc"
+            app:title="@string/pref_ai_dot">
+            <extra
+                android:name="advanced"
+                android:value="true" />
+        </SwitchPreferenceCompat>
         <Preference
             app:key="ai_models"
             app:persistent="false"

@@ -101,6 +101,7 @@ class SettingsAiTest {
         assertNull(prefs.aiModel(AiStep.DESCREEN))
         assertEquals(ModelCatalog.DEFAULT_UPSCALE, prefs.aiModel(AiStep.UPSCALE))
         assertTrue(prefs.saverAi)
+        assertFalse(prefs.aiDot)
         // The settings screen writes the same defaults.
         PreferenceManager.setDefaultValues(context, R.xml.settings, true)
         val written = Prefs(context)
@@ -109,6 +110,7 @@ class SettingsAiTest {
         assertNull(written.aiModel(AiStep.DESCREEN))
         assertEquals(ModelCatalog.DEFAULT_UPSCALE, written.aiModel(AiStep.UPSCALE))
         assertTrue(written.saverAi)
+        assertFalse(written.aiDot)
     }
 
     @Test

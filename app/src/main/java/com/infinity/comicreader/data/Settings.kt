@@ -114,7 +114,9 @@ data class ReaderSettings(
     val thumbScaling: Scaling = Scaling.DEFAULT,
     val thrift: Thrift = Thrift.NONE,
     /** The AI models chosen in Settings, by default chain, while AI processing is on; null while off. */
-    val ai: Map<ChainKind, AiPicks>? = null
+    val ai: Map<ChainKind, AiPicks>? = null,
+    /** The reader's AI indicator shows ([Prefs.aiDot]). */
+    val aiDot: Boolean = false
 ) {
     companion object {
         fun from(p: Prefs, saving: Boolean = false) = ReaderSettings(
@@ -152,7 +154,8 @@ data class ReaderSettings(
             zoomScaling = p.zoomScaling,
             thumbScaling = p.thumbScaling,
             thrift = Thrift.of(saving, p),
-            ai = if (p.aiEnabled) ChainKind.entries.associateWith { AiPicks.of(p, it) } else null
+            ai = if (p.aiEnabled) ChainKind.entries.associateWith { AiPicks.of(p, it) } else null,
+            aiDot = p.aiDot
         )
     }
 }

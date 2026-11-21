@@ -365,4 +365,51 @@ class PageAdapterAiTest {
         assertEquals(0, enhancer.asked.first())
         adapter.release()
     }
+
+    @Test
+    fun busyIsHeardOnceWhileModelsWorkOnThePagesQueued() {
+        val heard = ArrayList<Boolean>()
+        val (adapter, rv) = reader()
+        adapter.onAiBusy = { heard += it }
+        val during = ArrayList<List<Boolean>>()
+        enhancer.onEnhance = { during += heard.toList() }
+        idle { colorAt(rv, 0) == plain }
+        aWhile()
+        adapter.reading(0)
+        idle { enhancer.asked.size >= 2 && heard.lastOrNull() == false }
+        assertEquals(listOf(0, 1), enhancer.asked.toList())
+        assertEquals("busy through both pages, the next screen's included", listOf(listOf(true), listOf(true)), during)
+        assertEquals(listOf(true, false), heard)
+        adapter.release()
+        assertEquals(listOf(true, false), heard)
+    }
+
+    @Test
+    fun pagesReadBackFromDiskAreNotBusy() {
+        val heard = ArrayList<Boolean>()
+        enhancer.kept += listOf(0, 1)
+        val (adapter, rv) = reader()
+        adapter.onAiBusy = { heard += it }
+        idle { colorAt(rv, 0) == plain }
+        aWhile()
+        adapter.reading(0)
+        idle { enhancer.asked.size >= 2 }
+        aWhile()
+        assertEquals(processed, colorAt(rv, 0))
+        assertTrue(heard.isEmpty())
+        adapter.release()
+    }
+
+    @Test
+    fun withAiOffNothingIsBusy() {
+        val heard = ArrayList<Boolean>()
+        enhancer.on = false
+        val (adapter, rv) = reader()
+        adapter.onAiBusy = { heard += it }
+        idle { colorAt(rv, 0) == plain }
+        adapter.reading(0)
+        aWhile()
+        adapter.release()
+        assertTrue(heard.isEmpty())
+    }
 }

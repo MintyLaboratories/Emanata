@@ -1431,10 +1431,15 @@ class PageAdapter(
     /** The AI work queue, made once a page of a book with an AI chain shows. */
     private var ai: AiQueue<PageKey>? = null
 
+    /** Hears when models start or stop working on this adapter's pages, not on pages read back from disk ([AiQueue.working]). Main thread. */
+    var onAiBusy: ((Boolean) -> Unit)? = null
+
     private fun queueOf(e: PageEnhancer): AiQueue<PageKey> = ai ?: AiQueue<PageKey>(scope, e.worker, { key, canceled ->
         val p = aiPages[key] ?: return@AiQueue AiOutcome.Skipped(Fallback.UNNEEDED)
         e.enhance(p.source, p.index, key.target, p.width, p.height, { motion.moving }, canceled)
-    }, ::enhanced).also {
+    }, ::enhanced, runsModels = { key ->
+        aiPages[key]?.let { p -> !e.stored(p.source, p.index, key.target, p.width, p.height) } == true
+    }, busy = { onAiBusy?.invoke(it) }).also {
         ai = it
         if (aiPaused) it.pause()
     }

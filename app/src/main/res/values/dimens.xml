@@ -29,6 +29,10 @@
     <dimen name="chapter_drawer_width">360dp</dimen>
     <!-- Above the bottom bar, or the screen's bottom while the bar is hidden. -->
     <dimen name="reader_hint_gap">16dp</dimen>
+    <!-- The AI indicator: its size, outline and gap to the screen's edges, the bars or a rounded corner. -->
+    <dimen name="ai_dot_size">8dp</dimen>
+    <dimen name="ai_dot_outline">1dp</dimen>
+    <dimen name="ai_dot_margin">6dp</dimen>
     <!-- Seek bar preview strip: image height, cell padding, current-cell outline. -->
     <dimen name="seek_thumb_h">168dp</dimen>
     <dimen name="seek_cell_pad">4dp</dimen>

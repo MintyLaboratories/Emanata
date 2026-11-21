@@ -11,6 +11,13 @@ import org.junit.Test
 
 class DecodeRunsTest {
     @Test
+    fun sustainMeasuresFourKPagesOnly() {
+        assertTrue(DecodeRuns.sustained("synthetic-4k-jpg"))
+        assertTrue(DecodeRuns.sustained("pages-a"))
+        assertFalse(DecodeRuns.sustained("synthetic-2k-jxl"))
+    }
+
+    @Test
     fun setupsReadAsEngineThreadsCores() {
         assertEquals(Setup(Engine.PAGE, 4, Cores.BIG), Setup.of("page/4/big", 2))
         assertEquals(Setup(Engine.PAGE, 8, Cores.ANY), Setup.of(" page/8 ", 2))

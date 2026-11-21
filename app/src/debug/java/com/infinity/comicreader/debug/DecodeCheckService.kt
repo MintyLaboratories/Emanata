@@ -50,8 +50,9 @@ import kotlin.math.max
  * native JPEG XL page decodes against jxl-coder's. Only the shell may start it:
  *
  * `adb shell am start-foreground-service -n <package>/com.infinity.comicreader.debug.DecodeCheckService
- *  [--es do check,time,cancel,fixtures,cold|all] [--es dirs /path/a,/path/b] [--ei pages 16] [--ez synthetic true]
- *  [--es setups coder,coder/big,page/4/big,page/8/any,platform,platform/prime] [--ei reps 5] [--ei gap 0] [--es fixtures /path]`
+ *  [--es do check,time,cancel,fixtures,cold,sustain|all] [--es dirs /path/a,/path/b] [--ei pages 16] [--ez synthetic true]
+ *  [--es setups coder,coder/big,page/4/big,page/8/any,platform,platform/prime] [--ei reps 5] [--ei gap 0] [--es fixtures /path]
+ *  [--ei seconds 60] [--ei rounds 2] [--ei cooldown 30] [--ei idle 5]`
  *
  * Pages: synthetic 2000x3000 and 4000x6000 pages (JPEG XL at quality 91, JPEG at 90, PNG),
  * made once into the app's cache, and the first `pages` images of each of `dirs`, read
@@ -78,6 +79,14 @@ import kotlin.math.max
  *   decode this process runs (libraries loaded, no decode run yet), by the first setup, of
  *   the first page it takes, then its other pages warm; and the process's peak resident
  *   memory over what it held before the first decode.
+ * - sustain (not in all): energy on battery alone, as ResampleCheckService's sustain
+ *   measures it ([EnergyMeter]): per group of 4K pages (synthetic 2000x3000 pages are left
+ *   out) and each setup taking it, in `rounds` interleaved rounds, a `cooldown` s pause, an
+ *   `idle` s baseline, then the group's pages decoded in turn back to back for `seconds`:
+ *   pages per second, energy per page above idle, the distinct current values per 10 s at
+ *   idle; then per setup the energy per page across rounds with its spread (`energy`).
+ *   Refused on a charger; valid only with the cable out (adb over Wi-Fi). Compares platform
+ *   JPEG pinned or not (`platform,platform/big`) and JPEG XL threads (`page/4/big,page/8/any`).
  *
  * Timings are valid only from a bench build with the app in front (see
  * ResampleCheckService). Results go to the log under "DecodeCheck", one JSON object per
@@ -105,6 +114,10 @@ class DecodeCheckService : Service() {
         val synthetic = intent?.getBooleanExtra("synthetic", true) ?: true
         val reps = intent?.getIntExtra("reps", 5)?.coerceIn(1, 100) ?: 5
         val gap = intent?.getIntExtra("gap", 0)?.coerceIn(0, 10_000) ?: 0
+        val energy = Energy(
+            intent?.getIntExtra("seconds", 60)?.coerceIn(3, 600) ?: 60, intent?.getIntExtra("rounds", 2)?.coerceIn(1, 20) ?: 2,
+            intent?.getIntExtra("cooldown", 30)?.coerceIn(0, 600) ?: 30, intent?.getIntExtra("idle", 5)?.coerceIn(1, 600) ?: 5
+        )
         thread(name = "decode-check") { Calibrator.hold {
             try {
                 out.parentFile?.mkdirs()
@@ -119,7 +132,7 @@ class DecodeCheckService : Service() {
                 for (dir in dirs) sources += { listOf(read(File(dir), most)) }
                 var coldDone = "cold" !in what
                 // Each source's pages are dropped before the next is read.
-                for (source in sources) coldDone = checkAndTime(source(), what, setups, reps, gap, threads, coldDone)
+                for (source in sources) coldDone = checkAndTime(source(), what, setups, reps, gap, threads, coldDone, energy)
                 intent?.getStringExtra("fixtures")?.takeIf { "fixtures" in what }?.let { fixtures(File(it)) }
             } catch (t: Throwable) {
                 log(JSONObject().put("failed", "${t.javaClass.simpleName}: ${t.message}"))
@@ -133,12 +146,16 @@ class DecodeCheckService : Service() {
 
     private val out: File get() = File(getExternalFilesDir(null), "bench/decode.jsonl")
 
+    /** How `sustain` runs: [seconds] of decoding per run, [rounds], a [cooldown] s pause and an [idle] s baseline before each. */
+    private class Energy(val seconds: Int, val rounds: Int, val cooldown: Int, val idle: Int)
+
     /** Checks and times [groups] as [what] asks, and the cold decode unless [coldDone]; true once that has run. */
-    private fun checkAndTime(groups: List<Group>, what: Set<String>, setups: List<Setup>, reps: Int, gap: Int, threads: Int, coldDone: Boolean): Boolean {
+    private fun checkAndTime(groups: List<Group>, what: Set<String>, setups: List<Setup>, reps: Int, gap: Int, threads: Int, coldDone: Boolean, energy: Energy): Boolean {
         for (g in groups) log(JSONObject().put("group", g.name).put("pages", g.pages.size).put("bytes", g.pages.sumOf { it.bytes.size.toLong() }))
         if ("check" in what || "all" in what) check(groups)
         if ("time" in what || "all" in what) time(groups, setups, reps, gap)
         if ("cancel" in what || "all" in what) cancel(groups, threads)
+        if ("sustain" in what) sustain(groups.filter { DecodeRuns.sustained(it.name) }, setups, energy)
         return coldDone || cold(groups, setups.first())
     }
 
@@ -310,6 +327,44 @@ class DecodeCheckService : Service() {
                         .put("before", before).put("after", after).put("thermalPeak", heat.peak).put("valid", valid)
                 )
             }
+        }
+    }
+
+    // ------------------------------------------------------------------ sustain
+
+    /** Per group, each setup taking it decoding its pages in turn back to back, in interleaved rounds, each with its energy per page. */
+    private fun sustain(groups: List<Group>, setups: List<Setup>, energy: Energy) {
+        val meter = EnergyMeter(this)
+        for (group in groups) {
+            val jxl = group.pages.firstOrNull()?.jxl ?: continue
+            val taking = setups.filter { it.takes(jxl) }
+            if (taking.isEmpty()) continue
+            val runs = taking.associateWith { ArrayList<EnergyRuns.Run>() }
+            for ((round, order) in ResampleRuns.interleaved(taking, energy.rounds).withIndex()) {
+                for (setup in order) {
+                    SystemClock.sleep(energy.cooldown * 1000L)
+                    val before = conditions()
+                    val heat = ResampleRuns.Heat().apply { see(meter.thermal()) }
+                    val run = meter.measure(energy.idle, energy.seconds, heat) { until ->
+                        var pages = 0
+                        while (SystemClock.elapsedRealtime() < until) {
+                            decode(setup, group.pages[pages % group.pages.size]).recycle()
+                            pages++
+                        }
+                        pages
+                    }
+                    runs.getValue(setup) += run
+                    val after = conditions()
+                    heat.see(meter.thermal())
+                    val line = JSONObject().put("sustain", setup.key).put("group", group.name).put("round", round).put("groupPages", group.pages.size)
+                    meter.json(run, energy.idle).let { m -> m.keys().forEach { line.put(it, m.get(it)) } }
+                    log(
+                        line.put("before", before).put("after", after).put("thermalPeak", heat.peak)
+                            .put("valid", before.getBoolean("valid") && after.getBoolean("valid") && heat.cool)
+                    )
+                }
+            }
+            for (setup in taking) log(meter.summary(setup.key, runs.getValue(setup)).put("group", group.name))
         }
     }
 

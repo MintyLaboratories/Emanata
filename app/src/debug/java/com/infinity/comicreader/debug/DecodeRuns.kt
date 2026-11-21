@@ -12,6 +12,9 @@ internal object DecodeRuns {
         return sizes.size
     }
 
+    /** True when `sustain` measures the group named [group]: all but the synthetic 2000x3000 pages (decode energy uses 4K pages). */
+    fun sustained(group: String): Boolean = !group.startsWith("synthetic-2k")
+
     /** Where the reader's JPEG XL threads run: the large cores when [pinned], else anywhere. */
     fun jxlCores(pinned: Boolean): ResampleRuns.Cores = if (pinned) ResampleRuns.Cores.BIG else ResampleRuns.Cores.ANY
 

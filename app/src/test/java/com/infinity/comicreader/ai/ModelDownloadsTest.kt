@@ -2,6 +2,7 @@ package com.infinity.comicreader.ai
 
 import android.app.Application
 import com.infinity.comicreader.net.Metered
+import com.infinity.comicreader.testing.Waits
 import com.infinity.comicreader.testing.awaitJob
 import com.infinity.comicreader.testing.awaitUntil
 import kotlinx.coroutines.Job
@@ -175,7 +176,7 @@ class ModelDownloadsTest {
         assertTrue(DetectorModel.download(store, m, optional = true, done = { ends += it }, client = client))
         assertTrue("told only once it ends", ends.isEmpty())
         gate.countDown()
-        assertEquals(true, ends.poll(10, TimeUnit.SECONDS))
+        assertEquals(true, ends.poll(Waits.LIVENESS_MS, TimeUnit.MILLISECONDS))
         assertTrue(store.installed(m))
         // In place: told at once, nothing downloaded.
         val before = requests.get()
@@ -189,7 +190,7 @@ class ModelDownloadsTest {
         val m = model("dl-detector-missing", missing = true)
         val ends = java.util.concurrent.LinkedBlockingQueue<Boolean>()
         assertTrue(DetectorModel.download(store, m, optional = false, done = { ends += it }, client = ModelDownloads.client()))
-        assertEquals(false, ends.poll(10, TimeUnit.SECONDS))
+        assertEquals(false, ends.poll(Waits.LIVENESS_MS, TimeUnit.MILLISECONDS))
     }
 
     @Test

@@ -14,7 +14,6 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.concurrent.thread
 
@@ -190,7 +189,7 @@ class ModelCheckTest {
             }
         }
         try {
-            assertTrue(held.await(10, TimeUnit.SECONDS))
+            awaitUntil("the page to hold the engine") { held.count == 0L }
             // Asked first by the engine's lock, between tries while it waits for the page.
             val r = ModelCheck.check(FakeRuntime(), fakeFiles(tmp.root), 4, Long.MAX_VALUE, canceled = { waiting.countDown(); false }, clock = now::get)
             assertTrue(r is ModelCheck.Result.Fit)

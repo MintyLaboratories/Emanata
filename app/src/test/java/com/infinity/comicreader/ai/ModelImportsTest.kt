@@ -26,7 +26,6 @@ import java.io.File
 import java.util.concurrent.CancellationException
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.concurrent.thread
 
@@ -310,7 +309,7 @@ class ModelImportsTest {
         })
         try {
             ModelImports.start(context, pair())
-            assertTrue(checking.await(10, TimeUnit.SECONDS))
+            awaitUntil("the check to run") { checking.count == 0L }
             files = store.userFiles(store.staging("x").parentFile!!.listFiles()!!.single())
             ModelImports.tidyAtStart(store)
         } finally {
@@ -333,7 +332,7 @@ class ModelImportsTest {
         })
         val param = try {
             ModelImports.start(context, pair("First"))
-            assertTrue(checking.await(10, TimeUnit.SECONDS))
+            awaitUntil("the check to run") { checking.count == 0L }
             ModelImports.cancel()
             // One file: the new import waits for the other, once the canceled one has ended.
             pair("Second")[1].also { ModelImports.start(context, listOf(it)) }

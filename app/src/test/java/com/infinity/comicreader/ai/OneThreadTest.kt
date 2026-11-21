@@ -8,7 +8,6 @@ import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 
@@ -52,7 +51,7 @@ class OneThreadTest {
             interrupted = Thread.currentThread().isInterrupted
         }
         try {
-            assertTrue(started.await(5, TimeUnit.SECONDS))
+            awaitUntil("the block to start") { started.count == 0L }
             caller.interrupt()
             // Taken: the flag cleared and the caller waiting again, or gone.
             awaitUntil("the caller to take the interrupt") {

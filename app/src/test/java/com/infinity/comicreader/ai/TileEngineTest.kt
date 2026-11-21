@@ -2,6 +2,7 @@ package com.infinity.comicreader.ai
 
 import android.app.Application
 import android.graphics.Bitmap
+import com.infinity.comicreader.testing.awaitUntil
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -15,7 +16,6 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.util.concurrent.CancellationException
 import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 import kotlin.random.Random
 
@@ -282,7 +282,7 @@ class TileEngineTest {
         armed = true
         val first = thread { TileEngine.run(s, page(60, 60)) }
         try {
-            assertTrue(started.await(5, TimeUnit.SECONDS))
+            awaitUntil("the first page to start") { started.count == 0L }
             val other = FakeModel()
             val o = session(other)
             val before = other.runs.get()

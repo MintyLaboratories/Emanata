@@ -1,6 +1,7 @@
 package com.infinity.comicreader.ai
 
 import android.app.Application
+import com.infinity.comicreader.testing.awaitUntil
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -17,7 +18,6 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.util.concurrent.CancellationException
 import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
 @RunWith(RobolectricTestRunner::class)
@@ -208,7 +208,7 @@ class SessionsTest {
         val holder = thread { TileEngine.exclusive({ false }) { held.countDown(); release.await() } }
         val runtime = FakeRuntime()
         try {
-            assertTrue(held.await(5, TimeUnit.SECONDS))
+            awaitUntil("the page to hold the engine") { held.count == 0L }
             assertThrows(CancellationException::class.java) { Sessions.open(runtime, fakeFiles(tmp.root), threads = 4, canceled = { true }) }
         } finally {
             release.countDown()

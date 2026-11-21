@@ -450,12 +450,12 @@ class RemoteChannelTest {
             channel.expect(0, 60_000)
             channel.read(ByteBuffer.allocate(10))
             assertEquals(2, channel.aheads)
-            assertTrue(input.started.await(5, TimeUnit.SECONDS))
+            assertTrue(input.started.await(Waits.LIVENESS_MS, TimeUnit.MILLISECONDS))
             channel.close()
             assertEquals(0L, RemoteChannel.aheadBytes)
             input.go.countDown()
             background.shutdown()
-            assertTrue(background.awaitTermination(5, TimeUnit.SECONDS))
+            assertTrue(background.awaitTermination(Waits.LIVENESS_MS, TimeUnit.MILLISECONDS))
             // The read under way was let finish; neither its rest nor the next run was asked for.
             assertEquals(listOf(0L, 16_384L), input.asked.toList())
         } finally {
@@ -474,7 +474,7 @@ class RemoteChannelTest {
             val channel = RemoteChannel(input, minBlock = 1024, maxBlock = 16_384, background = background)
             channel.expect(0, 60_000)
             channel.read(ByteBuffer.allocate(10))
-            assertTrue(input.started.await(5, TimeUnit.SECONDS))
+            assertTrue(input.started.await(Waits.LIVENESS_MS, TimeUnit.MILLISECONDS))
             // Reading on inside the second run coming lets the first go unread.
             channel.position(40_000)
             // Let go once the read below has let both runs go, their bytes back in the budget: the first dropped unread, the second waited on.
@@ -491,7 +491,7 @@ class RemoteChannelTest {
             assertArrayEquals(big.copyOfRange(40_000, 40_100), far.array())
             channel.close()
             background.shutdown()
-            assertTrue(background.awaitTermination(5, TimeUnit.SECONDS))
+            assertTrue(background.awaitTermination(Waits.LIVENESS_MS, TimeUnit.MILLISECONDS))
             assertTrue(input.asked.toList().toString(), input.asked.none { it in 16_385L until 32_768L })
         } finally {
             background.shutdownNow()

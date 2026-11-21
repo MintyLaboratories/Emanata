@@ -3,6 +3,7 @@ package com.infinity.comicreader.reader
 import android.app.Application
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import com.infinity.comicreader.testing.Waits
 import com.infinity.comicreader.util.SimilarBooks
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -19,6 +20,8 @@ import org.robolectric.annotation.GraphicsMode
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = Application::class)
@@ -40,9 +43,12 @@ class BookPrintsTest {
 
     private fun read(file: File) = BookPrints.read(file, "UTF-8", cacheDir)
 
-    /** Waits for the preview store's writer, then lists the previews it wrote. */
+    /** Drains the writer all preview stores share, then lists the previews it wrote. */
     private fun previews(): List<File> {
-        Thread.sleep(500)
+        // The one writer runs in order: a make queued now runs once the writes before it are done.
+        val drained = CountDownLatch(1)
+        assertTrue(PreviewStore(temp.newFolder("drain")).putMade("drain") { drained.countDown(); null })
+        assertTrue("Gave up waiting for the preview writer", drained.await(Waits.LIVENESS_MS, TimeUnit.MILLISECONDS))
         return PreviewStore.dirIn(cacheDir).listFiles()?.filter { it.isFile }.orEmpty()
     }
 

@@ -23,6 +23,7 @@ import com.infinity.comicreader.testing.idleUntil
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -84,6 +85,10 @@ class CleanupActivityTest {
     }
 
     private fun RecyclerView.row(position: Int): View = findViewHolderForAdapterPosition(position)!!.itemView
+
+    /** No work of this test's screens runs on into the next. */
+    @After
+    fun awaitLeftovers() = awaitLeftoverWork()
 
     @Test
     fun identicalCopiesShowOneCoverAndEveryPlace() {

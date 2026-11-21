@@ -87,6 +87,7 @@ class CleanupSharesTest {
     @After
     fun tearDown() {
         fake.slow?.countDown()
+        awaitLeftoverWork()
         Metered.probe = { Metered.Link(connected = true, notMetered = true, activeMetered = false) }
         Metered.forget()
         Remotes.serve(emptyList()) { throw AssertionError("no shares") }

@@ -45,6 +45,7 @@ class ListActivityCalibrationTest {
 
     @After
     fun tearDown() {
+        awaitLeftoverWork()
         CalibrationScreenActivity.control = Calibrator
         CalibrationScreenActivity.readings = Calibrator::readings
     }

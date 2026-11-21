@@ -25,6 +25,7 @@ import com.infinity.comicreader.data.TabSort
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -69,6 +70,10 @@ class ListActivitySortFilterTest {
         return names.map { it to adapter.positionOf(File(dir, it).absolutePath) }
             .filter { it.second >= 0 }.sortedBy { it.second }.map { it.first }
     }
+
+    /** No work of this test's screens runs on into the next. */
+    @After
+    fun awaitLeftovers() = awaitLeftoverWork()
 
     @Test
     fun sortAppliesLiveWithMissingValuesLast() {

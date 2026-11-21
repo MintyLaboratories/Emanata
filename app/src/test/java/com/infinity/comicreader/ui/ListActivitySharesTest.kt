@@ -85,6 +85,7 @@ class ListActivitySharesTest {
 
     @After
     fun tearDown() {
+        awaitLeftoverWork()
         Metered.probe = { Metered.Link(connected = true, notMetered = true, activeMetered = false) }
         Metered.forget()
         Remotes.serve(emptyList()) { throw AssertionError("no shares") }

@@ -27,6 +27,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -113,6 +114,10 @@ class CleanupSimilarTest {
     private fun RecyclerView.row(position: Int): View = findViewHolderForAdapterPosition(position)!!.itemView
 
     private fun View.text(id: Int) = findViewById<TextView>(id).text.toString()
+
+    /** No work of this test's screens runs on into the next. */
+    @After
+    fun awaitLeftovers() = awaitLeftoverWork()
 
     @Test
     fun reEncodedBooksShowSideBySideUnderTheirHeader() {

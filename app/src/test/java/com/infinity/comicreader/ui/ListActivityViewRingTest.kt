@@ -35,6 +35,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
+import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -126,6 +127,10 @@ class ListActivityViewRingTest {
         val at = IntArray(2).also { v.getLocationInWindow(it) }
         return (at[0] + v.width / 2f) to (at[1] + v.height / 2f)
     }
+
+    /** No work of this test's screens runs on into the next. */
+    @After
+    fun awaitLeftovers() = awaitLeftoverWork()
 
     @Test
     fun aLongPressFansTheTabsOptionsOutTowardTheInside() {

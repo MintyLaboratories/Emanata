@@ -21,6 +21,7 @@ import com.infinity.comicreader.data.ResumeMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -78,6 +79,10 @@ class ListActivityStartupResumeTest {
     }
 
     private fun ActivityController<ListActivity>.opened() = shadowOf(get()).nextStartedActivity
+
+    /** No work of this test's screens runs on into the next. */
+    @After
+    fun awaitLeftovers() = awaitLeftoverWork()
 
     @Test
     fun yesOpensTheLastBookWhereItWasLeft() {

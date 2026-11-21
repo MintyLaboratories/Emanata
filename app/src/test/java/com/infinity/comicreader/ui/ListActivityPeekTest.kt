@@ -31,6 +31,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -114,6 +115,10 @@ class ListActivityPeekTest {
         val menu = moreMenu!!
         (0 until menu.childCount).map { menu.getChildAt(it) }.single { it.tag == action }.performClick()
     }
+
+    /** No work of this test's screens runs on into the next. */
+    @After
+    fun awaitLeftovers() = awaitLeftoverWork()
 
     @Test
     fun peekFromTheMenuOpensAndBackClosesIt() {

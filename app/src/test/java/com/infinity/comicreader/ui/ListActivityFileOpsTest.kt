@@ -102,6 +102,7 @@ class ListActivityFileOpsTest {
     @After
     fun tearDown() {
         settle()
+        awaitLeftoverWork()
         launched.forEach { if (!it.get().isDestroyed) it.pause().stop().destroy() }
         FileClipboard.clear()
         Remotes.serve(emptyList()) { throw AssertionError("no shares") }
@@ -129,6 +130,7 @@ class ListActivityFileOpsTest {
 
     /** A library screen; each goes at the end, so only the latest shows file operations' outcomes. */
     private fun launch(): ListActivity {
+        awaitLeftoverWork()
         launched.forEach { if (!it.get().isDestroyed) it.pause().stop().destroy() }
         return Robolectric.buildActivity(ListActivity::class.java).also { launched += it }.setup().get().also { idle() }
     }

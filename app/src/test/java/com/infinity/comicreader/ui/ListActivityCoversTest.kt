@@ -22,6 +22,7 @@ import com.infinity.comicreader.data.ListDensity
 import com.infinity.comicreader.data.Prefs
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -82,6 +83,10 @@ class ListActivityCoversTest {
     }
 
     private fun ratio(v: View) = v.width.toFloat() / v.height
+
+    /** No work of this test's screens runs on into the next. */
+    @After
+    fun awaitLeftovers() = awaitLeftoverWork()
 
     @Test
     fun gridCoversAreTwoByThreeByDefault() {

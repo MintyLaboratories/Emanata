@@ -20,6 +20,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -56,6 +57,10 @@ class ListActivityStartupTest {
     private fun ListActivity.tab() = findViewById<TabLayout>(R.id.tabs).selectedTabPosition
 
     private fun ListActivity.crumbPaths() = findViewById<CrumbBar>(R.id.pathbar).crumbs.map { it.path }
+
+    /** No work of this test's screens runs on into the next. */
+    @After
+    fun awaitLeftovers() = awaitLeftoverWork()
 
     @Test
     fun opensOnBrowseByDefault() {

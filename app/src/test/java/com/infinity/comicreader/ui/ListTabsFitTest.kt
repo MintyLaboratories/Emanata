@@ -15,6 +15,7 @@ import com.infinity.comicreader.R
 import com.infinity.comicreader.data.Prefs
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -73,6 +74,10 @@ class ListTabsFitTest {
             assertEquals("$what: \"${label.text}\" whole", 0, layout.getEllipsisCount(0))
         }
     }
+
+    /** No work of this test's screens runs on into the next. */
+    @After
+    fun awaitLeftovers() = awaitLeftoverWork()
 
     @Test
     fun aPhonesLabelsStayOnOneLineAtEveryFontScale() {

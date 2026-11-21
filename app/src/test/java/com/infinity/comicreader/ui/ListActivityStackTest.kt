@@ -63,6 +63,7 @@ class ListActivityStackTest {
 
     @After
     fun tearDown() {
+        awaitLeftoverWork()
         controller?.let { if (!it.get().isDestroyed) it.pause().stop().destroy() }
         FileWork.reset()
         FileClipboard.clear()

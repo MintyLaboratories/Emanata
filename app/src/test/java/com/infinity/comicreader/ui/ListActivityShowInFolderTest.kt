@@ -14,6 +14,7 @@ import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -69,6 +70,10 @@ class ListActivityShowInFolderTest {
         val menu = activity.moreMenu!!
         return (0 until menu.childCount).map { menu.getChildAt(it).findViewById<android.widget.TextView>(R.id.more_action_label).text.toString() }
     }
+
+    /** No work of this test's screens runs on into the next. */
+    @After
+    fun awaitLeftovers() = awaitLeftoverWork()
 
     @Test
     fun hiddenForABookInTheFolderBrowsed() {

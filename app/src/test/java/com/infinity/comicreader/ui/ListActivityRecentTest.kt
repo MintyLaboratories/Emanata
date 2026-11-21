@@ -15,6 +15,7 @@ import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -62,6 +63,10 @@ class ListActivityRecentTest {
     }
 
     private fun ListActivity.adapter() = findViewById<RecyclerView>(R.id.recycler).adapter as BookAdapter
+
+    /** No work of this test's screens runs on into the next. */
+    @After
+    fun awaitLeftovers() = awaitLeftoverWork()
 
     @Test
     fun anEmptyFolderKeepsTheRow() {

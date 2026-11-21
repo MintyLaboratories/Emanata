@@ -20,6 +20,7 @@ import com.infinity.comicreader.data.ToolbarButtons
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -68,6 +69,10 @@ class ListActivityToolbarTest {
         val menu = menu()
         return (0 until menu.size()).map { menu.getItem(it) }.filter { it.itemId in barIds && it.isVisible }.map { it.itemId }
     }
+
+    /** No work of this test's screens runs on into the next. */
+    @After
+    fun awaitLeftovers() = awaitLeftoverWork()
 
     @Test
     fun defaultButtonsAreSortFilterFavoriteSearch() {

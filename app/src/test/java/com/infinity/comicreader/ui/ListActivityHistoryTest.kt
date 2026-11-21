@@ -17,6 +17,7 @@ import com.infinity.comicreader.data.Prefs
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -61,6 +62,10 @@ class ListActivityHistoryTest {
         recycler.layout(0, 0, 1000, 2000)
         return activity to recycler
     }
+
+    /** No work of this test's screens runs on into the next. */
+    @After
+    fun awaitLeftovers() = awaitLeftoverWork()
 
     @Test
     fun tapOpensTheBookWhereTheResumeSettingSays() {

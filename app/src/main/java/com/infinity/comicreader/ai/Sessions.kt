@@ -392,7 +392,7 @@ internal object Sessions {
                 var g = geometry
                 var widenings = 0
                 while (true) {
-                    val element = if (half) 2 else 4
+                    val element = info.mapElementBytes(half, widest)
                     val usual = TileSizing.candidates(budget, widest, g, maxTile, info.maxBufferBytes, element, measured * element / 4)
                     // Sizes up to the largest candidate below the ceiling.
                     val wide = slot?.let { s ->

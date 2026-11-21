@@ -60,6 +60,13 @@ data class GpuInfo(val name: String, val budgetMb: Int, val fp16Modes: Fp16Modes
     /** The fp16 bits a model opened on it turns on: [Fp16Modes.bits] when [fp16] is asked for, else none (fp32). */
     fun fp16Bits(fp16: Boolean): Int = if (fp16) fp16Modes.bits else 0
 
+    /**
+     * Bytes per value of a feature map [channels] wide in fp16 ([half]) or fp32: 2 with fp16
+     * storage; with packed fp16 alone, 2 only where ncnn packs channels by 4 (a width that is
+     * not a multiple of 4 is kept one value per 32-bit word); else 4.
+     */
+    fun mapElementBytes(half: Boolean, channels: Int): Int = if (half && (fp16Modes.storage || channels % 4 == 0)) 2 else 4
+
     companion object {
         /** From native code's "name\tbudget\tfp16 bits\tbuffer" ([Fp16Modes.of]); null for null or anything else. */
         fun parse(s: String?): GpuInfo? {

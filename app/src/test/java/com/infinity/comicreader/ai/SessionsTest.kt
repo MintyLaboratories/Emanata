@@ -202,6 +202,23 @@ class SessionsTest {
     }
 
     @Test
+    fun packedFp16AloneKeepsChannelsNotPackedByFourInFullWords() {
+        val packed = Fp16Modes(storage = false, packed = true, arithmetic = false)
+        val packedOnly = GpuInfo("x", 0, packed, 1)
+        assertEquals(2, packedOnly.mapElementBytes(half = true, channels = 32))
+        assertEquals(4, packedOnly.mapElementBytes(half = true, channels = 30))
+        assertEquals(4, packedOnly.mapElementBytes(half = false, channels = 32))
+        assertEquals(2, gpu().mapElementBytes(half = true, channels = 30))
+        // 30 channels at 2x: a 128 tile's map is 3.75 MiB in 2-byte values, 7.5 MiB in 4-byte ones; a 96 tile's, 4.2 MiB in 4-byte ones.
+        val limit = 5L shl 20
+        assertEquals(128, Sessions.open(FakeRuntime(gpu = gpu(maxBuffer = limit)), fakeFiles(tmp.root, channels = 30), threads = 4)!!.size)
+        val s = Sessions.open(FakeRuntime(gpu = GpuInfo("Test GPU", 2048, packed, limit)), fakeFiles(tmp.root, channels = 30), threads = 4)!!
+        assertTrue(s.fp16)
+        assertEquals(96, s.size)
+        assertEquals(128, Sessions.open(FakeRuntime(gpu = GpuInfo("Test GPU", 2048, packed, limit)), fakeFiles(tmp.root, channels = 32), threads = 4)!!.size)
+    }
+
+    @Test
     fun aGpuFittingNoTileLeavesItToTheCpu() {
         val runtime = FakeRuntime(gpu = gpu(budgetMb = 1, fp16 = false))
         val s = Sessions.open(runtime, fakeFiles(tmp.root, channels = 1024), threads = 4)

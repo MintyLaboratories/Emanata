@@ -1037,11 +1037,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   the CPU time; capacity alone would have picked the large cores). The
   GPU wins only when more than 20% faster than every CPU setup, since its own
   power is not measured. Platform JPEG decodes stay pinned unless, left to
-  the system, they run on several threads and over 5% faster. Differences
-  within the runs' spread count as none,
-  so the setup in effect stays; beyond that each calibration picks on its own
-  timings, with no allowance for an earlier pick, so a setup near the edge
-  may change from one calibration to the next.
+  the system, they run on several threads and over 5% faster. Each
+  calibration picks on its own timings, with no regard to the setup in effect,
+  so a setup near the edge may change from one calibration to the next.
   Winners are kept in `noBackupFilesDir`
   (never restored onto another
   device); until the first calibration ends the one-per-large-core rule

@@ -19,6 +19,7 @@ class CalibrationTest {
         const val PINNED_V4 = "07355a12"
         const val PINNED_V5 = "56188912"
         const val PINNED_V6 = "0a827e8a"
+        const val PINNED_V7 = "53411940"
     }
 
     private val tablet = CpuCores(intArrayOf(261, 261, 261, 261, 805, 805, 805, 1024))
@@ -123,11 +124,11 @@ class CalibrationTest {
         val loose = Calibration.tuning(listOf(Timing(pixels(4, true), 34.0, 101.0), Timing(anywhere, 25.0, 20.0)), before)
         assertFalse(loose.gpuPinned)
         assertEquals(4 to true, loose.pixelThreads to loose.pixelPinned)
-        // Of the GPU's placements, the least CPU time weighed among the fast wins; the noise keeps the one in effect.
+        // Of the GPU's placements, the least CPU time weighed among the fast wins, however close, whichever is in effect.
         val both = listOf(Timing(pixels(4, true), 34.0, 101.0), Timing(gpu, 25.0, 20.0), Timing(anywhere, 26.0, 20.0, weightedMs = 12.0))
         assertFalse(Calibration.tuning(both, before).gpuPinned)
         val close = listOf(Timing(pixels(4, true), 34.0, 101.0), Timing(gpu, 25.0, 20.0), Timing(anywhere, 26.0, 20.0, weightedMs = 19.5))
-        assertTrue(Calibration.tuning(close, before).gpuPinned)
+        assertFalse(Calibration.tuning(close, before).gpuPinned)
         assertFalse(Calibration.tuning(close, before.copy(gpuPinned = false)).gpuPinned)
         // Not beyond the spread of the runs.
         val noisy = listOf(Timing(pixels(4, true), 34.0, 101.0, wallSpreadMs = 12.0), Timing(gpu, 25.0, 20.0))
@@ -158,22 +159,28 @@ class CalibrationTest {
     }
 
     @Test
-    fun withoutLargeCoresTheDefaultsAreAnIncumbent() {
+    fun withoutLargeCoresTheDefaultsGetNoAllowance() {
         val before = Tuning.defaults(allBig, 8)
-        // 2 threads within the tolerance of 8 for less CPU, but not by more than the noise: 8 stays.
+        // 2 threads within the tolerance of 8 for less CPU, within the runs' CPU spread: 2 wins over the 8 in effect.
         val t = listOf(Timing(pixels(2, false), 16.0, 70.0, 2.0, 10.0), Timing(pixels(8, false), 14.0, 77.0, 2.0, 10.0))
-        assertEquals(8, Calibration.tuning(t, before).pixelThreads)
+        assertEquals(2, Calibration.tuning(t, before).pixelThreads)
         assertFalse(Calibration.tuning(t, before).pixelPinned)
     }
 
     @Test
-    fun theSetupInEffectStaysWithinNoise() {
+    fun theSetupInEffectIsNotFavoredWithinNoise() {
+        // 40 ms less CPU time, half the runs' CPU spread: the cheaper one wins whichever is in effect.
         val t = listOf(Timing(jxl(4, true), 110.0, 600.0, 10.0, 80.0), Timing(jxl(8, false), 100.0, 560.0, 10.0, 80.0))
-        assertEquals(jxl(4, true), Calibration.pick(t, incumbent = jxl(4, true))!!.candidate)
         assertEquals(jxl(8, false), Calibration.pick(t)!!.candidate)
-        // Beyond the spread, the cheaper one wins.
-        val clear = listOf(Timing(jxl(4, true), 110.0, 700.0, 10.0, 20.0), Timing(jxl(8, false), 100.0, 560.0, 10.0, 20.0))
-        assertEquals(jxl(8, false), Calibration.pick(clear, incumbent = jxl(4, true))!!.candidate)
+        for (before in listOf(Tuning(PixelEngine.NATIVE, 4, true, 4, true), Tuning(PixelEngine.NATIVE, 4, true, 8, false))) {
+            val chosen = Calibration.tuning(t, before)
+            assertEquals(8 to false, chosen.jxlThreads to chosen.jxlPinned)
+        }
+        // Resampling and the GPU's caller alike.
+        val p = listOf(Timing(pixels(4, true), 30.0, 101.0, 1.0, 10.0), Timing(pixels(8, false), 28.0, 100.0, 1.0, 10.0))
+        val g = listOf(Timing(gpu, 10.0, 10.0, 1.0, 5.0), Timing(gpu.copy(pinned = false), 10.0, 9.9, 1.0, 5.0))
+        val chosen = Calibration.tuning(p + g, Tuning(PixelEngine.GPU, 4, true, 4, true, gpuPinned = true))
+        assertEquals(Triple(8, false, false), Triple(chosen.pixelThreads, chosen.pixelPinned, chosen.gpuPinned))
     }
 
     @Test
@@ -182,7 +189,6 @@ class CalibrationTest {
         // 4 large cores 24 % slower than 8 threads for two thirds of the CPU: just outside the tolerance.
         val t = listOf(Timing(pixels(2, true), 44.0, 79.0), Timing(pixels(4, true), 31.0, 105.0, 2.0), Timing(pixels(8, false), 25.0, 150.0, 1.0))
         assertEquals(pixels(8, false), Calibration.pick(t)!!.candidate)
-        assertEquals(pixels(8, false), Calibration.pick(t, incumbent = pixels(4, true))!!.candidate)
         // The tuning in effect, a calibration's earlier pick, gives way alike for resampling, the GPU's caller and JPEG XL.
         val before = Tuning(PixelEngine.NATIVE, 4, true, 4, true, gpuPinned = true)
         val g = listOf(Timing(gpu, 14.9, 10.0, 1.0), Timing(gpu.copy(pinned = false), 12.0, 15.0, 1.0))
@@ -193,7 +199,8 @@ class CalibrationTest {
         assertEquals(8 to false, picked.jxlThreads to picked.jxlPinned)
         // Back within the tolerance, the cheaper one wins over 8 threads in effect.
         val near = listOf(Timing(pixels(4, true), 29.0, 101.0, 2.0), Timing(pixels(8, false), 25.0, 150.0, 1.0))
-        assertEquals(pixels(4, true), Calibration.pick(near, incumbent = pixels(8, false))!!.candidate)
+        val back = Calibration.tuning(near, before.copy(pixelThreads = 8, pixelPinned = false))
+        assertEquals(4 to true, back.pixelThreads to back.pixelPinned)
     }
 
     @Test
@@ -209,18 +216,18 @@ class CalibrationTest {
     }
 
     @Test
-    fun wholeMillisecondCpuTimesThatSpreadZeroStillCountNoise() {
-        // CPU in whole ms, every burst alike: spread 0. A 1-4 ms CPU gap on ~85 ms is noise.
+    fun theLeastCpuTimeWinsByAnyMargin() {
+        // CPU in whole ms, every burst alike: spread 0. A 3 ms gap on ~85 ms decides, whichever is in effect.
         val t = listOf(Timing(pixels(2, true), 50.6, 85.0, 1.1, 0.0), Timing(pixels(4, true), 45.0, 82.0, 1.0, 0.0))
-        assertEquals(pixels(2, true), Calibration.pick(t, incumbent = pixels(2, true))!!.candidate)
-        assertEquals(pixels(4, true), Calibration.pick(t, incumbent = pixels(4, true))!!.candidate)
-        // Tiny CPU times: at least 1 ms.
+        val before = Tuning(PixelEngine.NATIVE, 2, true, 4, true)
+        assertEquals(4, Calibration.tuning(t, before).pixelThreads)
+        assertEquals(4, Calibration.tuning(t, before.copy(pixelThreads = 4)).pixelThreads)
+        // Tiny CPU times: 1 ms decides too.
         val tiny = listOf(Timing(pixels(1, true), 10.0, 11.0), Timing(pixels(2, true), 9.0, 10.0))
-        assertEquals(pixels(1, true), Calibration.pick(tiny, incumbent = pixels(1, true))!!.candidate)
-        // Beyond 5 %: the cheaper one wins.
-        val clear = listOf(Timing(pixels(2, true), 50.6, 85.0, 1.1, 0.0), Timing(pixels(4, true), 45.0, 78.0, 1.0, 0.0))
-        assertEquals(pixels(4, true), Calibration.pick(clear, incumbent = pixels(2, true))!!.candidate)
-        assertEquals(3.9, Calibration.cpuNoise(clear[0], clear[1]), 1e-9)
+        assertEquals(2, Calibration.tuning(tiny, before.copy(pixelThreads = 1)).pixelThreads)
+        // Equal CPU time: the lower wall time.
+        val even = listOf(Timing(pixels(2, true), 50.0, 85.0), Timing(pixels(4, true), 45.0, 85.0))
+        assertEquals(4, Calibration.tuning(even, before).pixelThreads)
     }
 
     @Test
@@ -319,7 +326,7 @@ class CalibrationTest {
     @Test
     fun theMethodIsPinnedToItsVersion() {
         // Never edit a pinned hash: a change to the method bumps Calibration.VERSION and pins its hash beside the others.
-        val pinned = mapOf(3 to PINNED_V3, 4 to PINNED_V4, 5 to PINNED_V5, 6 to PINNED_V6)
+        val pinned = mapOf(3 to PINNED_V3, 4 to PINNED_V4, 5 to PINNED_V5, 6 to PINNED_V6, 7 to PINNED_V7)
         val hash = "%08x".format(Calibrator.method().hashCode())
         assertEquals("The calibration method changed: bump Calibration.VERSION and pin $hash for it", pinned[Calibration.VERSION], hash)
         assertEquals(pinned.size, pinned.values.toSet().size)
@@ -383,9 +390,10 @@ class CalibrationTest {
         val a = Timing(jxl(4, true), 100.0, 300.0, weightedMs = 280.0)
         val b = Timing(jxl(8, false), 95.0, 400.0, weightedMs = 220.0)
         assertEquals(jxl(8, false), Calibration.pick(listOf(a, b))!!.candidate)
-        // Noise is judged on weighed times: within 5 % the setup in effect stays.
+        // However close the weighed times, the lesser wins over the setup in effect.
         val c = Timing(jxl(8, false), 95.0, 400.0, weightedMs = 270.0)
-        assertEquals(jxl(4, true), Calibration.pick(listOf(a, c), incumbent = jxl(4, true))!!.candidate)
+        val chosen = Calibration.tuning(listOf(a, c), Tuning(PixelEngine.NATIVE, 4, true, 4, true))
+        assertEquals(8 to false, chosen.jxlThreads to chosen.jxlPinned)
     }
 
     @Test

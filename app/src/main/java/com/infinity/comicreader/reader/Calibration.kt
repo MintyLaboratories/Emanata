@@ -109,9 +109,8 @@ data class RunTime(val wallMs: Double, val cpuMs: Double, val weightedMs: Double
 
 /**
  * Per-device calibration's choices, kept free of the device so they can be tested: which
- * setups to time ([candidates]) and which wins ([pick], [tuning]). Differences within the
- * runs' own spread count as none, so the setup in effect stays unless another one beats it
- * by more than noise.
+ * setups to time ([candidates]) and which wins ([pick], [tuning]). Every pick follows its
+ * own timings, with no regard to the setup in effect.
  */
 object Calibration {
     /**
@@ -129,7 +128,7 @@ object Calibration {
      * [Calibrator.method]) to each version, the GPU path's revision
      * ([NativeResampler.GPU_REVISION]) included.
      */
-    const val VERSION = 6
+    const val VERSION = 7
 
     /** Rounds a run times every setup in ([CalibrationRun]). */
     const val ROUNDS = 5
@@ -151,7 +150,7 @@ object Calibration {
         )
         val setups = chips.joinToString(";") { c -> candidates(c, 8, gpu = true, jxl = true, jpeg = true).joinToString(",") { it.key } }
         return listOf(
-            setups, TOLERANCE, JPEG_MARGIN, JPEG_THREADED, CPU_NOISE_SHARE, CPU_NOISE_MS, coreWeight(435, 1024),
+            setups, TOLERANCE, JPEG_MARGIN, JPEG_THREADED, coreWeight(435, 1024),
             OTHERS_SHARE, OTHERS_FLOOR_MS, HOUSEKEEPING.sorted(), REST_SHARE, REST_MIN_MS, REST_MAX_MS, LIGHT, HOT, BATTERY_LIGHT_C, BATTERY_HOT_C,
             SPREAD_MADS, ROUNDS, RETRIES, NativeResampler.GPU_REVISION
         ).joinToString("|")
@@ -258,29 +257,14 @@ object Calibration {
     /**
      * The winner of [timings]: of those within [tolerance] of the fastest (or within the
      * fastest's own spread of it), the one using the least CPU time weighed by core capacity
-     * ([Timing.weightedMs]); [incumbent], the setup in effect, wins instead when it is fast
-     * too and uses no more than the noise ([cpuNoise]) more. An incumbent outside the
-     * tolerance gets no allowance. A slow setup's own spread never counts, so its outliers
-     * cannot make it fast.
+     * ([Timing.weightedMs]), the lower wall time on a tie. The setup in effect is not
+     * favored. A slow setup's own spread never counts, so its outliers cannot make it fast.
      */
-    fun pick(timings: List<Timing>, incumbent: Candidate? = null, tolerance: Double = TOLERANCE): Timing? {
+    fun pick(timings: List<Timing>, tolerance: Double = TOLERANCE): Timing? {
         val fastest = timings.minByOrNull { it.wallMs } ?: return null
         fun fast(t: Timing) = t.wallMs <= fastest.wallMs * (1 + tolerance) || t.wallMs - fastest.wallMs <= fastest.wallSpreadMs
-        val winner = timings.filter { fast(it) }.minWith(compareBy({ it.weightedMs }, { it.wallMs }))
-        val kept = timings.firstOrNull { it.candidate == incumbent && fast(it) } ?: return winner
-        return if (kept.weightedMs - winner.weightedMs <= cpuNoise(kept, winner)) kept else winner
+        return timings.filter { fast(it) }.minWith(compareBy({ it.weightedMs }, { it.wallMs }))
     }
-
-    /**
-     * The weighed CPU time difference between [a] and [b] that counts as none: their spread,
-     * but at least [CPU_NOISE_SHARE] of the lesser and [CPU_NOISE_MS]. CPU times come in whole
-     * ms, so medians of steady runs often spread 0.
-     */
-    internal fun cpuNoise(a: Timing, b: Timing): Double =
-        maxOf(a.weightedSpreadMs, b.weightedSpreadMs, CPU_NOISE_SHARE * minOf(a.weightedMs, b.weightedMs), CPU_NOISE_MS)
-
-    private const val CPU_NOISE_SHARE = 0.05
-    private const val CPU_NOISE_MS = 1.0
 
     /**
      * True when [gpu] beats every CPU setup in [cpu] by more than [TOLERANCE] and the
@@ -294,20 +278,20 @@ object Calibration {
     /**
      * [before] with each kind [timings] cover set to its winner ([pick], [gpuWins]): the CPU
      * workers' setup even when the GPU wins, since the GPU falls back to it, and the GPU's
-     * caller placed as its fastest, least costly timing was. [before]'s setups count only as
-     * incumbents within the noise ([pick]).
+     * caller placed as its fastest, least costly timing was. Kinds [timings] leave untimed
+     * keep [before]'s setup; the timed ones ignore it.
      */
     fun tuning(timings: List<Timing>, before: Tuning): Tuning {
         var t = before
         val pixels = timings.filter { it.candidate.kind == Candidate.Kind.PIXELS }
         val cpu = pixels.filter { !it.candidate.gpu }
-        pick(cpu, Candidate(Candidate.Kind.PIXELS, before.pixelThreads, before.pixelPinned))?.candidate?.let { c ->
+        pick(cpu)?.candidate?.let { c ->
             t = t.copy(engine = PixelEngine.NATIVE, pixelThreads = c.threads, pixelPinned = c.pinned)
         }
-        val gpu = pick(pixels.filter { it.candidate.gpu }, Candidate(Candidate.Kind.PIXELS, 1, before.gpuPinned, gpu = true))
+        val gpu = pick(pixels.filter { it.candidate.gpu })
         if (gpu != null && gpuWins(gpu, cpu)) t = t.copy(engine = PixelEngine.GPU, gpuPinned = gpu.candidate.pinned)
         val jxl = timings.filter { it.candidate.kind == Candidate.Kind.JXL }
-        pick(jxl, Candidate(Candidate.Kind.JXL, before.jxlThreads, before.jxlPinned))?.candidate?.let { c ->
+        pick(jxl)?.candidate?.let { c ->
             t = t.copy(jxlThreads = c.threads, jxlPinned = c.pinned)
         }
         return t.copy(jpegPinned = jpegPinned(timings, before.jpegPinned))

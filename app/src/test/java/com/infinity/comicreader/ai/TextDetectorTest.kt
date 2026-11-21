@@ -3,6 +3,7 @@ package com.infinity.comicreader.ai
 import android.app.Application
 import android.graphics.Bitmap
 import androidx.test.core.app.ApplicationProvider
+import com.infinity.comicreader.testing.awaitUntil
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -16,6 +17,7 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.util.concurrent.CountDownLatch
 
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class)
@@ -44,6 +46,17 @@ class TextDetectorTest {
 
     private fun files() = fakeFiles(tmp.root)
 
+    /** A detector model whose close says it started, then waits for [letGo]. */
+    private class GatedModel(private val closing: CountDownLatch, private val letGo: CountDownLatch) : TileModel by MapModel() {
+        override fun close() {
+            closing.countDown()
+            letGo.await()
+        }
+    }
+
+    /** The detectors' idle-close thread, once a close was timed. */
+    private fun closer(): Thread? = Thread.getAllStackTraces().keys.firstOrNull { it.name == "text-detector-idle" }
+
     @Test
     fun opensOnFirstUseOnTheCpuAndFeedsBgrNormalized() {
         val models = ArrayList<MapModel>()
@@ -70,8 +83,7 @@ class TextDetectorTest {
         val models = ArrayList<MapModel>()
         val detector = TextDetector(FakeRuntime(make = { _, _ -> MapModel().also { models += it } }), ::files, idleMs = 50)
         detector.detect(image)
-        val until = System.currentTimeMillis() + 5_000
-        while (detector.isOpen && System.currentTimeMillis() < until) Thread.sleep(10)
+        awaitUntil("the idle close") { !detector.isOpen }
         assertFalse(detector.isOpen)
         assertTrue(models[0].closed)
         assertNotNull(detector.detect(image))
@@ -179,18 +191,26 @@ class TextDetectorTest {
         val models = ArrayList<MapModel>()
         val idle = 400L
         val detector = TextDetector(FakeRuntime(make = { _, _ -> MapModel().also { models += it } }), ::files, idleMs = idle)
-        detector.detect(image)
-        // The first run's close comes due while the second holds the detector: it waits, then must leave the model open.
-        synchronized(detector) {
-            Thread.sleep(idle + 200)
-            assertNotNull(detector.detect(image))
+        // Its close, due at once, holds back the closes due after it until let go.
+        val closing = CountDownLatch(1)
+        val letGo = CountDownLatch(1)
+        val blocker = TextDetector(FakeRuntime(make = { _, _ -> GatedModel(closing, letGo) }), ::files, idleMs = 0)
+        try {
+            // The first run's close comes due while the second holds the detector: it waits, then must leave the model open.
+            synchronized(detector) {
+                detector.detect(image)
+                awaitUntil("the first run's close to come due") { closer()?.state == Thread.State.BLOCKED }
+                blocker.detect(image)
+                assertNotNull(detector.detect(image))
+            }
+            awaitUntil("the first run's close to end") { closing.count == 0L }
+            assertTrue(detector.isOpen)
+            assertFalse(models[0].closed)
+        } finally {
+            letGo.countDown()
         }
-        Thread.sleep(idle / 2)
-        assertTrue(detector.isOpen)
-        assertFalse(models[0].closed)
         // The second run's own close still comes.
-        val until = System.currentTimeMillis() + 5_000
-        while (detector.isOpen && System.currentTimeMillis() < until) Thread.sleep(10)
+        awaitUntil("the second run's close") { !detector.isOpen }
         assertFalse(detector.isOpen)
         assertEquals(1, models.size)
     }

@@ -5,6 +5,7 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import androidx.annotation.VisibleForTesting
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Whether the connection costs by the byte, asked through [NetPolicy] before any network work
@@ -46,14 +47,21 @@ object Metered {
     /** How long an answer is kept: callers ask per read, and the network rarely changes faster. */
     private const val KEEP_MS = 1_000L
 
-    @Volatile
-    private var kept: Pair<Long, Verdict>? = null
+    /** The [verdict] judged at [at], if any; [generation] counts the times answers were let go. */
+    private class Kept(val generation: Int, val at: Long, val verdict: Verdict?)
+
+    private val kept = AtomicReference(Kept(0, 0, null))
+
+    /** Lets go of the kept answer, and of every answer still being asked for. */
+    private fun drop() {
+        kept.updateAndGet { Kept(it.generation + 1, 0, null) }
+    }
 
     /** Asks [context]'s connectivity service from now on, and hears its network change ([NetPolicy.changed]). */
     fun init(context: Context) {
         val connectivity = context.applicationContext.getSystemService(ConnectivityManager::class.java) ?: return
         probe = { linkOf(connectivity) }
-        kept = null
+        drop()
         runCatching {
             connectivity.registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
                 override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) = recheck()
@@ -70,7 +78,7 @@ object Metered {
     /** Asks again after the network changed; a new verdict tells [NetPolicy]'s listeners. */
     @VisibleForTesting
     fun recheck() {
-        kept = null
+        drop()
         val verdict = now()
         if (verdict == heard) return
         heard = verdict
@@ -90,16 +98,17 @@ object Metered {
         )
     }.getOrNull()
 
-    /** The connection now, as judged at most [KEEP_MS] ago. */
+    /** The connection now, as judged at most [KEEP_MS] ago; an answer let go of while asked for is not kept. */
     fun now(): Verdict {
         val at = clock()
-        kept?.let { (time, verdict) -> if (at - time in 0 until KEEP_MS) return verdict }
-        return verdict(probe()).also { kept = at to it }
+        val seen = kept.get()
+        seen.verdict?.let { if (at - seen.at in 0 until KEEP_MS) return it }
+        return verdict(probe()).also { kept.compareAndSet(seen, Kept(seen.generation, at, it)) }
     }
 
     /** Forgets the kept answer, so the next [now] asks again. */
     @VisibleForTesting
     fun forget() {
-        kept = null
+        drop()
     }
 }

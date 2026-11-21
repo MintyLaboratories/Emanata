@@ -2,10 +2,16 @@ package com.infinity.comicreader.net
 
 import com.infinity.comicreader.net.Metered.Link
 import com.infinity.comicreader.net.Metered.Verdict
+import com.infinity.comicreader.testing.Waits
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.concurrent.thread
 
 /** Optional network work is skipped on metered connections, VPNs over one included. */
 class MeteredTest {
@@ -79,5 +85,29 @@ class MeteredTest {
         now += 600
         Metered.now()
         assertEquals(2, asked)
+    }
+
+    @Test
+    fun anAnswerAskedForBeforeForgetIsNotKept() {
+        Metered.clock = { 0L }
+        val asked = AtomicInteger()
+        val asking = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        Metered.probe = {
+            if (asked.incrementAndGet() == 1) {
+                asking.countDown()
+                release.await()
+            }
+            wifi
+        }
+        Metered.forget()
+        val first = thread { Metered.now() }
+        assertTrue(asking.await(Waits.LIVENESS_MS, TimeUnit.MILLISECONDS))
+        Metered.forget()
+        release.countDown()
+        first.join(Waits.LIVENESS_MS)
+        assertFalse(first.isAlive)
+        Metered.now()
+        assertEquals(2, asked.get())
     }
 }

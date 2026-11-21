@@ -871,8 +871,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   over on the way stops what the pages shown fetched for it, deleted as the
   picker closes unless it was there or on its way before), and one cut
   short with the app resumes as Settings open
-  (Models shows each with its size, license and progress, and deletes them;
-  models an update drops are deleted at the next start). **Import a model…**
+  (Models shows each with what it does and its progress, its size, license
+  and source once its row is tapped, and deletes them; models an update drops
+  are deleted at the next start). **Import a model…**
   in Models takes your own ncnn model (a `.param` and its `.bin`, converted
   on a computer, e.g. with pnnx; nothing is converted on the device): the
   pair is copied into the app, checked as catalog models are and timed on a

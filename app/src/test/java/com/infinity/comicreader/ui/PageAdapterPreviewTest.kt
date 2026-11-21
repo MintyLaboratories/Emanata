@@ -4,13 +4,14 @@ import android.app.Application
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.drawable.BitmapDrawable
-import android.os.Looper
 import android.widget.FrameLayout
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.reader.Box
 import com.infinity.comicreader.reader.Half
 import com.infinity.comicreader.reader.PageSource
 import com.infinity.comicreader.reader.Target
+import com.infinity.comicreader.testing.Waits
+import com.infinity.comicreader.testing.idleUntil
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -19,7 +20,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.util.Collections
@@ -37,7 +37,7 @@ class PageAdapterPreviewTest {
         val page: Bitmap get() = Bitmap.createBitmap(40, 60, Bitmap.Config.ARGB_8888)
 
         override fun loadPage(index: Int, target: Target): Bitmap {
-            gate.await(5, TimeUnit.SECONDS)
+            gate.await(Waits.LIVENESS_MS, TimeUnit.MILLISECONDS)
             return page
         }
 
@@ -51,13 +51,13 @@ class PageAdapterPreviewTest {
 
     private val context get() = ApplicationProvider.getApplicationContext<Application>()
 
-    private fun idleUntil(done: () -> Boolean) {
-        val deadline = System.currentTimeMillis() + 5_000
-        while (!done() && System.currentTimeMillis() < deadline) {
-            Thread.sleep(10)
-            shadowOf(Looper.getMainLooper()).idle()
-        }
-    }
+    /**
+     * Idles until [holder]'s preview lookups have ended. While its page is held, each image's
+     * waiter keeps one child, waiting for a stand-in; a preview lookup is another, ended once
+     * it showed what it found or found nothing.
+     */
+    private fun lookedForPreviews(holder: PageAdapter.PageHolder) =
+        idleUntil("the preview lookups to end") { holder.waiters.all { it == null || it.children.count() <= 1 } }
 
     private fun shown(holder: PageAdapter.PageHolder): Bitmap? = (holder.images[0].drawable as? BitmapDrawable)?.bitmap
 
@@ -68,10 +68,10 @@ class PageAdapterPreviewTest {
         val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false, preload = 0)
         val holder = adapter.onCreateViewHolder(FrameLayout(context), 0)
         adapter.onBindViewHolder(holder, 0)
-        idleUntil { shown(holder) != null }
+        idleUntil("the kept preview shown") { shown(holder) != null }
         assertSame(preview, shown(holder))
         source.gate.countDown()
-        idleUntil { shown(holder)?.width == 40 }
+        idleUntil("the page shown") { shown(holder)?.width == 40 }
         assertEquals(40, shown(holder)?.width)
         adapter.release()
     }
@@ -82,13 +82,10 @@ class PageAdapterPreviewTest {
         val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false, preload = 0)
         val holder = adapter.onCreateViewHolder(FrameLayout(context), 0)
         adapter.onBindViewHolder(holder, 0)
-        repeat(20) {
-            Thread.sleep(10)
-            shadowOf(Looper.getMainLooper()).idle()
-        }
+        lookedForPreviews(holder)
         assertNull(shown(holder))
         source.gate.countDown()
-        idleUntil { shown(holder)?.width == 40 }
+        idleUntil("the page shown") { shown(holder)?.width == 40 }
         assertEquals(40, shown(holder)?.width)
         adapter.release()
     }
@@ -109,7 +106,7 @@ class PageAdapterPreviewTest {
         adapter.onBindViewHolder(left, 0)
         val right = adapter.onCreateViewHolder(FrameLayout(context), 0)
         adapter.onBindViewHolder(right, 1)
-        idleUntil { shown(left) != null && shown(right) != null }
+        idleUntil("both halves' previews shown") { shown(left) != null && shown(right) != null }
         assertEquals(4, shown(left)?.width)
         assertEquals(6, shown(left)?.height)
         assertEquals(Color.RED, shown(left)?.getPixel(0, 0))
@@ -125,14 +122,11 @@ class PageAdapterPreviewTest {
         val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false, autoCrop = true, preload = 0)
         val holder = adapter.onCreateViewHolder(FrameLayout(context), 0)
         adapter.onBindViewHolder(holder, 0)
-        repeat(20) {
-            Thread.sleep(10)
-            shadowOf(Looper.getMainLooper()).idle()
-        }
+        lookedForPreviews(holder)
         // Uncropped, it would jump once the page shows cropped.
         assertNull(shown(holder))
         source.gate.countDown()
-        idleUntil { shown(holder)?.width == 40 }
+        idleUntil("the page shown") { shown(holder)?.width == 40 }
         assertEquals(40, shown(holder)?.width)
         adapter.release()
     }
@@ -157,7 +151,7 @@ class PageAdapterPreviewTest {
 
         override fun loadPage(index: Int, target: Target): Bitmap {
             started += index
-            held.getValue(index).await(5, TimeUnit.SECONDS)
+            held.getValue(index).await(Waits.LIVENESS_MS, TimeUnit.MILLISECONDS)
             return Bitmap.createBitmap(40, 60, Bitmap.Config.ARGB_8888)
         }
 
@@ -177,20 +171,20 @@ class PageAdapterPreviewTest {
         adapter.onBindViewHolder(first, 0)
         // A decode done before its bind awaits it shows at once; the adapter counts the page shown
         // only when it handles the decode's end, a later main-thread message ([PageAdapter.decoding] false).
-        idleUntil { shown(first)?.width == 40 && 0 in source.quick && !adapter.decoding }
+        idleUntil("page 0 shown and put away") { shown(first)?.width == 40 && 0 in source.quick && !adapter.decoding }
         // Pages 1 and 2 decode at once, with both decoders: no quick preview races them.
         for (page in 1..2) {
             adapter.onBindViewHolder(adapter.onCreateViewHolder(FrameLayout(context), 0), page)
-            idleUntil { page in source.started }
+            idleUntil("page $page's decode to start") { page in source.started }
         }
         // Page 3 waits for a decoder: its quick preview shows meanwhile.
         val waiting = adapter.onCreateViewHolder(FrameLayout(context), 0)
         adapter.onBindViewHolder(waiting, 3)
-        idleUntil { shown(waiting) != null }
+        idleUntil("page 3's quick preview shown") { shown(waiting) != null }
         assertEquals(4, shown(waiting)?.width)
         assertEquals(listOf(0, 3), source.quick.toList())
         source.held.values.forEach { it.countDown() }
-        idleUntil { shown(waiting)?.width == 40 }
+        idleUntil("page 3 shown") { shown(waiting)?.width == 40 }
         adapter.release()
     }
 }

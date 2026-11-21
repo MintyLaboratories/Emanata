@@ -16,6 +16,7 @@ class SettingsSearchFindTest {
         entry("d", "Flick speed"),
         entry("e", "Page gap"),
         entry("f", "Wide pages", "Do nothing", listOf("Do nothing", "Change orientation", "Rotate image").joinToString("\n")),
+        entry("g", "Rotate lock"),
     )
 
     private fun keys(query: String) = SettingsSearch.find(entries, query).map { it.key }
@@ -42,7 +43,7 @@ class SettingsSearchFindTest {
 
     @Test
     fun matchesAListsOptionsAfterTitles() {
-        assertEquals(listOf("f"), keys("rotate"))
+        assertEquals(listOf("g", "f"), keys("rotate"))
         assertEquals(listOf("f"), keys("wide orientation"))
     }
 

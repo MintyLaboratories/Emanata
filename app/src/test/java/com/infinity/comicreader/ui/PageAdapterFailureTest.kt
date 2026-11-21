@@ -4,18 +4,19 @@ import android.app.Application
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.BitmapDrawable
-import android.os.Looper
 import android.widget.FrameLayout
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.reader.DecodeException
 import com.infinity.comicreader.reader.PageSource
 import com.infinity.comicreader.reader.Target
+import com.infinity.comicreader.testing.Waits
+import com.infinity.comicreader.testing.awaitUntil
+import com.infinity.comicreader.testing.idleUntil
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.io.IOException
 import java.util.concurrent.CountDownLatch
@@ -54,11 +55,7 @@ class PageAdapterFailureTest {
         val parent = FrameLayout(context)
         val holder = adapter.onCreateViewHolder(parent, 0)
         adapter.onBindViewHolder(holder, position)
-        val deadline = System.currentTimeMillis() + 5_000
-        while (holder.images[0].drawable == null && System.currentTimeMillis() < deadline) {
-            Thread.sleep(10)
-            shadowOf(Looper.getMainLooper()).idle()
-        }
+        idleUntil("page $position shown") { holder.images[0].drawable != null }
         return holder
     }
 
@@ -79,16 +76,8 @@ class PageAdapterFailureTest {
         adapter.release()
     }
 
-    /** Runs main-thread work until [done] holds or 5 s pass. */
-    private fun idleUntil(done: () -> Boolean) {
-        val deadline = System.currentTimeMillis() + 5_000
-        while (!done() && System.currentTimeMillis() < deadline) {
-            Thread.sleep(10)
-            shadowOf(Looper.getMainLooper()).idle()
-        }
-        Thread.sleep(50)
-        shadowOf(Looper.getMainLooper()).idle()
-    }
+    /** Idles until no decode of [adapter] is under way: each one's end handled on the main thread, where decodes are asked for. */
+    private fun settled(adapter: PageAdapter) = idleUntil("the decodes under way to end") { !adapter.decoding }
 
     @Test
     fun prefetchSkipsFailedPage() {
@@ -97,12 +86,13 @@ class PageAdapterFailureTest {
 
         // Showing page 0 prefetches page 1, which fails.
         bindAndWait(adapter, 0)
-        idleUntil { source.done.get(1) == 1 }
+        idleUntil("page 1's decode to fail") { source.done.get(1) == 1 }
+        settled(adapter)
         assertEquals(1, source.perPage.get(1))
 
         // Showing page 0 again must not decode page 1 a second time.
         bindAndWait(adapter, 0)
-        idleUntil { false }
+        settled(adapter)
         assertEquals(1, source.perPage.get(1))
         adapter.release()
     }
@@ -145,9 +135,7 @@ class PageAdapterFailureTest {
         val adapter = PageAdapter(source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false, preload = 0)
         adapter.onBindViewHolder(adapter.onCreateViewHolder(FrameLayout(context), 0), 0)
         // The decode fails; the main thread has not yet run its completion when the page binds again.
-        val deadline = System.currentTimeMillis() + 5_000
-        while (source.failed.get() == 0 && System.currentTimeMillis() < deadline) Thread.sleep(5)
-        Thread.sleep(50)
+        awaitUntil("the failed decode to end") { source.failed.get() == 1 && adapter.running == 0 }
         val holder = bindAndWait(adapter, 0)
         assertTrue(holder.images[0].drawable is BitmapDrawable)
         assertEquals(2, source.loads.get())
@@ -165,7 +153,7 @@ class PageAdapterFailureTest {
             try {
                 if (loads.incrementAndGet() == 1) {
                     entered.countDown()
-                    release.await(5, TimeUnit.SECONDS)
+                    release.await(Waits.LIVENESS_MS, TimeUnit.MILLISECONDS)
                     throw DecodeException("Could not decode this JPEG image")
                 }
                 return Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
@@ -187,7 +175,8 @@ class PageAdapterFailureTest {
         // The decode size changes while the old decode is still running, then it fails.
         adapter.fitMode = ZoomImageView.FitMode.WIDTH
         source.release.countDown()
-        idleUntil { source.done.get() == 1 }
+        idleUntil("the stalled decode to fail") { source.done.get() == 1 }
+        settled(adapter)
 
         val holder = bindAndWait(adapter, 0)
         assertTrue(holder.images[0].drawable is BitmapDrawable)
@@ -205,7 +194,7 @@ class PageAdapterFailureTest {
             try {
                 val n = loads.incrementAndGet()
                 if (n == 1) throw IOException("Read timed out")
-                release.await(5, TimeUnit.SECONDS)
+                release.await(Waits.LIVENESS_MS, TimeUnit.MILLISECONDS)
                 return Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
             } finally {
                 done.incrementAndGet()
@@ -222,16 +211,15 @@ class PageAdapterFailureTest {
         val first = adapter.onCreateViewHolder(FrameLayout(context), 0)
         adapter.onBindViewHolder(first, 0)
         // The first decode fails; before its holder hears of it, another holder starts a new one.
-        val deadline = System.currentTimeMillis() + 5_000
-        while (source.done.get() < 1 && System.currentTimeMillis() < deadline) Thread.sleep(5)
+        awaitUntil("the first decode to end") { source.done.get() == 1 && adapter.running == 0 }
         val second = adapter.onCreateViewHolder(FrameLayout(context), 0)
         adapter.onBindViewHolder(second, 0)
-        idleUntil { source.loads.get() == 2 }
+        idleUntil("the second decode to start") { source.loads.get() == 2 }
 
         // The first holder leaving must not abandon the decode the second waits for.
         adapter.onViewRecycled(first)
         source.release.countDown()
-        idleUntil { second.images[0].drawable != null }
+        idleUntil("the second holder's page shown") { second.images[0].drawable != null }
         assertTrue(second.images[0].drawable is BitmapDrawable)
         adapter.release()
     }

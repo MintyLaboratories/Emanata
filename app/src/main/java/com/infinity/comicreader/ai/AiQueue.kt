@@ -32,7 +32,8 @@ sealed class AiOutcome {
  * page wanted first in its place is tried at once (one kept on disk shows meanwhile).
  * A page skipped for a model that would not open ([Fallback.UNOPENED]) is tried again at
  * [resume], as the reader's models close while it is out of sight.
- * Work runs on [worker]; [deliver] runs on [scope]'s thread (the main one), as do all calls.
+ * [busy] hears when AI starts or stops working on a page ([working]), never per tile.
+ * Work runs on [worker]; [deliver] and [busy] run on [scope]'s thread (the main one), as do all calls.
  */
 internal class AiQueue<K : Any>(
     private val scope: CoroutineScope,
@@ -40,7 +41,10 @@ internal class AiQueue<K : Any>(
     private val work: (key: K, canceled: () -> Boolean) -> AiOutcome,
     private val deliver: (K, AiOutcome.Done) -> Unit,
     private val backoffMs: Long = BACKOFF_MS,
-    private val maxBackoffMs: Long = MAX_BACKOFF_MS
+    private val maxBackoffMs: Long = MAX_BACKOFF_MS,
+    /** True when [key]'s work runs models, false when it only reads a kept page back. Cheap. */
+    private val runsModels: (key: K) -> Boolean = { true },
+    private val busy: (Boolean) -> Unit = {}
 ) {
     private var wanted: List<K> = emptyList()
     private val finished = HashSet<K>()
@@ -57,11 +61,28 @@ internal class AiQueue<K : Any>(
     /** The page put off last ([AiOutcome.Later]). */
     private var putOff: K? = null
 
+    /** Whether the page running runs models ([runsModels]), read as it starts. */
+    private var runningModels = false
+
+    /** What [busy] heard last. */
+    private var told = false
+
     /** The page being worked on; null when none is. */
     val current: K? get() = running
 
     /** True while put off ([AiOutcome.Later]). */
     val waiting: Boolean get() = wait?.isActive == true
+
+    /** True while models work on a page: not while idle, put off, paused, or reading a kept page back. */
+    val working: Boolean get() = running != null && runningModels
+
+    /** Tells [busy] when [working] changed since it last heard. */
+    private fun tell() {
+        val now = working
+        if (now == told) return
+        told = now
+        busy(now)
+    }
 
     /** Wants [keys], in this order, instead of those before; stops the page running when it is no longer among them. */
     fun want(keys: List<K>) {
@@ -74,6 +95,7 @@ internal class AiQueue<K : Any>(
             wait = null
         }
         next()
+        tell()
     }
 
     /** Forgets what was done and skipped, as when the chain changes: every page wanted is worked on again. */
@@ -85,6 +107,7 @@ internal class AiQueue<K : Any>(
         wait = null
         backoffs = 0
         next()
+        tell()
     }
 
     /** Ends a back-off now, as when a model finished downloading or battery saver turned off. */
@@ -93,6 +116,7 @@ internal class AiQueue<K : Any>(
         wait?.cancel()
         wait = null
         next()
+        tell()
     }
 
     /** Works on [key] again when wanted, as when its page was decoded afresh after leaving the cache. */
@@ -109,6 +133,7 @@ internal class AiQueue<K : Any>(
         if (paused) return
         paused = true
         stop()
+        tell()
     }
 
     /** Goes on from [pause] with the pages wanted, those skipped for a model that would not open tried again. */
@@ -118,6 +143,7 @@ internal class AiQueue<K : Any>(
         finished -= unopened
         unopened.clear()
         next()
+        tell()
     }
 
     /** Stops for good. */
@@ -125,6 +151,7 @@ internal class AiQueue<K : Any>(
         released = true
         stop()
         wait?.cancel()
+        tell()
     }
 
     private fun stop() {
@@ -137,6 +164,7 @@ internal class AiQueue<K : Any>(
         if (released || paused || job != null || waiting) return
         val key = wanted.firstOrNull { it !in finished } ?: return
         running = key
+        runningModels = runsModels(key)
         // Started once it is the job: work that ends before the caller suspends goes on inline.
         val started = scope.launch(start = CoroutineStart.LAZY) {
             val outcome = try {
@@ -171,11 +199,14 @@ internal class AiQueue<K : Any>(
                         delay(ms)
                         wait = null
                         next()
+                        tell()
                     }
+                    tell()
                     return@launch
                 }
             }
             next()
+            tell()
         }
         job = started
         started.start()

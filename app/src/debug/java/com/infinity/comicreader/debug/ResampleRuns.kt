@@ -4,7 +4,7 @@ import com.infinity.comicreader.reader.Calibration
 import com.infinity.comicreader.reader.CpuCores
 import com.infinity.comicreader.reader.PixelEngine
 
-/** Pure parts of [ResampleCheckService]: what to run, in which order, to what size, and the energy it took. */
+/** Pure parts of [ResampleCheckService]: what to run, in which order, and to what size. */
 internal object ResampleRuns {
     /**
      * The size `time` shrinks pages to: [text] as `WxH`; `screen` for the 2000x3000 page fit
@@ -15,6 +15,17 @@ internal object ResampleRuns {
     fun size(text: String?, screenW: Int, screenH: Int): Pair<Int, Int>? {
         if (text.isNullOrBlank()) return DEFAULT_SIZE
         if (text.trim().equals("screen", ignoreCase = true)) return Calibration.target(screenW, screenH, 2000, 3000)
+        return dimensions(text)
+    }
+
+    /** The synthetic page `sustain` shrinks: [text] as `WxH`, else [DEFAULT_SOURCE]; null when unreadable. */
+    fun source(text: String?): Pair<Int, Int>? = if (text.isNullOrBlank()) DEFAULT_SOURCE else dimensions(text)
+
+    /** The page `sustain` shrinks when none is asked. */
+    val DEFAULT_SOURCE = 2000 to 3000
+
+    /** [text] as `WxH`, each side up to [MAX_SIDE]; null when unreadable. */
+    private fun dimensions(text: String): Pair<Int, Int>? {
         val parts = text.trim().lowercase().split('x')
         if (parts.size != 2) return null
         val w = parts[0].trim().toIntOrNull() ?: return null
@@ -123,25 +134,4 @@ internal object ResampleRuns {
     /** True when [trims] hold exactly one trim done as a job closed, its programs with it, and none done at once. */
     fun trimmedAtClose(trims: List<GpuTrim>): Boolean =
         trims.count { it.freed == "at close" && it.programs > 0 } == 1 && trims.none { it.freed == "now" }
-
-    /** Battery current samples in mA, negative while the battery drains. */
-    class Draw(val samples: List<Double>) {
-        val mean: Double get() = if (samples.isEmpty()) Double.NaN else samples.average()
-
-        /** True when every sample drains the battery: no charger covers any of the work. */
-        val draining: Boolean get() = samples.isNotEmpty() && samples.all { it < 0 }
-    }
-
-    /**
-     * The energy per page in mJ of [pages] made in [seconds] at [volts], from the draw while
-     * [busy] above the draw while [idle]; null while [charging] (the battery reports a
-     * charger, which can supply part of the work even while the battery drains), when
-     * either draw is not wholly draining (the current's sign flips), or nothing was made.
-     */
-    fun millijoulesPerPage(idle: Draw, busy: Draw, volts: Double, seconds: Double, pages: Int, charging: Boolean = false): Double? {
-        if (charging || !idle.draining || !busy.draining || pages <= 0 || volts <= 0 || seconds <= 0) return null
-        // Both negative: the extra drain is how much more negative the busy mean is.
-        val extraMa = idle.mean - busy.mean
-        return extraMa * volts * seconds / pages
-    }
 }

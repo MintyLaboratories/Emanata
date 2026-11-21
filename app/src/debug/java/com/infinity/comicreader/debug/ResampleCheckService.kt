@@ -53,7 +53,7 @@ import kotlin.random.Random
  * `adb shell am start-foreground-service -n <package>/com.infinity.comicreader.debug.ResampleCheckService
  *  [--es do check|time|sustain|all] [--es setups kotlin/8,native/4/big,native/1/little,gpu,gpu/big] [--ei reps 10]
  *  [--ei seconds 20] [--ei rounds 2] [--ei cooldown 30] [--es filters lanczos3,lanczos6,bicubic,hermite] [--es rings 0,50,100]
- *  [--es size 1848x2772|screen] [--ez trace true]`
+ *  [--es size 1848x2772|screen] [--es source 2000x3000] [--ei idle 5] [--ez trace true]`
  *
  * A setup is `engine[/threads[/cores]]`: Kotlin or native code on that many workers, native
  * workers pinned to the large or little cores ([CpuCores]), to the fastest alone (`prime`),
@@ -75,13 +75,16 @@ import kotlin.random.Random
  *   setting's default), `reps` rounds after 2 warm-up rounds, the setups interleaved
  *   (A B, B A...): wall and process CPU per page, thermal status and headroom before and
  *   after, and the highest thermal status seen, sampled after each setup's turn (`thermalPeak`).
- * - sustain: per setup in each of `rounds` interleaved rounds, a `cooldown` s pause, a 5 s
- *   idle baseline of the battery current, then pages back to back for `seconds`, sampling
- *   every 100 ms (the thermal status every second): pages per second, and energy per page
- *   from the signed drain above idle.
+ * - sustain: per setup in each of `rounds` interleaved rounds, a `cooldown` s pause, an
+ *   `idle` s baseline, then a synthetic `source` page (default 2000x3000) shrunk to `size`
+ *   back to back for `seconds`, by the first of `filters` and `rings`, measured by
+ *   [EnergyMeter]: current and voltage sampled together every 100 ms, the thermal status and
+ *   charger every second; pages per second, energy per page above idle, and the distinct
+ *   current values per 10 s at idle (a slow fuel gauge repeats itself). Then per setup the
+ *   energy per page across rounds with its spread (`energy`).
  *   Valid only on battery alone: unplug the cable (adb over Wi-Fi). A charger keeps
- *   supplying power under `dumpsys battery unplug`, so a battery reporting a charger, or
- *   any sample not draining, refuses the estimate.
+ *   supplying power under `dumpsys battery unplug`, so a battery reporting a charger (its
+ *   status or its plug), or any sample not draining, refuses the estimate.
  *
  * Timings are valid only from a bench build (`assembleBench`: a debuggable build runs
  * Kotlin many times slower) with the app in front (`am start` its list first; otherwise the
@@ -122,6 +125,9 @@ class ResampleCheckService : Service() {
         val rounds = intent?.getIntExtra("rounds", 2)?.coerceIn(1, 20) ?: 2
         val cooldown = intent?.getIntExtra("cooldown", 30)?.coerceIn(0, 600) ?: 30
         val asSized = intent?.getStringExtra("size")
+        val asSource = intent?.getStringExtra("source")
+        val source = ResampleRuns.source(asSource)
+        val idle = intent?.getIntExtra("idle", 5)?.coerceIn(1, 600) ?: 5
         val screen = Calibrator.screenSize(this)
         val size = ResampleRuns.size(asSized, screen.first, screen.second)
         val trace = intent?.getBooleanExtra("trace", false) ?: false
@@ -137,6 +143,7 @@ class ResampleCheckService : Service() {
                 out.parentFile?.mkdirs()
                 if (asked != null && timed.size != asked.size) log(JSONObject().put("failed", "unreadable setups: $asked"))
                 if (size == null) log(JSONObject().put("failed", "unreadable size: $asSized"))
+                if (source == null) log(JSONObject().put("failed", "unreadable source: $asSource"))
                 val cores = CpuCores.device
                 log(
                     JSONObject().put("big", java.lang.Long.toBinaryString(cores.big)).put("little", java.lang.Long.toBinaryString(cores.little))
@@ -144,7 +151,9 @@ class ResampleCheckService : Service() {
                 )
                 if (what == "check" || what == "all") check()
                 if ((what == "time" || what == "all") && size != null) time(timed, filters, rings, reps, size)
-                if (what == "sustain" || what == "all") sustain(sustained, seconds, rounds, cooldown)
+                if ((what == "sustain" || what == "all") && size != null && source != null) {
+                    sustain(sustained, seconds, rounds, cooldown, idle, source, size, Scaling(filters.first(), 0, rings.first()))
+                }
             } catch (t: Throwable) {
                 log(JSONObject().put("failed", "${t.javaClass.simpleName}: ${t.message}"))
             } finally {
@@ -502,80 +511,46 @@ class ResampleCheckService : Service() {
 
     // ------------------------------------------------------------------ sustain
 
-    /** Each setup making pages back to back, in [rounds] interleaved rounds, each after a [cooldown] s pause and an idle baseline. */
-    private fun sustain(setups: List<Setup>, seconds: Int, rounds: Int, cooldown: Int) {
-        val page = SyntheticPage.draw(2000, 3000)
+    /**
+     * Each setup shrinking a [source] page to [size] back to back, in [rounds] interleaved
+     * rounds, each after a [cooldown] s pause and an [idle] s baseline; then each setup's
+     * energy per page across rounds.
+     */
+    private fun sustain(setups: List<Setup>, seconds: Int, rounds: Int, cooldown: Int, idle: Int, source: Pair<Int, Int>, size: Pair<Int, Int>, scaling: Scaling) {
+        val page = SyntheticPage.draw(source.first, source.second)
+        val meter = EnergyMeter(this)
+        val runs = setups.associateWith { ArrayList<EnergyRuns.Run>() }
         try {
             for ((round, order) in ResampleRuns.interleaved(setups, rounds).withIndex()) {
                 for (s in order) {
                     Thread.sleep(cooldown * 1000L)
-                    val charged = charging()
-                    val heat = ResampleRuns.Heat().apply { see(thermal()) }
-                    val idle = sampleCurrent(5_000) {}
-                    var pages = 0
-                    val t0 = SystemClock.elapsedRealtime()
-                    val cpu0 = Process.getElapsedCpuTime()
-                    val busy = sampleCurrent(seconds * 1000L, heat) { until ->
+                    val heat = ResampleRuns.Heat().apply { see(meter.thermal()) }
+                    val run = meter.measure(idle, seconds, heat) { until ->
+                        var pages = 0
                         while (SystemClock.elapsedRealtime() < until) {
-                            run(s, page, 1848, 2772, Scaling.DEFAULT).recycle()
+                            run(s, page, size.first, size.second, scaling).recycle()
                             pages++
                         }
+                        pages
                     }
-                    val wall = (SystemClock.elapsedRealtime() - t0) / 1000.0
-                    val volts = voltage()
-                    val mj = ResampleRuns.millijoulesPerPage(idle, busy, volts, wall, pages, charged || charging())
+                    runs.getValue(s) += run
                     val after = state()
                     heat.see(after.getInt("thermal"))
                     val conditions = conditions()
+                    val line = JSONObject().put("sustain", s.key).put("round", round)
+                        .put("source", "${source.first}x${source.second}").put("to", "${size.first}x${size.second}")
+                        .put("filter", scaling.filter.key).put("downRing", scaling.downRing)
+                    meter.json(run, idle).let { m -> m.keys().forEach { line.put(it, m.get(it)) } }
                     log(
-                        JSONObject().put("sustain", s.key).put("round", round).put("seconds", wall).put("pages", pages)
-                            .put("pagesPerS", pages / wall).put("cpuMsPerPage", (Process.getElapsedCpuTime() - cpu0).toDouble() / max(pages, 1))
-                            .put("idleMa", num(idle.mean)).put("busyMa", num(busy.mean)).put("volts", volts)
-                            .put("mJPerPage", mj ?: JSONObject.NULL)
-                            .put("refused", if (mj == null) "a charger was connected, or the battery did not drain throughout" else JSONObject.NULL)
-                            .put("after", after).put("thermalPeak", heat.peak).put("conditions", conditions)
+                        line.put("after", after).put("thermalPeak", heat.peak).put("conditions", conditions)
                             .put("valid", conditions.getBoolean("valid") && heat.cool)
                     )
                 }
             }
+            for (s in setups) log(meter.summary(s.key, runs.getValue(s)))
         } finally {
             page.recycle()
         }
-    }
-
-    /**
-     * Battery current in mA every 100 ms over [ms] while [work] runs (given its deadline);
-     * negative while draining. [heat], when given, sees the thermal status every second.
-     */
-    private fun sampleCurrent(ms: Long, heat: ResampleRuns.Heat? = null, work: (until: Long) -> Unit): ResampleRuns.Draw {
-        val battery = getSystemService(BatteryManager::class.java)
-        val samples = ArrayList<Double>()
-        val until = SystemClock.elapsedRealtime() + ms
-        val sampler = thread(name = "current") {
-            var n = 0
-            while (SystemClock.elapsedRealtime() < until) {
-                if (heat != null && n++ % 10 == 0) heat.see(thermal())
-                // Microamperes, as on the reference tablet and most devices.
-                battery.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW).takeIf { it != Int.MIN_VALUE }
-                    ?.let { synchronized(samples) { samples += it / 1000.0 } }
-                Thread.sleep(100)
-            }
-        }
-        work(until)
-        // The sampler's samples and statuses are seen from here on.
-        sampler.join()
-        return synchronized(samples) { ResampleRuns.Draw(samples.toList()) }
-    }
-
-    /** True while the battery itself reports a charger (charging or full), whatever `dumpsys battery unplug` pretends. */
-    private fun charging(): Boolean =
-        getSystemService(BatteryManager::class.java).getIntProperty(BatteryManager.BATTERY_PROPERTY_STATUS).let {
-            it == BatteryManager.BATTERY_STATUS_CHARGING || it == BatteryManager.BATTERY_STATUS_FULL
-        }
-
-    private fun voltage(): Double {
-        val sticky = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-        return (sticky?.getIntExtra(BatteryManager.EXTRA_VOLTAGE, 0) ?: 0) / 1000.0
     }
 
     /** The thermal status now; -1 before Android 10. */
@@ -649,9 +624,6 @@ class ResampleCheckService : Service() {
             (p and 0xFF00FF00.toInt()) or ((p and 0xFF) shl 16) or ((p shr 16) and 0xFF)
         }
     }
-
-    /** [v], or null where JSON has no number for it. */
-    private fun num(v: Double): Any = if (v.isNaN() || v.isInfinite()) JSONObject.NULL else v
 
     private fun channelDiff(a: Int, b: Int): Int {
         var worst = 0

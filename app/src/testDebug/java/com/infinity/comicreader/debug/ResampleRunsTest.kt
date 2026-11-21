@@ -1,7 +1,6 @@
 package com.infinity.comicreader.debug
 
 import com.infinity.comicreader.debug.ResampleRuns.Cores
-import com.infinity.comicreader.debug.ResampleRuns.Draw
 import com.infinity.comicreader.debug.ResampleRuns.GpuTrim
 import com.infinity.comicreader.debug.ResampleRuns.Setup
 import com.infinity.comicreader.reader.CpuCores
@@ -23,6 +22,14 @@ class ResampleRunsTest {
         assertEquals(1200 to 1800, ResampleRuns.size("screen", 2000, 1200))
         assertEquals(1848 to 2772, ResampleRuns.size(" Screen ", 1848, 2960))
         for (bad in listOf("1848", "x2772", "1848x", "0x100", "-5x100", "axb", "1x2x3", "99999x10")) assertNull(bad, ResampleRuns.size(bad, 1848, 2960))
+    }
+
+    @Test
+    fun sustainSourceIsAskedOrTheStandardPage() {
+        assertEquals(4000 to 6000, ResampleRuns.source("4000x6000"))
+        assertEquals(2000 to 3000, ResampleRuns.source(null))
+        assertEquals(2000 to 3000, ResampleRuns.source(" "))
+        for (bad in listOf("screen", "4000", "0x6000", "99999x10")) assertNull(bad, ResampleRuns.source(bad))
     }
 
     @Test
@@ -104,26 +111,5 @@ class ResampleRunsTest {
         assertFalse(ResampleRuns.trimmedAtClose(listOf(GpuTrim("at close", 0))))
         assertFalse(ResampleRuns.trimmedAtClose(listOf(GpuTrim("at close", 1), GpuTrim("at close", 1))))
         assertFalse(ResampleRuns.trimmedAtClose(emptyList()))
-    }
-
-    @Test
-    fun energyIsTheSignedDrainAboveIdle() {
-        // Idle drains 400 mA, busy 900 mA: 500 mA more at 4 V for 10 s over 20 pages = 1000 mJ each.
-        val mj = ResampleRuns.millijoulesPerPage(Draw(listOf(-390.0, -410.0)), Draw(listOf(-850.0, -950.0)), 4.0, 10.0, 20)
-        assertEquals(1000.0, mj!!, 1e-9)
-    }
-
-    @Test
-    fun aChargerRefusesTheEstimate() {
-        val busy = Draw(listOf(-900.0, -900.0))
-        // Charging while idle: the sign flips between the two.
-        assertNull(ResampleRuns.millijoulesPerPage(Draw(listOf(200.0, 150.0)), busy, 4.0, 10.0, 20))
-        // A single charging sample is enough.
-        assertNull(ResampleRuns.millijoulesPerPage(Draw(listOf(-400.0, 30.0)), busy, 4.0, 10.0, 20))
-        assertNull(ResampleRuns.millijoulesPerPage(Draw(listOf(-400.0)), Draw(listOf(-900.0, 0.0)), 4.0, 10.0, 20))
-        assertNull(ResampleRuns.millijoulesPerPage(Draw(emptyList()), busy, 4.0, 10.0, 20))
-        assertNull(ResampleRuns.millijoulesPerPage(Draw(listOf(-400.0)), busy, 4.0, 10.0, 0))
-        // A charger that cannot keep up: draining throughout, yet it supplies part of the work.
-        assertNull(ResampleRuns.millijoulesPerPage(Draw(listOf(-400.0)), busy, 4.0, 10.0, 20, charging = true))
     }
 }

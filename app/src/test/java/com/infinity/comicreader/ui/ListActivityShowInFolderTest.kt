@@ -4,12 +4,12 @@ import com.infinity.comicreader.testing.toggleFavorite
 import android.Manifest
 import android.app.Application
 import android.os.Environment
-import android.os.Looper
 import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
 import com.google.android.material.tabs.TabLayout
 import com.infinity.comicreader.R
+import com.infinity.comicreader.testing.idleUntil
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import org.junit.Assert.assertFalse
@@ -43,27 +43,29 @@ class ListActivityShowInFolderTest {
         Prefs(context).lastPath = dir.absolutePath
     }
 
-    private fun idle() = repeat(10) {
-        shadowOf(Looper.getMainLooper()).idle()
-        Thread.sleep(20)
-    }
+    /** True once the screen waits on nothing but the test: listed, favorites classified, facts read, presence asked, its menu looked into. */
+    private fun ListActivity.quiet() =
+        listJob?.isCompleted == true && listOf(classifyJob, factsJob, presenceJob, moreLook).none { it?.isActive == true }
+
+    /** Runs the main looper until the screen is quiet. */
+    private fun ListActivity.settle() = idleUntil("the library screen quiet") { quiet() }
 
     /** The selection's ⋮ menu of the book selected on tab [tab]. */
     private fun menu(tab: Int): List<String> {
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        activity.settle()
         if (tab != 0) {
             activity.findViewById<TabLayout>(R.id.tabs).getTabAt(tab)!!.select()
-            idle()
+            activity.settle()
         }
         val recycler = activity.findViewById<RecyclerView>(R.id.recycler)
         recycler.measure(0, 0)
         recycler.layout(0, 0, 1000, 2000)
         val adapter = recycler.adapter as BookAdapter
         recycler.findViewHolderForAdapterPosition(adapter.positionOf(book.absolutePath))!!.itemView.performLongClick()
-        idle()
+        activity.settle()
         activity.findViewById<android.view.View>(R.id.selection_more).performClick()
-        idle()
+        activity.settle()
         val menu = activity.moreMenu!!
         return (0 until menu.childCount).map { menu.getChildAt(it).findViewById<android.widget.TextView>(R.id.more_action_label).text.toString() }
     }

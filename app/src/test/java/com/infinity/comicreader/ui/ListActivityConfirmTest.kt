@@ -13,6 +13,7 @@ import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.R
+import com.infinity.comicreader.testing.idleUntil
 import com.infinity.comicreader.data.HistoryItem
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
@@ -53,17 +54,9 @@ class ListActivityConfirmTest {
         prefs.lastPath = dir.absolutePath
     }
 
-    /** Runs the main looper until [done] holds, for work that hops to a background thread. */
-    private fun awaitUntil(done: () -> Boolean = { false }) {
-        repeat(25) {
-            shadowOf(Looper.getMainLooper()).idle()
-            if (done()) return
-            Thread.sleep(20)
-        }
-    }
-
+    /** Starts the library and waits until its folder is listed. */
     private fun launch(): ListActivity =
-        Robolectric.buildActivity(ListActivity::class.java).setup().get().also { awaitUntil() }
+        Robolectric.buildActivity(ListActivity::class.java).setup().get().also { a -> idleUntil("the folder listed") { a.listJob?.isCompleted == true } }
 
     private fun latestDialog() = ShadowDialog.getLatestDialog() as AlertDialog
 
@@ -101,12 +94,12 @@ class ListActivityConfirmTest {
         library.setReadMany(listOf(ref(book)), true)
         val activity = launch()
 
+        // Canceled: nothing was started.
         activity.menu(R.id.menu_mark_all_unread).press(DialogInterface.BUTTON_NEGATIVE)
-        awaitUntil()
         assertTrue(library.isRead(bookId(book)))
 
         activity.menu(R.id.menu_mark_all_unread).press(DialogInterface.BUTTON_POSITIVE)
-        awaitUntil { !library.isRead(bookId(book)) }
+        idleUntil("the book marked unread") { !library.isRead(bookId(book)) }
         assertFalse(library.isRead(bookId(book)))
     }
 
@@ -114,12 +107,12 @@ class ListActivityConfirmTest {
     fun markAllReadWaitsForConfirmation() {
         val activity = launch()
 
+        // Canceled: nothing was started.
         activity.menu(R.id.menu_mark_all_read).press(DialogInterface.BUTTON_NEGATIVE)
-        awaitUntil()
         assertFalse(library.isRead(bookId(book)))
 
         activity.menu(R.id.menu_mark_all_read).press(DialogInterface.BUTTON_POSITIVE)
-        awaitUntil { library.isRead(bookId(book)) }
+        idleUntil("the book marked read") { library.isRead(bookId(book)) }
         assertTrue(library.isRead(bookId(book)))
     }
 

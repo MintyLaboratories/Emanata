@@ -4,7 +4,6 @@ import com.infinity.comicreader.testing.bookId
 import android.Manifest
 import android.app.Application
 import android.os.Environment
-import android.os.Looper
 import android.view.Menu
 import android.widget.CheckBox
 import androidx.appcompat.app.AlertDialog
@@ -13,6 +12,7 @@ import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
 import com.google.android.material.appbar.MaterialToolbar
 import com.infinity.comicreader.R
+import com.infinity.comicreader.testing.idleUntil
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ToolbarButton
@@ -52,12 +52,14 @@ class ListActivityToolbarTest {
         prefs.lastPath = dir.absolutePath
     }
 
-    private fun idle() = repeat(10) {
-        shadowOf(Looper.getMainLooper()).idle()
-        Thread.sleep(20)
-    }
+    /** True once the screen waits on nothing but the test: listed, favorites classified, facts read, presence asked, its menu looked into. */
+    private fun ListActivity.quiet() =
+        listJob?.isCompleted == true && listOf(classifyJob, factsJob, presenceJob, moreLook).none { it?.isActive == true }
 
-    private fun launch(): ListActivity = Robolectric.buildActivity(ListActivity::class.java).setup().get().also { idle() }
+    /** Runs the main looper until the screen is quiet. */
+    private fun ListActivity.settle() = idleUntil("the library screen quiet") { quiet() }
+
+    private fun launch(): ListActivity = Robolectric.buildActivity(ListActivity::class.java).setup().get().also { it.settle() }
 
     private fun ListActivity.menu(): Menu = findViewById<MaterialToolbar>(R.id.toolbar).menu
 
@@ -82,7 +84,7 @@ class ListActivityToolbarTest {
         val star = activity.menu().findItem(R.id.menu_bar_favorite)
         assertEquals(context.getString(R.string.menu_add_favorite), star.title)
         activity.onOptionsItemSelected(star)
-        idle()
+        activity.settle()
         assertTrue(Library(context).isFavoriteFolder(dir.absolutePath))
         assertEquals(context.getString(R.string.menu_remove_favorite), activity.menu().findItem(R.id.menu_bar_favorite).title)
     }
@@ -92,10 +94,10 @@ class ListActivityToolbarTest {
         val activity = launch()
         val search = activity.menu().findItem(R.id.menu_search)
         search.expandActionView()
-        idle()
+        activity.settle()
         assertEquals(listOf(R.id.menu_search), activity.buttons())
         search.collapseActionView()
-        idle()
+        activity.settle()
         assertEquals(barIds, activity.buttons())
     }
 
@@ -106,7 +108,7 @@ class ListActivityToolbarTest {
             listOf(ToolbarButton.SEARCH, ToolbarButton.FAVORITE, ToolbarButton.SORT, ToolbarButton.FILTER),
             setOf(ToolbarButton.SEARCH, ToolbarButton.FAVORITE, ToolbarButton.FILTER)
         )
-        idle()
+        activity.settle()
         assertEquals(listOf(R.id.menu_search, R.id.menu_bar_favorite, R.id.menu_bar_filter), activity.buttons())
         // A hidden button stays reachable from the menu.
         assertTrue(activity.menu().findItem(R.id.menu_sort).isVisible)
@@ -116,7 +118,7 @@ class ListActivityToolbarTest {
     fun dialogCheckboxesShowAndHideButtons() {
         val activity = launch()
         val dialog: AlertDialog = ToolbarButtonsDialog.show(activity, prefs)
-        idle()
+        activity.settle()
         val list = dialog.findViewById<RecyclerView>(R.id.toolbar_buttons_list)!!
         list.measure(0, 0)
         list.layout(0, 0, 800, 1200)

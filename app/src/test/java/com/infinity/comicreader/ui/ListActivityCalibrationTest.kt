@@ -8,6 +8,7 @@ import android.widget.TextView
 import androidx.preference.PreferenceManager
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.R
+import com.infinity.comicreader.testing.idleUntil
 import com.infinity.comicreader.reader.CalibrationOffer
 import com.infinity.comicreader.reader.Calibrator
 import com.infinity.comicreader.reader.DeviceReadings
@@ -48,12 +49,13 @@ class ListActivityCalibrationTest {
         CalibrationScreenActivity.readings = Calibrator::readings
     }
 
-    private fun idle() = repeat(5) {
-        shadowOf(Looper.getMainLooper()).idle()
-        Thread.sleep(20)
-    }
+    /** Runs what is due on the main thread: calibration's news and the banner it shows come there. */
+    private fun idle() = shadowOf(Looper.getMainLooper()).idle()
 
-    private fun launch() = Robolectric.buildActivity(ListActivity::class.java).setup().also { idle() }
+    /** Starts the library and waits until its folder is listed. */
+    private fun launch() = Robolectric.buildActivity(ListActivity::class.java).setup().also { c ->
+        idleUntil("the folder listed") { c.get().listJob?.isCompleted == true }
+    }
 
     private fun ListActivity.banner() = findViewById<View>(R.id.calibration_banner)
 

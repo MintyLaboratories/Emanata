@@ -12,6 +12,7 @@ import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.R
+import com.infinity.comicreader.testing.idleUntil
 import com.infinity.comicreader.ai.CoverTextDetectors
 import com.infinity.comicreader.data.Bookmark
 import com.infinity.comicreader.data.CoverShape
@@ -54,6 +55,9 @@ class ListActivityCoversTest {
 
     private fun idle() = shadowOf(Looper.getMainLooper()).idle()
 
+    /** Waits until the folder or tab shown is listed, a folder's look into what it holds included. */
+    private fun ListActivity.awaitListed() = idleUntil("the listing") { listJob?.isCompleted == true }
+
     /** The cover boxes on screen, after a layout of the list. */
     private fun boxes(): List<View> = rows().mapNotNull { it.findViewById(R.id.box) }
 
@@ -63,18 +67,12 @@ class ListActivityCoversTest {
     /** The rows on screen, after a layout of the list, on tab [tab]. */
     private fun rows(tab: Int = 0): List<View> {
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        activity.awaitListed()
         if (tab != 0) {
             activity.findViewById<com.google.android.material.tabs.TabLayout>(R.id.tabs).getTabAt(tab)!!.select()
-            idle()
+            activity.awaitListed()
         }
         val recycler = activity.findViewById<RecyclerView>(R.id.recycler)
-        // The listing arrives from a background thread.
-        var left = 250
-        while ((recycler.adapter?.itemCount ?: 0) == 0 && left-- > 0) {
-            Thread.sleep(20)
-            idle()
-        }
         recycler.measure(
             View.MeasureSpec.makeMeasureSpec(1600, View.MeasureSpec.EXACTLY),
             View.MeasureSpec.makeMeasureSpec(2400, View.MeasureSpec.EXACTLY)
@@ -171,10 +169,7 @@ class ListActivityCoversTest {
     /** The titles shown once a background look into the folder has landed. */
     private fun settledTitles(): List<String> {
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        repeat(20) {
-            idle()
-            Thread.sleep(20)
-        }
+        activity.awaitListed()
         val recycler = activity.findViewById<RecyclerView>(R.id.recycler)
         recycler.measure(
             View.MeasureSpec.makeMeasureSpec(1600, View.MeasureSpec.EXACTLY),

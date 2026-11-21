@@ -100,6 +100,11 @@ class ModelsCoverTextTest {
         val metered = row(DetectorFiles(false, DownloadState.Failed(DownloadFailure.METERED)))
         assertEquals(context.getString(R.string.cover_text_ppocr_failed, ModelText.failure(context, DownloadFailure.METERED)), metered.status)
         assertTrue(metered.download)
+        // Each of those says what waits for the model: a barcodeless wraparound's front and every wraparound's reading direction.
+        for (status in listOf(missing, running, metered).map { it.status }) {
+            assertTrue(status, status.contains("without a barcode shows whole"))
+            assertTrue(status, status.contains("reading direction"))
+        }
         // In place: the detector's own words.
         assertEquals(context.getString(R.string.cover_text_in_use), row(DetectorFiles(true)).status)
         assertFalse(row(DetectorFiles(true)).download)

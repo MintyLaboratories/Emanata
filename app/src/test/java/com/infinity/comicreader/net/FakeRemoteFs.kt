@@ -1,5 +1,6 @@
 package com.infinity.comicreader.net
 
+import com.infinity.comicreader.testing.Waits
 import java.io.File
 import java.io.RandomAccessFile
 
@@ -20,9 +21,9 @@ class FakeRemoteFs(private val dir: File) : RemoteFs {
     @Volatile
     var slowReads: LongRange? = null
 
-    /** How long [slow] holds a call at most, in real time, so a test that never opens it still ends. */
+    /** How long [slow] holds a call at most, in real time: only so a test that never opens it still ends. */
     @Volatile
-    var slowCapMs = 10_000L
+    var slowCapMs = Waits.LIVENESS_MS
 
     /** Calls [slow] holds now. */
     val held = java.util.concurrent.atomic.AtomicInteger()

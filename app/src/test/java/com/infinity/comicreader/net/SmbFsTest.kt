@@ -126,23 +126,29 @@ class SmbFsTest {
 
     @Test(timeout = Waits.LIVENESS_MS)
     fun closingDoesNotWaitForAConnectUnderWay() {
-        Silent().use { silent ->
-            val fs = SmbFs(share(silent.port))
-            val failure = AtomicReference<Throwable>()
-            val listing = thread(isDaemon = true) {
-                try {
-                    fs.list("")
-                } catch (t: Throwable) {
-                    failure.set(t)
+        // Outlasts the test's timeout: only closing the socket ends the connect.
+        Remotes.answerMs = Waits.LIVENESS_MS * 2
+        try {
+            Silent().use { silent ->
+                val fs = SmbFs(share(silent.port))
+                val failure = AtomicReference<Throwable>()
+                val listing = thread(isDaemon = true) {
+                    try {
+                        fs.list("")
+                    } catch (t: Throwable) {
+                        failure.set(t)
+                    }
                 }
+                val socket = silent.accepted.poll(Waits.LIVENESS_MS, TimeUnit.MILLISECONDS) ?: throw AssertionError("Gave up waiting for the listing's connection")
+                fs.close()
+                // The connect ends only once the socket below closes.
+                assertTrue("close waited for the connect", listing.isAlive)
+                socket.close()
+                awaitUntil("the listing to fail") { !listing.isAlive }
+                assertTrue("failed with ${failure.get()}", failure.get() is RemoteException)
             }
-            val socket = silent.accepted.poll(Waits.LIVENESS_MS, TimeUnit.MILLISECONDS) ?: throw AssertionError("Gave up waiting for the listing's connection")
-            fs.close()
-            // The connect ends only once the socket below closes, or after the answer timeout.
-            assertTrue("close waited for the connect", listing.isAlive)
-            socket.close()
-            awaitUntil("the listing to fail") { !listing.isAlive }
-            assertTrue("failed with ${failure.get()}", failure.get() is RemoteException)
+        } finally {
+            Remotes.answerMs = Remotes.DEFAULT_ANSWER_MS
         }
     }
 

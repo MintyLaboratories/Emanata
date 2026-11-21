@@ -140,6 +140,26 @@ class ReaderAiTest {
     }
 
     @Test
+    fun modelsAreReportedOnceOnlyWhenTheyWorkOnAPage() {
+        val b = bookOf()
+        var heard = 0
+        val count = { heard++; Unit }
+        assertTrue(ai.enhance(b, 0, target, 40, 60, models = count) { false } is AiOutcome.Later)
+        assertEquals("a model still downloading", 0, heard)
+        install(upscale)
+        stop = Fallback.PAUSED
+        assertTrue(ai.enhance(b, 0, target, 40, 60, models = count) { false } is AiOutcome.Later)
+        assertEquals("put off before its models open", 0, heard)
+        stop = null
+        assertTrue(ai.enhance(b, 0, target, 40, 60, models = count) { false } is AiOutcome.Done)
+        assertEquals("once, though the model opened and then ran", 1, heard)
+        assertTrue((ai.enhance(b, 0, target, 40, 60, models = count) { false } as AiOutcome.Done).stored)
+        assertEquals("read back", 1, heard)
+        assertTrue(ai.enhance(bookOf(80, 120, BookId(0xbb)), 0, target, 40, 60, models = count) { false } is AiOutcome.Skipped)
+        assertEquals("no model runs at this size", 1, heard)
+    }
+
+    @Test
     fun aHotOrSavingDeviceOrAMissingModelPutsPagesOff() {
         val b = bookOf()
         assertTrue(ai.enhance(b, 0, target, 40, 60) { false } is AiOutcome.Later)

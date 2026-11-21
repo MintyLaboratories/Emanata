@@ -32,18 +32,17 @@ sealed class AiOutcome {
  * page wanted first in its place is tried at once (one kept on disk shows meanwhile).
  * A page skipped for a model that would not open ([Fallback.UNOPENED]) is tried again at
  * [resume], as the reader's models close while it is out of sight.
- * [busy] hears when AI starts or stops working on a page ([working]), never per tile.
+ * [busy] hears when models start or stop working on a page ([working]), never per tile: [work]
+ * calls its `models` as they start on its page, from any thread, once or more.
  * Work runs on [worker]; [deliver] and [busy] run on [scope]'s thread (the main one), as do all calls.
  */
 internal class AiQueue<K : Any>(
     private val scope: CoroutineScope,
     private val worker: CoroutineDispatcher,
-    private val work: (key: K, canceled: () -> Boolean) -> AiOutcome,
+    private val work: (key: K, canceled: () -> Boolean, models: () -> Unit) -> AiOutcome,
     private val deliver: (K, AiOutcome.Done) -> Unit,
     private val backoffMs: Long = BACKOFF_MS,
     private val maxBackoffMs: Long = MAX_BACKOFF_MS,
-    /** True when [key]'s work runs models, false when it only reads a kept page back. Cheap. */
-    private val runsModels: (key: K) -> Boolean = { true },
     private val busy: (Boolean) -> Unit = {}
 ) {
     private var wanted: List<K> = emptyList()
@@ -61,8 +60,17 @@ internal class AiQueue<K : Any>(
     /** The page put off last ([AiOutcome.Later]). */
     private var putOff: K? = null
 
-    /** Whether the page running runs models ([runsModels]), read as it starts. */
-    private var runningModels = false
+    /** The page running said its models started. */
+    private var reported = false
+
+    /**
+     * The page running started straight after one whose models worked: counted as working until
+     * it ends, so the indicator does not blink between two pages that both run models.
+     */
+    private var carried = false
+
+    /** The page that ended or stopped last had said its models started; read once by the [next] that follows. */
+    private var lastReported = false
 
     /** What [busy] heard last. */
     private var told = false
@@ -74,14 +82,22 @@ internal class AiQueue<K : Any>(
     val waiting: Boolean get() = wait?.isActive == true
 
     /** True while models work on a page: not while idle, put off, paused, or reading a kept page back. */
-    val working: Boolean get() = running != null && runningModels
+    val working: Boolean get() = running != null && (reported || carried)
 
     /** Tells [busy] when [working] changed since it last heard. */
     private fun tell() {
+        lastReported = false
         val now = working
         if (now == told) return
         told = now
         busy(now)
+    }
+
+    /** The work of [self] said its models started. */
+    private fun modelsStarted(self: Job) {
+        if (job !== self || reported) return
+        reported = true
+        tell()
     }
 
     /** Wants [keys], in this order, instead of those before; stops the page running when it is no longer among them. */
@@ -157,20 +173,32 @@ internal class AiQueue<K : Any>(
     private fun stop() {
         job?.cancel()
         job = null
+        ended()
+    }
+
+    /** No page runs any more. */
+    private fun ended() {
         running = null
+        lastReported = reported
+        reported = false
+        carried = false
     }
 
     private fun next() {
+        val carry = lastReported
+        lastReported = false
         if (released || paused || job != null || waiting) return
         val key = wanted.firstOrNull { it !in finished } ?: return
         running = key
-        runningModels = runsModels(key)
+        reported = false
+        carried = carry
         // Started once it is the job: work that ends before the caller suspends goes on inline.
         val started = scope.launch(start = CoroutineStart.LAZY) {
+            val queued = coroutineContext.job
             val outcome = try {
                 withContext(worker) {
                     val self = coroutineContext.job
-                    work(key) { self.isCancelled }
+                    work(key, { self.isCancelled }) { scope.launch { modelsStarted(queued) } }
                 }
             } catch (e: CancellationException) {
                 return@launch
@@ -178,9 +206,9 @@ internal class AiQueue<K : Any>(
                 AiOutcome.Skipped(Fallback.FAILED)
             }
             // A page no longer wanted: its bitmap may still be on its way to disk, so the GC frees it.
-            if (job !== coroutineContext.job) return@launch
+            if (job !== queued) return@launch
             job = null
-            running = null
+            ended()
             when (outcome) {
                 is AiOutcome.Done -> {
                     finished += key

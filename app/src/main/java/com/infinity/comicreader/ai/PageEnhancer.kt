@@ -40,10 +40,13 @@ interface PageEnhancer {
     /**
      * Page [index] of [source], shown as [target] lays it out at [width] x [height], processed:
      * read back from disk, or made from the page at full detail and stored. Blocking; stops
-     * once [canceled]; waits between tiles while [held] (the reader moving).
+     * once [canceled]; waits between tiles while [held] (the reader moving). Calls [models] as
+     * models start on the page (opening or running), at most once; never for a page read back,
+     * put off before its models open, or needing none.
      */
     fun enhance(
-        source: PageSource, index: Int, target: Target, width: Int, height: Int, held: () -> Boolean = { false }, canceled: () -> Boolean
+        source: PageSource, index: Int, target: Target, width: Int, height: Int, held: () -> Boolean = { false }, models: () -> Unit = {},
+        canceled: () -> Boolean
     ): AiOutcome
 }
 
@@ -232,9 +235,17 @@ class ReaderAi internal constructor(
         return sizes[place] ?: source.pageSize(index)?.also { sizes[place] = it }
     }
 
-    override fun enhance(source: PageSource, index: Int, target: Target, width: Int, height: Int, held: () -> Boolean, canceled: () -> Boolean): AiOutcome {
+    override fun enhance(
+        source: PageSource, index: Int, target: Target, width: Int, height: Int, held: () -> Boolean, models: () -> Unit, canceled: () -> Boolean
+    ): AiOutcome {
         val t0 = SystemClock.elapsedRealtime()
-        val outcome = enhanceNow(source, index, target, width, height, held, canceled)
+        var started = false
+        val outcome = enhanceNow(source, index, target, width, height, held, canceled) {
+            if (!started) {
+                started = true
+                models()
+            }
+        }
         val ms = SystemClock.elapsedRealtime() - t0
         when (outcome) {
             is AiOutcome.Done -> Log.d(TAG, "page $index: ${if (outcome.stored) "read back" else "made"} in $ms ms")
@@ -244,7 +255,10 @@ class ReaderAi internal constructor(
         return outcome
     }
 
-    private fun enhanceNow(source: PageSource, index: Int, pageTarget: Target, width: Int, height: Int, held: () -> Boolean, canceled: () -> Boolean): AiOutcome {
+    /** [enhance], calling [onModels] once models are sure to run, as each opens, and before the chain runs. */
+    private fun enhanceNow(
+        source: PageSource, index: Int, pageTarget: Target, width: Int, height: Int, held: () -> Boolean, canceled: () -> Boolean, onModels: () -> Unit
+    ): AiOutcome {
         // Models see and make pages unsharpened: sharpening is for plain pages, so its strength keys no processed page.
         val target = pageTarget.copy(scaling = pageTarget.scaling.unsharpened)
         val chain = chainFor(source.bookKey)
@@ -267,8 +281,10 @@ class ReaderAi internal constructor(
                 return AiOutcome.Later
             }
         }
+        // Models planned from the page's size run from here (but on a page drawn in bands): the decode below is theirs.
+        if (planned != null) onModels()
         val opened = chain.map { m ->
-            session(m, canceled, held) ?: return if (!closed && m.id !in sessions) AiOutcome.Later else AiOutcome.Skipped(Fallback.UNOPENED)
+            session(m, canceled, held, onModels) ?: return if (!closed && m.id !in sessions) AiOutcome.Later else AiOutcome.Skipped(Fallback.UNOPENED)
         }
         // Nobody waits on it: decoded and resampled on the budget of pages read ahead.
         val input = Urgency.later { Cancellation.during(canceled) { source.loadPage(index, target.detail(size, MAX_INPUT_PIXELS * 4)) } }
@@ -280,6 +296,7 @@ class ReaderAi internal constructor(
                 val shownPlan = plan.copy(width = width, height = height)
                 val steps = planned?.let { p -> AiPages.stepsOf(p.map { it.index }, chainModels, readable.width, readable.height) }
                     ?: AiPages.steps(chainModels, readable.width, readable.height, shownPlan, thresholds)
+                if (steps.isNotEmpty()) onModels()
                 val run = Urgency.later {
                     AiPages.chain(
                         opened, readable, shownPlan, target.scaling, target.linear, limitsFor(chain, steps), canceled, gate, hold = held,
@@ -363,14 +380,15 @@ class ReaderAi internal constructor(
      * memory is not kept refused at first, as what is free changes: its pages are put off and
      * it is tried once more with them no sooner than [AiQueue.BACKOFF_MS] later ([MEMORY_TRIES]
      * tries in a row in all), then left out until [closeModels] closes it. Timing its tile sizes
-     * waits while [held] ([Sessions.attempt], [ShaderSessions.attempt]).
+     * waits while [held] ([Sessions.attempt], [ShaderSessions.attempt]). Calls [opening] before it opens.
      */
-    private fun session(m: AiModel, canceled: () -> Boolean, held: () -> Boolean): Session? {
+    private fun session(m: AiModel, canceled: () -> Boolean, held: () -> Boolean, opening: () -> Unit): Session? {
         used = true
         if (closed) return null
         if (m.id in sessions) return sessions[m.id]
         // Put off again, untried, until the back-off since its last refusal has passed: a page turn or wake-up skips the queue's.
         shortOfMemoryAt[m.id]?.let { if (clock() - it < AiQueue.BACKOFF_MS) return null }
+        opening()
         val o = when (m) {
             is ShaderModel -> models.shaderFiles(m)?.let { files ->
                 ShaderSessions.attempt(shaders, { files.map { it.readText() } }, m.scale, memoryBytes = memory(), cache = programs, canceled = canceled, hold = held)

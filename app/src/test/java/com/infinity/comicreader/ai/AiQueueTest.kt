@@ -50,8 +50,12 @@ class AiQueueTest {
         /** What the queue's busy callback heard, in order. */
         val busy = ArrayList<Boolean>()
 
-        fun run(key: String, isCanceled: () -> Boolean): AiOutcome {
+        /** Keys whose work runs no model (read back, or put off before its models open). */
+        val quiet: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
+        fun run(key: String, isCanceled: () -> Boolean, models: () -> Unit): AiOutcome {
             started += key
+            if (key !in quiet) models()
             held[key]?.let { latch ->
                 while (!latch.await(5, TimeUnit.MILLISECONDS)) {
                     if (isCanceled()) {
@@ -63,8 +67,8 @@ class AiQueueTest {
             return outcomes[key]?.invoke() ?: AiOutcome.Done(Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888))
         }
 
-        fun queue(backoffMs: Long = 50, maxBackoffMs: Long = 200, runsModels: (String) -> Boolean = { true }) =
-            AiQueue<String>(scope, executor.asCoroutineDispatcher(), ::run, { k, _ -> delivered += k }, backoffMs, maxBackoffMs, runsModels, { busy += it })
+        fun queue(backoffMs: Long = 50, maxBackoffMs: Long = 200) =
+            AiQueue<String>(scope, executor.asCoroutineDispatcher(), ::run, { k, _ -> delivered += k }, backoffMs, maxBackoffMs, { busy += it })
     }
 
     private fun idleUntil(done: () -> Boolean) {
@@ -312,8 +316,7 @@ class AiQueueTest {
         val q = w.queue()
         assertFalse(q.working)
         q.want(listOf("a", "b", "c"))
-        idleUntil { w.started.contains("a") }
-        assertTrue(q.working)
+        idleUntil { q.working }
         assertEquals(listOf(true), w.busy)
         w.held["a"]!!.countDown()
         idleUntil { w.delivered.size == 3 && !q.working }
@@ -323,7 +326,8 @@ class AiQueueTest {
     @Test
     fun aPageReadBackIsNotBusy() {
         val w = Work()
-        val q = w.queue(runsModels = { it != "kept" })
+        w.quiet += "kept"
+        val q = w.queue()
         q.want(listOf("kept"))
         idleUntil { w.delivered.contains("kept") }
         assertTrue(w.busy.isEmpty())
@@ -336,15 +340,93 @@ class AiQueueTest {
     fun aPagePutOffOrSkippedLeavesTheQueueIdle() {
         val w = Work()
         w.outcomes["hot"] = { AiOutcome.Later }
+        w.quiet += "hot"
         val q = w.queue(backoffMs = 60_000)
         q.want(listOf("hot"))
         idleUntil { q.waiting }
         assertFalse(q.working)
-        assertEquals(listOf(true, false), w.busy)
+        assertTrue("put off before its models opened", w.busy.isEmpty())
         w.outcomes["big"] = { AiOutcome.Skipped(Fallback.TIMEOUT) }
         q.want(listOf("big"))
-        idleUntil { w.started.contains("big") && !q.working }
+        idleUntil { w.busy.size == 2 }
+        assertEquals(listOf(true, false), w.busy)
+    }
+
+    @Test
+    fun aPagePutOffWhileItsModelsRanIsBusyAgainOnceRetried() {
+        val w = Work()
+        var tries = 0
+        w.outcomes["a"] = { if (tries++ == 0) AiOutcome.Later else AiOutcome.Done(Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)) }
+        val q = w.queue(backoffMs = 50)
+        q.want(listOf("a"))
+        idleUntil { q.waiting }
+        assertFalse(q.working)
+        assertEquals(listOf(true, false), w.busy)
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(60))
+        idleUntil { w.delivered.contains("a") && !q.working }
         assertEquals(listOf(true, false, true, false), w.busy)
+    }
+
+    @Test
+    fun wakingRunsThePagePutOffAndIsBusy() {
+        val w = Work()
+        var tries = 0
+        w.quiet += "a"
+        w.outcomes["a"] = {
+            if (tries++ == 0) AiOutcome.Later else AiOutcome.Done(Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888))
+        }
+        val q = w.queue(backoffMs = 60_000)
+        q.want(listOf("a"))
+        idleUntil { q.waiting }
+        assertTrue(w.busy.isEmpty())
+        w.quiet -= "a"
+        w.held["a"] = CountDownLatch(1)
+        q.wake()
+        idleUntil { q.working }
+        assertEquals(listOf(true), w.busy)
+        w.held["a"]!!.countDown()
+        idleUntil { w.delivered.contains("a") && !q.working }
+        assertEquals(listOf(true, false), w.busy)
+    }
+
+    @Test
+    fun resettingThePageRunningKeepsItBusyWithoutABlink() {
+        val w = Work()
+        w.held["a"] = CountDownLatch(1)
+        val q = w.queue()
+        q.want(listOf("a"))
+        idleUntil { q.working }
+        q.reset()
+        idleUntil { w.started.size == 2 }
+        assertEquals(listOf("a"), w.canceled)
+        assertTrue(q.working)
+        assertEquals(listOf(true), w.busy)
+        w.held["a"]!!.countDown()
+        idleUntil { w.delivered.contains("a") && !q.working }
+        assertEquals(listOf(true, false), w.busy)
+    }
+
+    @Test
+    fun turningFromAPageModelsWorkOnToAnotherDoesNotBlink() {
+        val w = Work()
+        w.held["a"] = CountDownLatch(1)
+        w.held["b"] = CountDownLatch(1)
+        w.held["c"] = CountDownLatch(1)
+        w.quiet += listOf("b", "c")
+        val q = w.queue()
+        q.want(listOf("a"))
+        idleUntil { q.working }
+        q.want(listOf("b", "c"))
+        idleUntil { w.started.contains("b") }
+        assertTrue("busy until b shows whether its models run", q.working)
+        assertEquals(listOf(true), w.busy)
+        // b ran no model: the page after it is not counted busy before its models start.
+        w.held["b"]!!.countDown()
+        idleUntil { w.started.contains("c") && !q.working }
+        assertEquals(listOf(true, false), w.busy)
+        w.held["c"]!!.countDown()
+        idleUntil { w.delivered.contains("c") }
+        assertEquals(listOf(true, false), w.busy)
     }
 
     @Test
@@ -353,12 +435,12 @@ class AiQueueTest {
         w.held["a"] = CountDownLatch(1)
         val q = w.queue()
         q.want(listOf("a"))
-        idleUntil { w.started.contains("a") }
+        idleUntil { q.working }
         q.pause()
         assertFalse(q.working)
         assertEquals(listOf(true, false), w.busy)
         q.resume()
-        idleUntil { w.started.size == 2 }
+        idleUntil { w.started.size == 2 && q.working }
         assertEquals(listOf(true, false, true), w.busy)
         q.release()
         assertEquals(listOf(true, false, true, false), w.busy)

@@ -76,8 +76,12 @@ class PageAdapterAiTest {
         @Volatile
         var ms = 0L
 
-        /** Pages [stored] says are kept on disk. */
+        /** Pages [stored] says are kept on disk: read back without a model. */
         val kept: MutableSet<Int> = Collections.synchronizedSet(HashSet())
+
+        /** True: every page is skipped as needing no model, none of its models opened. */
+        @Volatile
+        var unneeded = false
 
         override fun enhances(source: PageSource): Boolean = on
 
@@ -85,9 +89,12 @@ class PageAdapterAiTest {
 
         override fun stored(source: PageSource, index: Int, target: Target, width: Int, height: Int): Boolean = index in kept
 
-        override fun enhance(source: PageSource, index: Int, target: Target, width: Int, height: Int, held: () -> Boolean, canceled: () -> Boolean): AiOutcome {
+        override fun enhance(
+            source: PageSource, index: Int, target: Target, width: Int, height: Int, held: () -> Boolean, models: () -> Unit, canceled: () -> Boolean
+        ): AiOutcome {
             asked += index
-            if (!on) return AiOutcome.Skipped(Fallback.UNNEEDED)
+            if (!on || unneeded) return AiOutcome.Skipped(Fallback.UNNEEDED)
+            if (index !in kept) models()
             onEnhance(index)
             return AiOutcome.Done(Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).apply { eraseColor(color) })
         }
@@ -396,6 +403,21 @@ class PageAdapterAiTest {
         idle { enhancer.asked.size >= 2 }
         aWhile()
         assertEquals(processed, colorAt(rv, 0))
+        assertTrue(heard.isEmpty())
+        adapter.release()
+    }
+
+    @Test
+    fun pagesNeedingNoModelAreNotBusy() {
+        val heard = ArrayList<Boolean>()
+        enhancer.unneeded = true
+        val (adapter, rv) = reader()
+        adapter.onAiBusy = { heard += it }
+        idle { colorAt(rv, 0) == plain }
+        aWhile()
+        adapter.reading(0)
+        idle { enhancer.asked.size >= 2 }
+        aWhile()
         assertTrue(heard.isEmpty())
         adapter.release()
     }

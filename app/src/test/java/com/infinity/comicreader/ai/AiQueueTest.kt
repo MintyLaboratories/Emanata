@@ -3,6 +3,8 @@ package com.infinity.comicreader.ai
 import android.app.Application
 import android.graphics.Bitmap
 import android.os.Looper
+import com.infinity.comicreader.testing.awaitUntil
+import com.infinity.comicreader.testing.idleUntil
 import com.infinity.comicreader.util.AppDispatchers
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -71,12 +73,12 @@ class AiQueueTest {
             AiQueue<String>(scope, executor.asCoroutineDispatcher(), ::run, { k, _ -> delivered += k }, backoffMs, maxBackoffMs, { busy += it })
     }
 
-    private fun idleUntil(done: () -> Boolean) {
-        val deadline = System.currentTimeMillis() + 5_000
-        while (!done() && System.currentTimeMillis() < deadline) {
-            Thread.sleep(5)
-            shadowOf(Looper.getMainLooper()).idle()
-        }
+    /** Runs what the queue posted to the main thread, then what it handed the worker, then what that posted back: what has not happened by then will not. */
+    private fun settle() {
+        shadowOf(Looper.getMainLooper()).idle()
+        val drained = executor.submit {}
+        awaitUntil("the worker to run what it was handed") { drained.isDone }
+        shadowOf(Looper.getMainLooper()).idle()
     }
 
     @Test
@@ -84,7 +86,7 @@ class AiQueueTest {
         val w = Work()
         val q = w.queue()
         q.want(listOf("a", "b", "c"))
-        idleUntil { w.delivered.size == 3 }
+        idleUntil("a, b and c delivered") { w.delivered.size == 3 }
         assertEquals(listOf("a", "b", "c"), w.started)
         assertEquals(listOf("a", "b", "c"), w.delivered)
         assertNull(q.current)
@@ -96,13 +98,13 @@ class AiQueueTest {
         w.outcomes["b"] = { AiOutcome.Skipped(Fallback.TIMEOUT) }
         val q = w.queue()
         q.want(listOf("a", "b"))
-        idleUntil { w.started.size == 2 && q.current == null }
+        idleUntil("a and b worked on") { w.started.size == 2 && q.current == null }
         q.want(listOf("b", "a", "c"))
-        idleUntil { w.delivered.contains("c") }
+        idleUntil("c delivered") { w.delivered.contains("c") }
         assertEquals(listOf("a", "b", "c"), w.started)
         q.forget("a")
         q.want(listOf("a"))
-        idleUntil { w.started.size == 4 }
+        idleUntil("a worked on again") { w.started.size == 4 }
         assertEquals("a", w.started.last())
     }
 
@@ -112,9 +114,9 @@ class AiQueueTest {
         w.held["a"] = CountDownLatch(1)
         val q = w.queue()
         q.want(listOf("a", "b"))
-        idleUntil { w.started.contains("a") }
+        idleUntil("a started") { w.started.contains("a") }
         q.want(listOf("c"))
-        idleUntil { w.delivered.contains("c") }
+        idleUntil("c delivered") { w.delivered.contains("c") }
         assertEquals(listOf("a"), w.canceled)
         assertFalse(w.delivered.contains("a"))
         assertFalse("b is not wanted any more", w.started.contains("b"))
@@ -127,16 +129,16 @@ class AiQueueTest {
         w.outcomes["a"] = { if (later-- > 0) AiOutcome.Later else AiOutcome.Done(Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)) }
         val q = w.queue(backoffMs = 50)
         q.want(listOf("a", "b"))
-        idleUntil { q.waiting }
+        idleUntil("a put off") { q.waiting }
         assertEquals(listOf("a"), w.started)
         // The back-off doubles: 50 ms, then 100 ms.
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(60))
-        idleUntil { w.started.size == 2 && q.waiting }
+        idleUntil("a tried again and put off again") { w.started.size == 2 && q.waiting }
         assertEquals(listOf("a", "a"), w.started)
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(60))
         assertTrue("still waiting out the doubled back-off", q.waiting)
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(60))
-        idleUntil { w.delivered == listOf("a", "b") }
+        idleUntil("a and b delivered") { w.delivered == listOf("a", "b") }
         assertEquals(listOf("a", "b"), w.delivered)
     }
 
@@ -147,10 +149,10 @@ class AiQueueTest {
         w.outcomes["a"] = { if (later) AiOutcome.Later else AiOutcome.Done(Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)) }
         val q = w.queue(backoffMs = 60_000)
         q.want(listOf("a"))
-        idleUntil { q.waiting }
+        idleUntil("a put off") { q.waiting }
         later = false
         q.wake()
-        idleUntil { w.delivered.contains("a") }
+        idleUntil("a delivered") { w.delivered.contains("a") }
         assertEquals(listOf("a"), w.delivered)
     }
 
@@ -159,9 +161,9 @@ class AiQueueTest {
         val w = Work()
         val q = w.queue()
         q.want(listOf("a"))
-        idleUntil { w.delivered.size == 1 }
+        idleUntil("a delivered") { w.delivered.size == 1 }
         q.reset()
-        idleUntil { w.delivered.size == 2 }
+        idleUntil("a delivered again") { w.delivered.size == 2 }
         assertEquals(listOf("a", "a"), w.started)
     }
 
@@ -171,7 +173,7 @@ class AiQueueTest {
         w.outcomes["a"] = { throw IllegalStateException("boom") }
         val q = w.queue()
         q.want(listOf("a", "b"))
-        idleUntil { w.delivered.contains("b") }
+        idleUntil("b delivered") { w.delivered.contains("b") }
         assertEquals(listOf("b"), w.delivered)
     }
 
@@ -181,9 +183,7 @@ class AiQueueTest {
         val q = w.queue()
         q.release()
         q.want(listOf("a"))
-        shadowOf(Looper.getMainLooper()).idle()
-        Thread.sleep(20)
-        shadowOf(Looper.getMainLooper()).idle()
+        settle()
         assertTrue(w.started.isEmpty())
     }
 
@@ -220,16 +220,15 @@ class AiQueueTest {
         w.held["a"] = CountDownLatch(1)
         val q = w.queue()
         q.want(listOf("a", "b"))
-        idleUntil { w.started.contains("a") }
+        idleUntil("a started") { w.started.contains("a") }
         q.pause()
-        idleUntil { w.canceled.contains("a") }
+        idleUntil("a canceled") { w.canceled.contains("a") }
         q.want(listOf("a", "b"))
-        Thread.sleep(20)
-        shadowOf(Looper.getMainLooper()).idle()
+        settle()
         assertEquals("nothing starts while paused", listOf("a"), w.started)
         w.held.remove("a")
         q.resume()
-        idleUntil { w.delivered.size == 2 }
+        idleUntil("a and b delivered") { w.delivered.size == 2 }
         assertEquals(listOf("a", "b"), w.delivered)
     }
 
@@ -240,20 +239,18 @@ class AiQueueTest {
         w.outcomes["b"] = { AiOutcome.Skipped(Fallback.TIMEOUT) }
         val q = w.queue()
         q.want(listOf("a", "b", "c"))
-        idleUntil { w.delivered.contains("c") }
+        idleUntil("c delivered") { w.delivered.contains("c") }
         q.pause()
         w.outcomes.remove("a")
         w.outcomes.remove("b")
         q.resume()
-        idleUntil { w.delivered.contains("a") }
-        Thread.sleep(20)
-        shadowOf(Looper.getMainLooper()).idle()
+        idleUntil("a tried again and delivered") { w.delivered.contains("a") }
+        settle()
         assertEquals(listOf("a", "b", "c", "a"), w.started)
         // Once done it stays done across another pause.
         q.pause()
         q.resume()
-        Thread.sleep(20)
-        shadowOf(Looper.getMainLooper()).idle()
+        settle()
         assertEquals(4, w.started.size)
     }
 
@@ -264,15 +261,15 @@ class AiQueueTest {
         val made = Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
         // Ignores being canceled, as a model run between two checks does.
         w.outcomes["a"] = {
-            gate.await(5, TimeUnit.SECONDS)
+            gate.await()
             AiOutcome.Done(made)
         }
         val q = w.queue()
         q.want(listOf("a"))
-        idleUntil { w.started.contains("a") }
+        idleUntil("a started") { w.started.contains("a") }
         q.want(listOf("c"))
         gate.countDown()
-        idleUntil { w.delivered.contains("c") }
+        idleUntil("c delivered") { w.delivered.contains("c") }
         assertFalse(w.delivered.contains("a"))
         assertFalse("it may still be on its way to disk", made.isRecycled)
     }
@@ -283,13 +280,12 @@ class AiQueueTest {
         w.outcomes["a"] = { AiOutcome.Later }
         val q = w.queue(backoffMs = 60_000)
         q.want(listOf("a"))
-        idleUntil { q.waiting }
+        idleUntil("a put off") { q.waiting }
         q.want(listOf("a"))
-        Thread.sleep(20)
-        shadowOf(Looper.getMainLooper()).idle()
+        settle()
         assertEquals("the same page waits out its back-off", listOf("a"), w.started)
         q.want(listOf("b", "a"))
-        idleUntil { w.delivered.contains("b") }
+        idleUntil("b delivered") { w.delivered.contains("b") }
         assertEquals(listOf("b"), w.delivered)
     }
 
@@ -299,11 +295,10 @@ class AiQueueTest {
         w.held["a"] = CountDownLatch(1)
         val q = w.queue()
         q.want(listOf("a", "b"))
-        idleUntil { w.started.contains("a") }
+        idleUntil("a started") { w.started.contains("a") }
         q.release()
-        idleUntil { w.canceled.contains("a") }
-        Thread.sleep(20)
-        shadowOf(Looper.getMainLooper()).idle()
+        idleUntil("a canceled") { w.canceled.contains("a") }
+        settle()
         assertEquals(listOf("a"), w.canceled)
         assertTrue(w.delivered.isEmpty())
         assertEquals(listOf("a"), w.started)
@@ -316,10 +311,10 @@ class AiQueueTest {
         val q = w.queue()
         assertFalse(q.working)
         q.want(listOf("a", "b", "c"))
-        idleUntil { q.working }
+        idleUntil("models working on a") { q.working }
         assertEquals(listOf(true), w.busy)
         w.held["a"]!!.countDown()
-        idleUntil { w.delivered.size == 3 && !q.working }
+        idleUntil("all three pages delivered and the queue idle") { w.delivered.size == 3 && !q.working }
         assertEquals("not once per page", listOf(true, false), w.busy)
     }
 
@@ -329,10 +324,10 @@ class AiQueueTest {
         w.quiet += "kept"
         val q = w.queue()
         q.want(listOf("kept"))
-        idleUntil { w.delivered.contains("kept") }
+        idleUntil("kept delivered") { w.delivered.contains("kept") }
         assertTrue(w.busy.isEmpty())
         q.want(listOf("kept", "made"))
-        idleUntil { w.delivered.contains("made") && !q.working }
+        idleUntil("made delivered and the queue idle") { w.delivered.contains("made") && !q.working }
         assertEquals(listOf(true, false), w.busy)
     }
 
@@ -343,12 +338,12 @@ class AiQueueTest {
         w.quiet += "hot"
         val q = w.queue(backoffMs = 60_000)
         q.want(listOf("hot"))
-        idleUntil { q.waiting }
+        idleUntil("hot put off") { q.waiting }
         assertFalse(q.working)
         assertTrue("put off before its models opened", w.busy.isEmpty())
         w.outcomes["big"] = { AiOutcome.Skipped(Fallback.TIMEOUT) }
         q.want(listOf("big"))
-        idleUntil { w.busy.size == 2 }
+        idleUntil("busy told twice") { w.busy.size == 2 }
         assertEquals(listOf(true, false), w.busy)
     }
 
@@ -359,11 +354,11 @@ class AiQueueTest {
         w.outcomes["a"] = { if (tries++ == 0) AiOutcome.Later else AiOutcome.Done(Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)) }
         val q = w.queue(backoffMs = 50)
         q.want(listOf("a"))
-        idleUntil { q.waiting }
+        idleUntil("a put off") { q.waiting }
         assertFalse(q.working)
         assertEquals(listOf(true, false), w.busy)
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(60))
-        idleUntil { w.delivered.contains("a") && !q.working }
+        idleUntil("a delivered and the queue idle") { w.delivered.contains("a") && !q.working }
         assertEquals(listOf(true, false, true, false), w.busy)
     }
 
@@ -377,15 +372,15 @@ class AiQueueTest {
         }
         val q = w.queue(backoffMs = 60_000)
         q.want(listOf("a"))
-        idleUntil { q.waiting }
+        idleUntil("a put off") { q.waiting }
         assertTrue(w.busy.isEmpty())
         w.quiet -= "a"
         w.held["a"] = CountDownLatch(1)
         q.wake()
-        idleUntil { q.working }
+        idleUntil("models working on a") { q.working }
         assertEquals(listOf(true), w.busy)
         w.held["a"]!!.countDown()
-        idleUntil { w.delivered.contains("a") && !q.working }
+        idleUntil("a delivered and the queue idle") { w.delivered.contains("a") && !q.working }
         assertEquals(listOf(true, false), w.busy)
     }
 
@@ -395,14 +390,14 @@ class AiQueueTest {
         w.held["a"] = CountDownLatch(1)
         val q = w.queue()
         q.want(listOf("a"))
-        idleUntil { q.working }
+        idleUntil("models working on a") { q.working }
         q.reset()
-        idleUntil { w.started.size == 2 }
+        idleUntil("a started again") { w.started.size == 2 }
         assertEquals(listOf("a"), w.canceled)
         assertTrue(q.working)
         assertEquals(listOf(true), w.busy)
         w.held["a"]!!.countDown()
-        idleUntil { w.delivered.contains("a") && !q.working }
+        idleUntil("a delivered and the queue idle") { w.delivered.contains("a") && !q.working }
         assertEquals(listOf(true, false), w.busy)
     }
 
@@ -415,17 +410,17 @@ class AiQueueTest {
         w.quiet += listOf("b", "c")
         val q = w.queue()
         q.want(listOf("a"))
-        idleUntil { q.working }
+        idleUntil("models working on a") { q.working }
         q.want(listOf("b", "c"))
-        idleUntil { w.started.contains("b") }
+        idleUntil("b started") { w.started.contains("b") }
         assertTrue("busy until b shows whether its models run", q.working)
         assertEquals(listOf(true), w.busy)
         // b ran no model: the page after it is not counted busy before its models start.
         w.held["b"]!!.countDown()
-        idleUntil { w.started.contains("c") && !q.working }
+        idleUntil("c started and the queue idle") { w.started.contains("c") && !q.working }
         assertEquals(listOf(true, false), w.busy)
         w.held["c"]!!.countDown()
-        idleUntil { w.delivered.contains("c") }
+        idleUntil("c delivered") { w.delivered.contains("c") }
         assertEquals(listOf(true, false), w.busy)
     }
 
@@ -435,12 +430,12 @@ class AiQueueTest {
         w.held["a"] = CountDownLatch(1)
         val q = w.queue()
         q.want(listOf("a"))
-        idleUntil { q.working }
+        idleUntil("models working on a") { q.working }
         q.pause()
         assertFalse(q.working)
         assertEquals(listOf(true, false), w.busy)
         q.resume()
-        idleUntil { w.started.size == 2 && q.working }
+        idleUntil("a started again and working") { w.started.size == 2 && q.working }
         assertEquals(listOf(true, false, true), w.busy)
         q.release()
         assertEquals(listOf(true, false, true, false), w.busy)

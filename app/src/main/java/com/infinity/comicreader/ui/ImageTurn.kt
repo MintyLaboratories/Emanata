@@ -51,6 +51,17 @@ class ImageTurn {
         locked = -1
     }
 
+    /**
+     * The book closed: a lock is let go, and a declined page forgotten. Returns [user], the
+     * orientation to request, when a lock was held; null otherwise.
+     */
+    fun release(user: Int): Int? {
+        declined = -1
+        val wasLocked = locked >= 0
+        locked = -1
+        return if (wasLocked) user else null
+    }
+
     /** All of this, for [restore]. */
     fun save(): IntArray = intArrayOf(locked, declined)
 

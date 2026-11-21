@@ -894,7 +894,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         handler.removeCallbacks(followDownloads)
         stopAutoScroll()
         openJob?.cancel()
-        closeSource()
+        closeSource(keepLock = true)
         deleteCropSource()
         readerAi.close()
         file = null
@@ -1712,7 +1712,10 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         }
     }
 
-    private fun closeSource() {
+    /** Closes the open book; with [keepLock], a page's screen lock stays for a recreated reader ([imageTurn]). */
+    private fun closeSource(keepLock: Boolean = false) {
+        // No page shows turned until the next book's: the screen goes back to the reader's own orientation.
+        if (!keepLock) imageTurn.release(spreadRotation.user)?.let { requestedOrientation = it }
         lateDetectionJob?.cancel()
         lateDetectionJob = null
         repackJob?.cancel()

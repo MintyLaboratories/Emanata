@@ -81,6 +81,20 @@ class ImageTurnTest {
     }
 
     @Test
+    fun aClosedBookLetsTheLockGoAndForgetsTheDeclinedPage() {
+        val t = ImageTurn()
+        assertNull(t.release(SCREEN_ORIENTATION_UNSPECIFIED))
+        t.show(3, enabled = true, sideways = false, user = SCREEN_ORIENTATION_UNSPECIFIED)
+        assertEquals(SCREEN_ORIENTATION_PORTRAIT, t.release(SCREEN_ORIENTATION_PORTRAIT))
+        assertEquals(-1, t.locked)
+        t.show(3, enabled = true, sideways = false, user = SCREEN_ORIENTATION_UNSPECIFIED)
+        t.choose()
+        assertNull(t.release(SCREEN_ORIENTATION_UNSPECIFIED))
+        // Page 3 of the next book locks.
+        assertEquals(SCREEN_ORIENTATION_LOCKED, t.show(3, enabled = true, sideways = false, user = SCREEN_ORIENTATION_UNSPECIFIED))
+    }
+
+    @Test
     fun saveAndRestoreCarryTheLockAndTheDeclinedPage() {
         val t = ImageTurn()
         t.show(3, enabled = true, sideways = false, user = SCREEN_ORIENTATION_UNSPECIFIED)

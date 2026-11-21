@@ -287,6 +287,21 @@ class ViewerActivityWideImageTest {
     }
 
     @Test
+    fun anotherBookOpenedFromATurnedPageLetsTheLockGo() {
+        val controller = Robolectric.buildActivity(ViewerActivity::class.java, intent()).setup()
+        val viewer = controller.get()
+        ready(viewer)
+        repeat(2) { viewer.next() }
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_LOCKED, viewer.requestedOrientation)
+        // A book that fails to open shows no page that could let the lock go.
+        val broken = File(dir, "Tale 004.cbz").apply { writeBytes(ByteArray(64) { it.toByte() }) }
+        controller.newIntent(Intent(context, ViewerActivity::class.java).putExtra(ViewerActivity.EXTRA_PATH, broken.absolutePath))
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED, viewer.requestedOrientation)
+        waitUntil { viewer.findViewById<View>(R.id.viewer_progress).visibility != View.VISIBLE }
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED, viewer.requestedOrientation)
+    }
+
+    @Test
     fun aLockedReaderStoppedAndStartedStaysLockedAndLetsGoAfter() {
         val controller = Robolectric.buildActivity(ViewerActivity::class.java, intent()).setup()
         val viewer = controller.get()

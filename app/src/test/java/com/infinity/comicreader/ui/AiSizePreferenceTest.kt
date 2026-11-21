@@ -18,11 +18,13 @@ import androidx.preference.TwoStatePreference
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.R
 import com.infinity.comicreader.ai.AiThresholds
+import com.infinity.comicreader.ai.OfflineDownloads
 import com.infinity.comicreader.data.Prefs
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
@@ -34,6 +36,10 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class AiSizePreferenceTest {
+
+    /** Turning AI processing on downloads the chain's models: kept off the network. */
+    @get:Rule
+    val downloads = OfflineDownloads()
 
     private lateinit var context: Context
 

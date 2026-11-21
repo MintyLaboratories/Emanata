@@ -1,5 +1,7 @@
 package com.infinity.comicreader.net
 
+import com.infinity.comicreader.testing.Waits
+import com.infinity.comicreader.testing.awaitUntil
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
@@ -94,7 +96,7 @@ class SmbFsTest {
         assertEquals("secret", String(named.password))
     }
 
-    @Test(timeout = 20_000)
+    @Test(timeout = Waits.LIVENESS_MS)
     fun callersWaitingOnAFailedConnectFailWithoutConnectingAgain() {
         Silent().use { silent ->
             val fs = SmbFs(share(silent.port))
@@ -112,7 +114,7 @@ class SmbFsTest {
                     }
                 }
             }
-            callers.forEach { it.join(10_000) }
+            awaitUntil("the four callers to fail") { callers.none { it.isAlive } }
             assertEquals(null, failures.get())
             assertEquals(1, silent.connections.get())
             fs.retry()
@@ -122,7 +124,7 @@ class SmbFsTest {
         }
     }
 
-    @Test(timeout = 20_000)
+    @Test(timeout = Waits.LIVENESS_MS)
     fun closingDoesNotWaitForAConnectUnderWay() {
         Silent().use { silent ->
             val fs = SmbFs(share(silent.port))
@@ -140,7 +142,7 @@ class SmbFsTest {
             val tookMs = (System.nanoTime() - started) / 1_000_000
             assertTrue("close took $tookMs ms", tookMs < 1_000)
             socket.close()
-            listing.join(10_000)
+            awaitUntil("the listing to fail") { !listing.isAlive }
             assertTrue("failed with ${failure.get()}", failure.get() is RemoteException)
         }
     }

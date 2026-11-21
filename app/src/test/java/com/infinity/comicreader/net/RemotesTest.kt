@@ -1,5 +1,6 @@
 package com.infinity.comicreader.net
 
+import com.infinity.comicreader.testing.awaitUntil
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -345,7 +346,7 @@ class RemotesTest {
         val held = CountDownLatch(1)
         fake.slow = held
         val read = thread { input.read(0, ByteArray(10), 0, 10) }
-        while (fake.held.get() == 0) Thread.sleep(5)
+        awaitUntil("the read to be held") { fake.held.get() > 0 }
         now += 1_500
         assertEquals(1_500L, Remotes.silentFor(reader))
         fake.slow = null
@@ -361,7 +362,7 @@ class RemotesTest {
         val held = CountDownLatch(1)
         fake.slow = held
         val list = thread { Remotes.askingAs(reader) { Remotes.list("/net/s1/Series") } }
-        while (fake.held.get() == 0) Thread.sleep(5)
+        awaitUntil("the listing to be held") { fake.held.get() > 0 }
         now += 700
         assertEquals(700L, Remotes.silentFor(reader))
         fake.slow = null
@@ -381,7 +382,7 @@ class RemotesTest {
         fake.slow = held
         val reads = listOf(theirs, anyone).map { input -> thread { input.read(0, ByteArray(1), 0, 1) } }
         val listing = thread { Remotes.list("/net/s1/Series") }
-        while (fake.held.get() < 3) Thread.sleep(5)
+        awaitUntil("both reads and the listing to be held") { fake.held.get() >= 3 }
         now += 5_000
         assertEquals(0L, Remotes.silentFor(reader))
         assertEquals(5_000L, Remotes.silentFor(covers))
@@ -404,7 +405,7 @@ class RemotesTest {
             fake.slowReads = 16_384L..99_999L
             fake.slow = held
             channel.read(java.nio.ByteBuffer.allocate(10))
-            while (fake.held.get() == 0) Thread.sleep(5)
+            awaitUntil("a run coming ahead to be held") { fake.held.get() > 0 }
             now += 5_000
             // Only the runs coming ahead are held: background work, not the reader's.
             assertEquals(0L, Remotes.silentFor(reader))
@@ -412,9 +413,10 @@ class RemotesTest {
                 channel.position(20_000)
                 channel.read(java.nio.ByteBuffer.allocate(10))
             }
-            while (Remotes.silentFor(reader) == 0L) {
+            // The clock moves on between looks: silence only shows once time passes.
+            awaitUntil("the reader to wait on a run coming ahead") {
                 now += 1
-                Thread.sleep(5)
+                Remotes.silentFor(reader) != 0L
             }
             val since = now - Remotes.silentFor(reader)
             now += 3_000

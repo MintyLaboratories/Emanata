@@ -17,7 +17,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
-/** Settings show the crop anchor covers use, a stored one no longer offered as the default. */
+/** Settings offer Top and Center and show an unknown stored crop anchor as the default. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class SettingsCropAnchorTest {

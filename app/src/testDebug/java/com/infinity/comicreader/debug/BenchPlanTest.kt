@@ -2,6 +2,7 @@ package com.infinity.comicreader.debug
 
 import android.app.Application
 import android.content.Intent
+import com.infinity.comicreader.data.WidePages
 import com.infinity.comicreader.reader.CoreSet
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -42,6 +43,16 @@ class BenchPlanTest {
     }
 
     @Test
+    fun theWidePagesChoiceIsReadAndRecorded() {
+        for (w in WidePages.entries) {
+            val p = BenchPlan.of(read().putExtra("wide", w.key))!!
+            assertEquals(w, p.wide)
+            assertEquals(w.key, p.toJson().getString("wide"))
+        }
+        assertEquals("absent: recorded as kept", true, BenchPlan.of(read())!!.toJson().isNull("wide"))
+    }
+
+    @Test
     fun absentKnobsKeepTheSettings() {
         val p = BenchPlan.of(read())!!
         assertNull(p.platformCores)
@@ -50,6 +61,7 @@ class BenchPlanTest {
         assertNull(p.preload)
         assertNull(p.seams)
         assertNull(p.behind)
+        assertNull(p.wide)
     }
 
     @Test
@@ -58,5 +70,6 @@ class BenchPlanTest {
         assertNull(BenchPlan.of(read().putExtra("seams", "maybe")))
         assertNull(BenchPlan.of(read().putExtra("platformahead", "maybe")))
         assertNull(BenchPlan.of(read().putExtra("behind", "maybe")))
+        assertNull(BenchPlan.of(read().putExtra("wide", "rotate")))
     }
 }

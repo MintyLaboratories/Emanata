@@ -10,6 +10,7 @@ import com.infinity.comicreader.ai.ModelCatalog
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ReaderLayout
 import com.infinity.comicreader.data.TwoPage
+import com.infinity.comicreader.data.WidePages
 import com.infinity.comicreader.reader.TapZones
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -30,7 +31,7 @@ class KeptPrefsTest {
     private val twoPagesByKey = BenchPlan.of(
         Intent().putExtra("do", "read").putExtra("path", "/books/a.cbz").putExtra("layout", "two")
             .putExtra("input", "key").putExtra("crop", true).putExtra("doubletap", "off")
-            .putExtra("preload", 4).putExtra("seams", "off")
+            .putExtra("preload", 4).putExtra("seams", "off").putExtra("wide", "orientation")
     )!!
 
     private fun mine() = prefs.apply {
@@ -45,6 +46,7 @@ class KeptPrefsTest {
         tapZones = TapZones.entries.first { it != TapZones.LEFT_RIGHT }.value
         preload = 1
         joinSpreads = true
+        widePages = WidePages.NOTHING
     }
 
     @Test
@@ -58,6 +60,7 @@ class KeptPrefsTest {
         assertFalse(prefs.doubleTapZoom)
         assertEquals(4, prefs.preload)
         assertFalse(prefs.joinSpreads)
+        assertEquals(WidePages.ORIENTATION, prefs.widePages)
         assertTrue(file.exists())
         kept.restore()
         assertEquals(before, KeptPrefs.snapshot(prefs).toString())

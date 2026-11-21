@@ -86,6 +86,12 @@ Current cooling devices from HAL:
         self.assertEqual({"start": 27.0, "max": 27.5, "end": 27.5}, s["BAT"])
 
 
+class Extras(unittest.TestCase):
+    def test_a_wide_pages_choice_is_a_string_extra(self):
+        self.assertEqual(["--es", "wide", "image", "--ei", "turns", "4", "--ez", "fresh", "true"],
+                         bench.extras({"wide": "image", "turns": 4, "fresh": True}))
+
+
 class PackageInfo(unittest.TestCase):
     def test_reads_version_and_install_time(self):
         text = "    versionCode=1234 minSdk=26 targetSdk=36\n    lastUpdateTime=2026-01-02 03:04:05\n"

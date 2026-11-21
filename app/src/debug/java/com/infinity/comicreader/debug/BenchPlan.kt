@@ -3,6 +3,7 @@ package com.infinity.comicreader.debug
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import com.infinity.comicreader.ai.Models
+import com.infinity.comicreader.data.WidePages
 import com.infinity.comicreader.reader.CoreSet
 import com.infinity.comicreader.reader.JxlPages
 import com.infinity.comicreader.reader.NativeResampler
@@ -84,6 +85,8 @@ internal data class BenchPlan(
     val preload: Int? = null,
     /** Spreads joined by their seams, the setting, which runs the seam scans; null keeps it. */
     val seams: Boolean? = null,
+    /** What paged reading in portrait does for a wide page shown whole, the setting; null keeps it. */
+    val wide: WidePages? = null,
     /** The screen behind prepared ([com.infinity.comicreader.ui.PageAdapter.screenBehind]); null keeps it. */
     val behind: Boolean? = null,
     /** AI processing: the catalog ids run as the global chain, in step order; empty for off; null keeps it. */
@@ -102,6 +105,7 @@ internal data class BenchPlan(
         .put("platformCores", platformCores?.key ?: JSONObject.NULL).put("decodeThreads", decodeThreads ?: JSONObject.NULL)
         .put("platformAhead", platformAhead ?: JSONObject.NULL)
         .put("preload", preload ?: JSONObject.NULL).put("seams", seams ?: JSONObject.NULL)
+        .put("wide", wide?.key ?: JSONObject.NULL)
         .put("behind", behind ?: JSONObject.NULL)
         .put("ai", ai?.let { if (it.isEmpty()) "off" else it.joinToString(",") } ?: JSONObject.NULL)
 
@@ -181,6 +185,7 @@ internal data class BenchPlan(
                 decodeThreads = if (intent.hasExtra("decoders")) intent.getIntExtra("decoders", 2).coerceIn(1, 8) else null,
                 preload = if (intent.hasExtra("preload")) intent.getIntExtra("preload", 2).coerceIn(0, 6) else null,
                 seams = intent.getStringExtra("seams")?.let { if (it == "on" || it == "off") it == "on" else return null },
+                wide = intent.getStringExtra("wide")?.let { k -> WidePages.entries.firstOrNull { it.key == k } ?: return null },
                 behind = intent.getStringExtra("behind")?.let { if (it == "on" || it == "off") it == "on" else return null },
                 ai = intent.getStringExtra("ai")?.let { aiOf(it) ?: return null }
             )

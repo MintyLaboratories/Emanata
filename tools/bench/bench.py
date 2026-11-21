@@ -24,9 +24,10 @@ setups per book). "jxl" ("native"/"coder") picks how JPEG XL pages decode (plans
 decodes of pages read ahead (plans/jxl-later.json). "platformcores" ("any", "big", "prime") pins
 the platform's one-thread decodes (JPEG, PNG, WebP), "platformahead" ("on"/"off") pins those of
 pages read ahead too, "decoders" sets how many pages decode at
-once, "preload" the pages read ahead and "seams" ("on"/"off") joining spreads by their seams,
-which runs the seam scans (both settings, put back after the run); "behind" ("on"/"off")
-prepares the screen behind or not (plans/behind.json).
+once, "preload" the pages read ahead, "seams" ("on"/"off") joining spreads by their seams,
+which runs the seam scans, and "wide" ("nothing", "orientation", "image") what a wide page does
+in portrait (all settings, put back after the run; each result's "widePages" names the one in
+effect); "behind" ("on"/"off") prepares the screen behind or not (plans/behind.json).
 
 `ab` installs two builds in turn (A B B A, A B B A, ...) and runs the plan on each, so drift in
 temperature or background work falls on both alike; results carry "variant": "a" or "b". After
@@ -207,7 +208,7 @@ def make(args) -> None:
                 print("packed", book, flush=True)
     wide = out / "synth-2k-jpeg-wide.cbz"
     if not wide.exists() and pages["2k"] >= 12:
-        # A two-page spread as one wide page among single pages, for "Rotate for spreads".
+        # A two-page spread as one wide page among single pages, for the wide-pages setting ("wide").
         enc = out / "enc-2k-jpeg"
         spread = out / "spread-2k.jpg"
         run(["magick", str(out / "pages-2k" / "page005.png"), str(out / "pages-2k" / "page006.png"), "+append",

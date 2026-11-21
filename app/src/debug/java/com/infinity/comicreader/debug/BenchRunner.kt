@@ -215,7 +215,7 @@ internal class BenchRunner(private val app: Application) {
         val allDecodes = probe.decodes + aside.values.sum()
         return JSONObject()
             .put("kind", "read").put("rep", rep).put("warmup", rep < 1).put("cache", cacheState(plan, rep))
-            .put("plan", plan.toJson()).put("screen", screen(viewer))
+            .put("plan", plan.toJson()).put("screen", screen(viewer)).put("widePages", Prefs(app).widePages.key)
             .put("openVisibleMs", Stats.ms(openVisible)).put("openSharpMs", Stats.ms(openSharp)).put("openTimedOut", !openOk)
             .put("openStartMs", if (probe.opening >= 0) Stats.ms(probe.opening - start) else -1)
             .put("openCpuMs", cpuOpen).put("openDecodes", openDecodes)

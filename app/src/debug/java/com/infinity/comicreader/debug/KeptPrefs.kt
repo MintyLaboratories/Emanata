@@ -6,6 +6,7 @@ import com.infinity.comicreader.ai.Models
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ReaderLayout
 import com.infinity.comicreader.data.TwoPage
+import com.infinity.comicreader.data.WidePages
 import com.infinity.comicreader.reader.TapZones
 import org.json.JSONObject
 import java.io.File
@@ -35,6 +36,7 @@ internal class KeptPrefs(private val prefs: Prefs, private val file: File) {
         plan.doubleTap?.let { prefs.doubleTapZoom = it }
         plan.preload?.let { prefs.preload = it }
         plan.seams?.let { prefs.joinSpreads = it }
+        plan.wide?.let { prefs.widePages = it }
         // Both default chains run the plan's models, so a book read as manga runs them too.
         plan.ai?.let { ids ->
             val models = ids.mapNotNull { Models.byId(it) }
@@ -64,6 +66,7 @@ internal class KeptPrefs(private val prefs: Prefs, private val file: File) {
             .put("tapZones", prefs.tapZones)
             .put("preload", prefs.preload)
             .put("joinSpreads", prefs.joinSpreads)
+            .put("widePages", prefs.widePages.key)
             .put("ai", prefs.aiEnabled)
             .put("aiModels", JSONObject().apply {
                 for (kind in ChainKind.entries) {
@@ -87,6 +90,7 @@ internal class KeptPrefs(private val prefs: Prefs, private val file: File) {
                 prefs.tapZones = kept.getString("tapZones")
                 if (kept.has("preload")) prefs.preload = kept.getInt("preload")
                 if (kept.has("joinSpreads")) prefs.joinSpreads = kept.getBoolean("joinSpreads")
+                if (kept.has("widePages")) prefs.widePages = WidePages.of(kept.getString("widePages"))
                 if (kept.has("ai")) prefs.aiEnabled = kept.getBoolean("ai")
                 kept.optJSONObject("aiModels")?.let { all ->
                     for (kind in ChainKind.entries) {

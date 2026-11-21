@@ -58,7 +58,7 @@ class CoverStyleTest {
         assertEquals(ThumbFit.AUTO, ThumbFit.of(null))
         assertEquals(CropAnchor.TOP, CropAnchor.of(null))
         assertEquals(CropAnchor.TOP, CropAnchor.of("bottom"))
-        // The removed Smart anchor reads as the default.
+        // An unknown stored anchor reads as the default.
         assertEquals(CropAnchor.TOP, CropAnchor.of("smart"))
         assertEquals(listOf("top", "center"), CropAnchor.entries.map { it.key })
     }

@@ -1,5 +1,6 @@
 package com.infinity.comicreader.data
 
+import com.infinity.comicreader.testing.awaitUntil
 import com.infinity.comicreader.util.PageHash
 import com.infinity.comicreader.util.SimilarBooks
 import org.junit.Assert.assertEquals
@@ -92,7 +93,8 @@ class SimilarFinderTest {
         val most = AtomicInteger()
         val finder = SimilarFinder(store, { f -> BookId(f.name.hashCode().toLong()) }, { f, _, _ ->
             most.accumulateAndGet(inside.incrementAndGet(), ::maxOf)
-            Thread.sleep(20)
+            // Each read holds until two have been under way at once.
+            awaitUntil("a second read beside the first") { most.get() >= 2 }
             inside.decrementAndGet()
             SimilarFinder.Read(entry(30, shift = f.name.length * 1000))
         }, workers = 4, limit = { 2 })

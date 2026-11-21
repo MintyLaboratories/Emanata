@@ -20,6 +20,7 @@ import com.infinity.comicreader.ai.ModelRefusal
 import com.infinity.comicreader.ai.ModelStore
 import com.infinity.comicreader.ai.UserModels
 import com.infinity.comicreader.ai.fakeFiles
+import com.infinity.comicreader.testing.idleUntil
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -88,17 +89,6 @@ class ModelImportWarningTest {
 
     private fun idle() = shadowOf(Looper.getMainLooper()).idle()
 
-    /** Idles the main thread until [done], within 20 s. */
-    private fun until(done: () -> Boolean) {
-        val end = System.currentTimeMillis() + 20_000
-        while (System.currentTimeMillis() < end) {
-            idle()
-            if (done()) return
-            Thread.sleep(10)
-        }
-        idle()
-    }
-
     /** The model manager, open. */
     private var manager: ActivityController<ModelsActivity>? = null
 
@@ -107,7 +97,7 @@ class ModelImportWarningTest {
         manager = Robolectric.buildActivity(ModelsActivity::class.java).setup()
         ModelImports.start(context, pair("Slow lines"))
         // The check's thread sets the state before the main thread hears of it: wait for the dialog too.
-        until { (ModelImports.state.value as? ImportState.Fit)?.warned == true && warning() != null }
+        idleUntil("the slow model's warning") { (ModelImports.state.value as? ImportState.Fit)?.warned == true && warning() != null }
         val fit = ModelImports.state.value as ImportState.Fit
         val dialog = warning()
         assertNotNull("the warning", dialog)
@@ -153,7 +143,8 @@ class ModelImportWarningTest {
         dialog.getButton(AlertDialog.BUTTON_NEGATIVE).performClick()
         idle()
         assertEquals(ImportState.Idle, ModelImports.state.value)
-        until { !store.staging(fit.id).exists() }
+        // The drop is queued with the imports' work: wait for it.
+        ModelImports.settle()
         assertFalse(store.staging(fit.id).exists())
         assertTrue(UserModels.all.isEmpty())
     }
@@ -165,7 +156,8 @@ class ModelImportWarningTest {
         idle()
         assertEquals(ImportState.Idle, ModelImports.state.value)
         assertFalse(dialog.isShowing)
-        until { !store.staging(fit.id).exists() }
+        // The drop is queued with the imports' work: wait for it.
+        ModelImports.settle()
         assertFalse(store.staging(fit.id).exists())
     }
 

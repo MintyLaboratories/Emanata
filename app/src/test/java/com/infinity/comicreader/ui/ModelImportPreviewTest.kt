@@ -25,6 +25,7 @@ import com.infinity.comicreader.ai.ModelStore
 import com.infinity.comicreader.ai.PreviewPicture
 import com.infinity.comicreader.ai.UserModels
 import com.infinity.comicreader.ai.fakeFiles
+import com.infinity.comicreader.testing.idleUntil
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -96,17 +97,6 @@ class ModelImportPreviewTest {
 
     private fun idle() = shadowOf(Looper.getMainLooper()).idle()
 
-    /** Idles the main thread until [done], within 20 s. */
-    private fun until(done: () -> Boolean) {
-        val end = System.currentTimeMillis() + 20_000
-        while (System.currentTimeMillis() < end) {
-            idle()
-            if (done()) return
-            Thread.sleep(10)
-        }
-        idle()
-    }
-
     /** The latest dialog when it is the before and after, showing; else null. */
     private fun preview(): AlertDialog? =
         (ShadowDialog.getLatestDialog() as? AlertDialog)?.takeIf { it.isShowing && it.findViewById<LinearLayout>(R.id.import_preview_list) != null }
@@ -115,7 +105,7 @@ class ModelImportPreviewTest {
     private fun previewed(): Pair<ImportState.Fit, AlertDialog> {
         manager = Robolectric.buildActivity(ModelsActivity::class.java).setup()
         ModelImports.start(context, pair("Sharp lines"))
-        until { (ModelImports.state.value as? ImportState.Fit)?.previewing == true && preview() != null }
+        idleUntil("the checked model's before and after") { (ModelImports.state.value as? ImportState.Fit)?.previewing == true && preview() != null }
         val fit = ModelImports.state.value as ImportState.Fit
         return fit to preview()!!
     }
@@ -162,7 +152,8 @@ class ModelImportPreviewTest {
         dialog.getButton(AlertDialog.BUTTON_NEGATIVE).performClick()
         idle()
         assertEquals(ImportState.Idle, ModelImports.state.value)
-        until { !store.staging(fit.id).exists() }
+        // The drop is queued with the imports' work: wait for it.
+        ModelImports.settle()
         assertFalse(store.staging(fit.id).exists())
         assertTrue(UserModels.all.isEmpty())
     }
@@ -174,7 +165,8 @@ class ModelImportPreviewTest {
         dialog.onBackPressed()
         idle()
         assertEquals(ImportState.Idle, ModelImports.state.value)
-        until { !store.staging(fit.id).exists() }
+        // The drop is queued with the imports' work: wait for it.
+        ModelImports.settle()
         assertFalse(store.staging(fit.id).exists())
     }
 

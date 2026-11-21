@@ -1,6 +1,7 @@
 package com.infinity.comicreader.reader
 
 import android.graphics.Bitmap
+import com.infinity.comicreader.testing.Waits
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -27,7 +28,7 @@ class GuardedSourceTest {
         override fun pageSize(index: Int): IntArray {
             reads++
             started.countDown()
-            proceed.await(5, TimeUnit.SECONDS)
+            proceed.pass("the test to let the read end")
             if (closes.get() > 0) closedDuringRead = true
             return intArrayOf(10, 20)
         }
@@ -57,7 +58,7 @@ class GuardedSourceTest {
         assertEquals(0, inner.closes.get())
 
         inner.proceed.countDown()
-        reader.join(5_000)
+        reader.end("the read")
         assertFalse(inner.closedDuringRead)
         assertEquals(20, size?.get(1))
         assertEquals(1, inner.closes.get())
@@ -87,7 +88,7 @@ class GuardedSourceTest {
             override fun render(region: Region, width: Int, height: Int, linear: Boolean, scaling: Scaling): Bitmap {
                 renders++
                 started.countDown()
-                proceed.await(5, TimeUnit.SECONDS)
+                proceed.pass("the test to let the render end")
                 throw IllegalStateException(if (closes.get() > 0) "closed" else "rendered")
             }
 
@@ -114,7 +115,7 @@ class GuardedSourceTest {
         guarded.close()
         assertEquals(0, inner.closes.get())
         inner.proceed.countDown()
-        renderer.join(5_000)
+        renderer.end("the render")
         assertEquals("rendered", message)
         assertEquals(1, inner.closes.get())
 
@@ -130,5 +131,18 @@ class GuardedSourceTest {
         guarded.close()
         guarded.close()
         assertEquals(1, inner.closes.get())
+    }
+
+    private companion object {
+        /** Waits for the test to open this gate; throws naming [what] if it never does. */
+        fun CountDownLatch.pass(what: String) {
+            if (!await(Waits.LIVENESS_MS, TimeUnit.MILLISECONDS)) throw AssertionError("Gave up waiting for $what")
+        }
+
+        /** Joins this thread; throws naming [what] if it never ends. */
+        fun Thread.end(what: String) {
+            join(Waits.LIVENESS_MS)
+            if (isAlive) throw AssertionError("Gave up waiting for $what")
+        }
     }
 }

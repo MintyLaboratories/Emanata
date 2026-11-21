@@ -1,10 +1,11 @@
 # /// script
 # requires-python = ">=3.10,<3.13"
 # dependencies = [
-#     "paddlepaddle==3.1.0",
+#     "paddlepaddle==3.3.1",
 #     "paddle2onnx==2.1.0",
 #     "onnx==1.17.0",
 #     "pnnx==20261020",
+#     "packaging==26.3",
 # ]
 # ///
 """Converts PaddleOCR's PP-OCRv5 mobile text detector to ncnn files the app can run.
@@ -12,6 +13,8 @@
 Run from the repository root:
 
     uv run tools/text-detector/convert.py [--work <dir>]
+
+On Linux: on Windows, paddle2onnx 2.1.0 does not load with PaddlePaddle 3.3.1.
 
 Downloads the official model (Apache-2.0) from Hugging Face at a pinned revision and checks
 its SHA-256, exports it to ONNX with paddle2onnx, converts that to ncnn with pnnx (fp16
@@ -70,7 +73,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--work', type=pathlib.Path, help='folder for downloads and intermediates (default: temporary)')
     args = parser.parse_args()
-    work = args.work or pathlib.Path(tempfile.mkdtemp())
+    # Absolute, as the tools run with the work folder as their current directory.
+    work = (args.work or pathlib.Path(tempfile.mkdtemp())).resolve()
     model = work / 'model'
     model.mkdir(parents=True, exist_ok=True)
     for name, digest in FILES.items():

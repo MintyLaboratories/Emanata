@@ -10,7 +10,8 @@ import kotlinx.coroutines.async
 /**
  * The startup folder's share being waited for ([ListActivity]), kept across a recreate
  * such as a rotation, so the wait goes on instead of starting over: the folder, its
- * listing under way, since when, and whether "Wait" was chosen.
+ * listing under way, since when, and whether "Wait" was chosen. Then, once given up
+ * on, the share still asked in the background ([behind]).
  */
 class StartupWait : ViewModel() {
     var dir: RemoteFile? = null
@@ -32,6 +33,17 @@ class StartupWait : ViewModel() {
         since = now
         waitChosen = false
         return viewModelScope.async(AppDispatchers.io) { list() }.also { attempt = it }
+    }
+
+    /** The startup share given up on, asked again while the folder opened instead is browsed; null when none is. */
+    var behind: Behind? = null
+
+    /**
+     * Startup folder [dir], given up on for [fallback]: its first listing [attempt], the
+     * [answer] last taken (null until [attempt]'s), and how long to [wait] before asking again.
+     */
+    class Behind(val dir: RemoteFile, val attempt: Deferred<Result<List<RemoteFile>>>, val fallback: String, var wait: Long) {
+        var answer: Result<List<RemoteFile>>? = null
     }
 
     /** Done waiting: the next startup waits afresh. The listing goes on for whoever holds it. */

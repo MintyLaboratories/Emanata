@@ -729,9 +729,11 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
         }
         if (tab == TAB_BROWSE) {
             if (dir != null) loadDirectory(dir) else openStartDirectory()
+            keepTryingBehind()
             return
         }
         currentDir = dir
+        keepTryingBehind()
         if (dir == null) {
             lifecycleScope.launch {
                 val start = withContext(AppDispatchers.io) { startDirectory() }
@@ -894,28 +896,41 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
         }
         loadDirectory(device)
         val fallback = currentDir?.absolutePath ?: return
-        keepTrying(dir, attempt, fallback)
+        keepTrying(StartupWait.Behind(dir, attempt, fallback, SHARE_RETRY_MS).also { startupWait.behind = it })
+    }
+
+    /** The startup share given up on that this screen asks ([keepTrying]); a startup that gave up before [startUp] ended already does. */
+    private var tryingBehind: StartupWait.Behind? = null
+
+    /** Goes on asking the startup share given up on before a recreate ([keepTrying]) while the folder opened instead still shows. */
+    private fun keepTryingBehind() {
+        val behind = startupWait.behind ?: return
+        if (currentDir?.absolutePath == behind.fallback) keepTrying(behind) else startupWait.behind = null
     }
 
     /**
-     * Waits for [attempt] at listing [dir], then asks again while the share cannot be reached,
+     * Waits for [behind]'s first listing, then asks its share again while it cannot be reached,
      * twice as late each time up to [SHARE_RETRY_MAX_MS], only while the screen is shown and
-     * [fallback] is the folder browsed. Then offers to open [dir], or says why it cannot be. A
-     * refused sign-in is never tried again unasked: repeated ones can lock an account.
+     * its fallback is the folder browsed. Then offers to open its folder, or says why it cannot
+     * be. A refused sign-in is never tried again unasked: repeated ones can lock an account.
      */
-    private fun keepTrying(dir: RemoteFile, attempt: Deferred<Result<List<RemoteFile>>>, fallback: String) {
+    private fun keepTrying(behind: StartupWait.Behind) {
+        if (tryingBehind === behind) return
+        tryingBehind = behind
+        val dir = behind.dir
         lifecycleScope.launch {
-            var answer = attempt.await()
-            var wait = SHARE_RETRY_MS
-            fun waiting() = currentDir?.absolutePath == fallback
+            val first = behind.attempt.await()
+            if (behind.answer == null) behind.answer = first
+            fun waiting() = currentDir?.absolutePath == behind.fallback
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                while (waiting() && reasonOf(answer) == RemoteException.Reason.UNREACHABLE) {
-                    delay(wait)
-                    wait = (wait * 2).coerceAtMost(SHARE_RETRY_MAX_MS)
+                while (waiting() && reasonOf(behind.answer!!) == RemoteException.Reason.UNREACHABLE) {
+                    delay(behind.wait)
+                    behind.wait = (behind.wait * 2).coerceAtMost(SHARE_RETRY_MAX_MS)
                     Remotes.idOf(dir.absolutePath)?.let { Remotes.retry(it) }
-                    answer = withContext(AppDispatchers.io) { listShare(dir) }
+                    behind.answer = withContext(AppDispatchers.io) { listShare(dir) }
                 }
-                if (waiting() && mode == TAB_BROWSE) shareAnswered(dir, answer)
+                if (startupWait.behind === behind) startupWait.behind = null
+                if (waiting() && mode == TAB_BROWSE) shareAnswered(dir, behind.answer!!)
                 this@launch.cancel()
             }
         }

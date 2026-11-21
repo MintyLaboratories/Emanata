@@ -2,3 +2,4 @@ com.infinity.comicreader.testing.ForgetRecyclerViews
 com.infinity.comicreader.testing.JvmBookIds
 com.infinity.comicreader.testing.ResetAnimationClock
 com.infinity.comicreader.testing.FreshModelDownloads
+com.infinity.comicreader.testing.ForgetSnackbars

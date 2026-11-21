@@ -14,9 +14,10 @@ import java.util.concurrent.CancellationException
 /**
  * Checks a model the user imports before it is taken in: it opens as every model does
  * ([Sessions.attempt]: scale, edge trim, context, memory, the GPU against the CPU), then
- * - it runs on the import's test pictures, each cut to one tile ([oneTile]), or without them on
- *   a small RGB picture, a smooth gradient with a few hard shapes; how its output looks is not
- *   judged: the pictures' before and after ([Preview]) are for the user to weigh;
+ * - it runs on the first of the import's test pictures, cut to one tile ([oneTile]), or without
+ *   them on a small RGB picture, a smooth gradient with a few hard shapes; the other test
+ *   pictures run only once it is found fit, so a refused model spends no more; how its output
+ *   looks is not judged: the pictures' before and after ([Preview]) are for the user to weigh;
  * - it is timed on a synthetic [PAGE_W] x [PAGE_H] page, the size catalog models are timed
  *   on: the whole page while its pace says it takes at most [FULL_PAGE_MS], else from its
  *   first [TIMED_TILES] tiles, the first (the GPU's warm-up) counted once and the rest at
@@ -103,18 +104,26 @@ internal object ModelCheck {
             val opening = Sessions.attempt(runtime, files, threads, memoryBytes = memoryBytes, canceled = stop)
             val session = opening.session ?: return Result.Refused(opening.refusal ?: ModelRefusal.NOT_LOADED, opening.bytes, opening.limit)
             session.use { s ->
-                val previews = if (pictures.isEmpty()) {
-                    if (!runs(s, stop)) return Result.Refused(ModelRefusal.DOES_NOT_RUN)
-                    emptyList()
-                } else {
-                    previews(s, pictures, stop) ?: return Result.Refused(ModelRefusal.DOES_NOT_RUN)
-                }
-                val heat = headroom()
-                val ms = pageMs(s, stop, clock) ?: return Result.Refused(ModelRefusal.DOES_NOT_RUN)
-                Log.i(TAG, "${files.param.name}: about $ms ms for a ${PAGE_W}x$PAGE_H page, from thermal headroom $heat")
-                return when (val r = judge(s.geometry.scale, ms, heat)) {
-                    is Result.Fit -> r.copy(previews = previews)
-                    is Result.Refused -> r
+                val made = ArrayList<Preview>()
+                var kept = false
+                try {
+                    if (pictures.isEmpty()) {
+                        if (!runs(s, stop)) return Result.Refused(ModelRefusal.DOES_NOT_RUN)
+                    } else {
+                        made += preview(s, pictures[0], stop) ?: return Result.Refused(ModelRefusal.DOES_NOT_RUN)
+                    }
+                    val heat = headroom()
+                    val ms = pageMs(s, stop, clock) ?: return Result.Refused(ModelRefusal.DOES_NOT_RUN)
+                    Log.i(TAG, "${files.param.name}: about $ms ms for a ${PAGE_W}x$PAGE_H page, from thermal headroom $heat")
+                    val r = when (val j = judge(s.geometry.scale, ms, heat)) {
+                        is Result.Fit -> j
+                        is Result.Refused -> return j
+                    }
+                    for (p in pictures.drop(1)) made += preview(s, p, stop) ?: return Result.Refused(ModelRefusal.DOES_NOT_RUN)
+                    kept = true
+                    return r.copy(previews = made)
+                } finally {
+                    if (!kept) for (p in made) drop(p, pictures)
                 }
             }
         } catch (e: CancellationException) {
@@ -146,13 +155,24 @@ internal object ModelCheck {
     }
 
     /**
-     * [s]'s output of each of [pictures], cut to one tile first ([oneTile]), gray output
-     * collapsed to gray as the reader's is; null when one fails.
+     * [s]'s output of [picture], cut to one tile first ([oneTile]), gray output collapsed to
+     * gray as the reader's is; null when it fails.
      */
-    private fun previews(s: Session, pictures: List<Bitmap>, canceled: () -> Boolean): List<Preview>? = pictures.map { p ->
-        val before = oneTile(s, p)
-        val after = TileEngine.run(s, before, PageLimits(timeoutMs = TIME_LIMIT_MS), canceled, gray = null).bitmap ?: return null
-        Preview(before, after)
+    private fun preview(s: Session, picture: Bitmap, canceled: () -> Boolean): Preview? {
+        val before = oneTile(s, picture)
+        var after: Bitmap? = null
+        try {
+            after = TileEngine.run(s, before, PageLimits(timeoutMs = TIME_LIMIT_MS), canceled, gray = null).bitmap
+            return after?.let { Preview(before, it) }
+        } finally {
+            if (after == null && before !== picture) before.recycle()
+        }
+    }
+
+    /** Recycles [p]'s bitmaps, but not a before that is one of the caller's [pictures]. */
+    private fun drop(p: Preview, pictures: List<Bitmap>) {
+        p.after.recycle()
+        if (pictures.none { it === p.before }) p.before.recycle()
     }
 
     /** The middle of [p], cut to the largest square [s] runs in one tile; [p] itself when it fits whole. */

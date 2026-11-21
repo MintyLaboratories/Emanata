@@ -1,6 +1,7 @@
 package com.infinity.comicreader.ai
 
 import android.app.Application
+import android.graphics.Bitmap
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -52,6 +53,54 @@ class ModelCheckTest {
         assertEquals(0xFF336699.toInt(), r.previews[1].after.getPixel(40, 40))
         // Without test pictures, none.
         assertTrue((check(FakeRuntime()) as ModelCheck.Result.Fit).previews.isEmpty())
+    }
+
+    /** A runtime on the CPU whose [failing]th model opened fails its run [failAt]; [made] gets each model. */
+    private fun counting(made: MutableList<FakeModel>, failing: Int = -1, failAt: Int = -1, onRun: (Int) -> Unit = {}) =
+        FakeRuntime(gpu = null, make = { onGpu, _ ->
+            FakeModel(onGpu = onGpu, failAt = if (made.size == failing) failAt else -1, onRun = onRun).also { made += it }
+        })
+
+    @Test
+    fun aTestPictureTheModelFailsOnIsRefusedAsNotRunning() {
+        val pictures = listOf(ModelCheck.picture(40), ModelCheck.picture(48))
+        val fit = ArrayList<FakeModel>()
+        assertTrue(ModelCheck.check(counting(fit), fakeFiles(tmp.root), 4, Long.MAX_VALUE, pictures = pictures) is ModelCheck.Result.Fit)
+        // The last run is the second picture's one tile.
+        val failing = ArrayList<FakeModel>()
+        val runtime = counting(failing, failing = fit.size - 1, failAt = fit.last().runs.get() - 1)
+        val r = ModelCheck.check(runtime, fakeFiles(tmp.root), 4, Long.MAX_VALUE, pictures = pictures)
+        assertEquals(ModelCheck.Result.Refused(ModelRefusal.DOES_NOT_RUN), r)
+        assertEquals(fit.last().runs.get(), failing.last().runs.get())
+        // The caller's pictures are left to the caller.
+        assertTrue(pictures.none { it.isRecycled })
+    }
+
+    @Test
+    fun aRefusedModelRunsOnlyTheFirstTestPicture() {
+        // Each timed run takes 10 s on the check's clock: a page far past the reader's limit.
+        fun runs(pictures: List<Bitmap>): Int {
+            val now = AtomicLong()
+            var timing = false
+            val made = ArrayList<FakeModel>()
+            val runtime = counting(made, onRun = { if (timing) now.addAndGet(10_000) })
+            val r = ModelCheck.check(
+                runtime, fakeFiles(tmp.root), 4, Long.MAX_VALUE, clock = now::get, headroom = { timing = true; Float.NaN }, pictures = pictures
+            )
+            assertEquals(ModelRefusal.TOO_SLOW, (r as ModelCheck.Result.Refused).why)
+            assertTrue("${r.pageMs}", r.pageMs > ReaderAi.MAX_TIMEOUT_MS)
+            return made.sumOf { it.runs.get() }
+        }
+        val one = runs(listOf(ModelCheck.picture(40)))
+        assertEquals(one, runs(listOf(ModelCheck.picture(40), ModelCheck.picture(44), ModelCheck.picture(48))))
+        // A fit one runs each, one tile apiece.
+        fun fitRuns(n: Int): Int {
+            val made = ArrayList<FakeModel>()
+            val pictures = List(n) { ModelCheck.picture(40 + 4 * it) }
+            assertEquals(n, (ModelCheck.check(counting(made), fakeFiles(tmp.root), 4, Long.MAX_VALUE, pictures = pictures) as ModelCheck.Result.Fit).previews.size)
+            return made.sumOf { it.runs.get() }
+        }
+        assertEquals(fitRuns(1) + 2, fitRuns(3))
     }
 
     @Test

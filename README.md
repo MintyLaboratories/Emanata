@@ -1184,16 +1184,16 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - Imported models (`ModelImports`, `ModelCheck`, `UserModels`): the picked
   files are told apart by name (else by the `.param`'s first line), copied
   into a staging folder (at most 4 MB and 512 MB), opened as above within the
-  model memory, run on the three test pictures (each cut to the middle square
-  that fits one tile, so each runs as one tile; gray output collapsed to gray
-  as in the reader), whose before and after the user sees, and timed on a
-  synthetic 1000×1500 page (whole while it
+  model memory, run on the first test picture (each picture cut to the middle
+  square that fits one tile, so each runs as one tile; gray output collapsed
+  to gray as in the reader), timed on a synthetic 1000×1500 page (whole while it
   takes at most 20 s, else from its first six tiles, the first counted once;
   one measurement at the device's heat then, its thermal headroom kept beside
-  it). A page past 120 s (the most the reader gives one), or a check past 2
-  minutes (counted once no reader page holds the engine), is refused; a page
-  past 30 s is warned of, going on only on **Import anyway**. How the output
-  looks is never judged.
+  it), then, only once fit, run on the other two; the user sees all three
+  before and after. A page past 120 s (the most the reader gives one), or a
+  check past 2 minutes (counted once no reader page holds the engine), is
+  refused; a page past 30 s is warned of, going on only on **Import anyway**.
+  How the output looks is never judged.
   While a check runs a marker names the model, read at the next start before
   the model folder is cleaned, so a check that ends the app is reported.
   A taken-in model keeps its files and what was measured beside them; its

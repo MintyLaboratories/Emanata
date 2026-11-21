@@ -105,6 +105,12 @@ class ZoomImageView @JvmOverloads constructor(
     /** The system's gesture areas in the window; the window's insets unless set (tests). */
     internal var gestureEdges: () -> BrightnessStart.Edges = ::windowGestureEdges
 
+    /**
+     * Quarter turns the view shows at on screen ([TurnFrame.turn]). Pinches and pans follow
+     * the picture as shown; a [verticalDrag] and where it may start follow the device.
+     */
+    var turn = 0
+
     /** True while the finger down may start a [verticalDrag] ([BrightnessStart]). */
     private var dragsHere = false
     private val windowAt = IntArray(2)
@@ -1387,7 +1393,7 @@ class ZoomImageView @JvmOverloads constructor(
         val x = event.getX(index)
         val y = event.getY(index)
         if (axis == AxisLock.VERTICAL) {
-            verticalDrag?.move(y - lastY)
+            verticalDrag?.move(TurnFrame.deviceY(turn, x - lastX, y - lastY))
         } else if (scaleDetector.isInProgress) {
             parent?.requestDisallowInterceptTouchEvent(true)
         } else if (event.pointerCount == 1) {
@@ -1406,7 +1412,7 @@ class ZoomImageView @JvmOverloads constructor(
                     applyMatrix()
                 }
             } else if (dragsHere && verticalDrag != null && axis == AxisLock.NONE && !pinched) {
-                axis = AxisLock.decide(x - downX, y - downY, touchSlop)
+                axis = AxisLock.decide(TurnFrame.deviceX(turn, x - downX, y - downY), TurnFrame.deviceY(turn, x - downX, y - downY), touchSlop)
                 when (axis) {
                     AxisLock.VERTICAL -> verticalDrag?.start()
                     AxisLock.HORIZONTAL -> parent?.requestDisallowInterceptTouchEvent(false)
@@ -1426,11 +1432,13 @@ class ZoomImageView @JvmOverloads constructor(
         matrix.getValues(values)
         val left = values[Matrix.MTRANS_X]
         val top = values[Matrix.MTRANS_Y]
+        // The view's own origin in the window, wherever a turn put it.
         getLocationInWindow(windowAt)
         val root = rootView
-        return BrightnessStart.allowed(
+        return BrightnessStart.allowedAt(
             x, y, left, top, left + w * values[Matrix.MSCALE_X], top + h * values[Matrix.MSCALE_Y],
-            windowAt[0], windowAt[1], root.width, root.height, gestureEdges()
+            windowAt[0] + TurnFrame.deviceX(turn, x, y), windowAt[1] + TurnFrame.deviceY(turn, x, y),
+            root.width, root.height, gestureEdges()
         )
     }
 

@@ -23,11 +23,20 @@ object BrightnessStart {
         x: Float, y: Float,
         imageLeft: Float, imageTop: Float, imageRight: Float, imageBottom: Float,
         viewLeft: Int, viewTop: Int, windowWidth: Int, windowHeight: Int, gestures: Edges
+    ): Boolean = allowedAt(x, y, imageLeft, imageTop, imageRight, imageBottom, viewLeft + x, viewTop + y, windowWidth, windowHeight, gestures)
+
+    /**
+     * As [allowed], the finger at ([windowX], [windowY]) in the window: for a view shown
+     * turned ([TurnFrame]), whose coordinates run along other axes than the window's.
+     */
+    fun allowedAt(
+        x: Float, y: Float,
+        imageLeft: Float, imageTop: Float, imageRight: Float, imageBottom: Float,
+        windowX: Float, windowY: Float, windowWidth: Int, windowHeight: Int, gestures: Edges
     ): Boolean {
         if (x < imageLeft || x > imageRight || y < imageTop || y > imageBottom) return false
         if (windowWidth <= 0 || windowHeight <= 0) return true
-        val wx = viewLeft + x
-        val wy = viewTop + y
-        return wx >= gestures.left && wx <= windowWidth - gestures.right && wy >= gestures.top && wy <= windowHeight - gestures.bottom
+        return windowX >= gestures.left && windowX <= windowWidth - gestures.right &&
+            windowY >= gestures.top && windowY <= windowHeight - gestures.bottom
     }
 }

@@ -194,7 +194,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
     private var morePopup: PopupWindow? = null
 
     /** Looking at what the folders selected hold before the ⋮ menu shows. */
-    private var moreLook: Job? = null
+    internal var moreLook: Job? = null
+        private set
 
     /** The ⋮ menu's own items, and its "Repack ›" submenu's, while it shows: one of them at a time. */
     private var moreMain: ViewGroup? = null
@@ -215,7 +216,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
     private val presences = HashMap<String, PresenceCheck.Found>()
 
     /** Asks shares whether the items listed are there ([checkPresence]). */
-    private var presenceJob: Job? = null
+    internal var presenceJob: Job? = null
+        private set
 
     /** The sheet of a missing item while it shows ([showMissing]). */
     internal var missingSheet: BottomSheetDialog? = null
@@ -324,7 +326,10 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
 
     /** Known sections of the favorites shown; a missing path is still being classified. */
     private var favoriteKinds: Map<String, FavoriteKind> = emptyMap()
-    private var classifyJob: Job? = null
+
+    /** Classifying the favorites shown ([classifyPending]). */
+    internal var classifyJob: Job? = null
+        private set
 
     private lateinit var factsCache: BookFactsCache
 
@@ -335,7 +340,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
     private val factsFailed = HashMap<String, Long>()
 
     /** Finds values the sort needs in the background ([scheduleFacts]). */
-    private var factsJob: Job? = null
+    internal var factsJob: Job? = null
+        private set
 
     /** What [factsJob] covers while it runs. */
     private var factsWork: FactsWork? = null

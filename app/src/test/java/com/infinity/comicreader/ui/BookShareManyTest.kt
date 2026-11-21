@@ -15,6 +15,7 @@ import com.infinity.comicreader.data.EntryType
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ShareChoice
 import com.infinity.comicreader.files.BookUris
+import com.infinity.comicreader.testing.idleUntil
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -63,15 +64,10 @@ class BookShareManyTest {
         controller.pause().stop().destroy()
     }
 
-    private fun idle() = repeat(10) {
-        shadowOf(Looper.getMainLooper()).idle()
-        Thread.sleep(10)
-    }
+    /** Runs what is due on the main thread: what a dialog or a click posts there. */
+    private fun idle() = shadowOf(Looper.getMainLooper()).idle()
 
-    private fun awaitChooser() {
-        var left = 300
-        while (shadowOf(context).peekNextStartedActivity() == null && left-- > 0) idle()
-    }
+    private fun awaitChooser() = idleUntil("the chooser started") { shadowOf(context).peekNextStartedActivity() != null }
 
     private fun book(name: String, size: Int) = File(tmp.root, name).apply { writeBytes(ByteArray(size)) }.let {
         BookEntry(it, it.name, false, EntryType.ARCHIVE, it.length(), it.lastModified())
@@ -129,7 +125,7 @@ class BookShareManyTest {
         val held = Semaphore(0)
         BookShare.coverHold = {
             begun.release()
-            taps.tryAcquire(10, TimeUnit.SECONDS)
+            taps.acquire()
             held.release()
         }
         try {
@@ -141,9 +137,7 @@ class BookShareManyTest {
             val dialog = ShadowDialog.getLatestDialog() as AlertDialog
             dialog.getButton(DialogInterface.BUTTON_POSITIVE).performClick()
             // The first cover under way, however long the I/O threads take to get to it.
-            var left = 500
-            while (!begun.tryAcquire() && left-- > 0) idle()
-            assertTrue(left >= 0)
+            idleUntil("the first cover begun") { begun.tryAcquire() }
             idle()
             // Counted as they are made; still selected, and the dialog stays until they are.
             assertEquals(context.getString(R.string.share_making_covers, 1, 2), dialog.findViewById<TextView>(R.id.share_cover_none)!!.text.toString())
@@ -152,7 +146,8 @@ class BookShareManyTest {
             dialog.getButton(DialogInterface.BUTTON_NEGATIVE).performClick()
             taps.release(2)
             assertTrue(held.tryAcquire(10, TimeUnit.SECONDS))
-            repeat(20) { idle() }
+            // Canceled before the cover was let go: nothing after it runs.
+            idle()
             assertNull(shadowOf(context).nextStartedActivity)
             assertEquals(0, sent)
             // The second cover was never begun.
@@ -160,13 +155,14 @@ class BookShareManyTest {
             assertEquals(before + 1, BookShare.coversMade)
         } finally {
             BookShare.coverHold = {}
+            taps.release(2)
         }
     }
 
     @Test
     fun cancelAfterShareOfOneSendsNothing() {
         val taps = Semaphore(0)
-        BookShare.coverHold = { taps.tryAcquire(10, TimeUnit.SECONDS) }
+        BookShare.coverHold = { taps.acquire() }
         try {
             Prefs(context).shareChoice = ShareChoice(title = true, cover = true, file = false)
             var sent = 0
@@ -176,12 +172,15 @@ class BookShareManyTest {
             dialog.getButton(DialogInterface.BUTTON_POSITIVE).performClick()
             idle()
             dialog.getButton(DialogInterface.BUTTON_NEGATIVE).performClick()
+            // Closed, and so canceled, before the cover is let go: nothing after it runs.
+            idle()
             taps.release()
-            repeat(20) { idle() }
+            idle()
             assertNull(shadowOf(context).nextStartedActivity)
             assertEquals(0, sent)
         } finally {
             BookShare.coverHold = {}
+            taps.release()
         }
     }
 

@@ -1,5 +1,7 @@
 package com.infinity.comicreader.net
 
+import com.infinity.comicreader.testing.Waits
+import com.infinity.comicreader.testing.awaitUntil
 import okhttp3.Credentials
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
@@ -270,14 +272,13 @@ class DavFsTest {
             val failure = AtomicReference<Throwable>()
             // A megabyte at the slow pace takes about a minute.
             val reader = thread { runCatching { input.read(1L shl 20, ByteArray(1 shl 20), 0, 1 shl 20) }.onFailure { failure.set(it) } }
-            val deadline = System.nanoTime() + 5_000_000_000L
-            while (server.paths("GET").size == gets && System.nanoTime() < deadline) Thread.sleep(10)
-            Thread.sleep(300)
+            // Under way: the GET sent and its body coming in.
+            awaitUntil("the read to take its body in") { server.paths("GET").size > gets && reader.stackTrace.any { it.methodName == "readBody" } }
             assertTrue(reader.isAlive)
             val start = System.nanoTime()
             if (closeShare) fs.close() else input.close()
             assertTrue("close waited", System.nanoTime() - start < 1_000_000_000L)
-            reader.join(5_000)
+            awaitUntil("the canceled read to end") { !reader.isAlive }
             assertFalse("read still going", reader.isAlive)
             val e = failure.get()
             assertTrue("$e", e is IOException)
@@ -388,7 +389,7 @@ class DavFsTest {
         assertNull(DavFs.parseContentRange(null))
     }
 
-    @Test(timeout = 20_000)
+    @Test(timeout = Waits.LIVENESS_MS)
     fun aDiskSpinningUpIsWaitedFor() {
         val bytes = Random(11).nextBytes(100_000)
         File(dir, "book.cbz").writeBytes(bytes)
@@ -407,7 +408,7 @@ class DavFsTest {
         }
     }
 
-    @Test(timeout = 20_000)
+    @Test(timeout = Waits.LIVENESS_MS)
     fun aShortTimeoutGivesUpOnASpinUp() {
         val fs = DavFs(server.share(), answerMs = { 300 }).also { opened += it }
         server.spinUpMs = 1_500

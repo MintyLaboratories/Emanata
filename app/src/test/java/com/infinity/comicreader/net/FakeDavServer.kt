@@ -18,6 +18,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * A WebDAV server on this machine serving local folder [dir] under [prefix], for
@@ -40,11 +41,14 @@ class FakeDavServer(private val dir: File, private val prefix: String = "/dav") 
     var slow = false
 
     /**
-     * Holds the next answer this long before it starts, as a server waking its disk would;
-     * once. Closing the server ends the hold and drops the connection instead.
+     * Holds the next answer until this opens, as a server waking its disk would; once.
+     * Closing the server ends the hold and drops the connection instead.
      */
     @Volatile
-    var spinUpMs = 0L
+    var spinUp: CountDownLatch? = null
+
+    /** Answers [spinUp] holds now. */
+    val heldAtSpinUp = AtomicInteger()
 
     @Volatile
     var user = ""
@@ -74,7 +78,7 @@ class FakeDavServer(private val dir: File, private val prefix: String = "/dav") 
 
     val requests = CopyOnWriteArrayList<RecordedRequest>()
 
-    /** Released by [close]: ends a [spinUpMs] hold. */
+    /** Released by [close]: ends a [spinUp] hold. */
     private val closing = CountDownLatch(1)
 
     /** Status codes to answer with instead, by path below [prefix]. */
@@ -88,9 +92,17 @@ class FakeDavServer(private val dir: File, private val prefix: String = "/dav") 
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
                 requests += request
-                val wait = spinUpMs
-                spinUpMs = 0
-                if (wait > 0 && closing.await(wait, TimeUnit.MILLISECONDS)) return MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST)
+                val gate = synchronized(this) { spinUp.also { spinUp = null } }
+                if (gate != null) {
+                    heldAtSpinUp.incrementAndGet()
+                    try {
+                        while (!gate.await(10, TimeUnit.MILLISECONDS)) {
+                            if (closing.count == 0L) return MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST)
+                        }
+                    } finally {
+                        heldAtSpinUp.decrementAndGet()
+                    }
+                }
                 return answer(request)
             }
         }

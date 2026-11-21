@@ -24,6 +24,8 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
 import java.io.IOException
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.FutureTask
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.thread
 import kotlin.random.Random
@@ -393,13 +395,19 @@ class DavFsTest {
     fun aDiskSpinningUpIsWaitedFor() {
         val bytes = Random(11).nextBytes(100_000)
         File(dir, "book.cbz").writeBytes(bytes)
-        // Time scaled down: a 1 s spin-up, waited for as long as the default timeout waits for a real one.
-        val spinUp = 1_000L
-        val wait = Remotes.DEFAULT_ANSWER_MS * spinUp / Remotes.SPIN_UP_MS
-        val fs = DavFs(server.share(), answerMs = { wait }).also { opened += it }
-        // The first answer after the disk slept comes only once it spun up, a little late.
-        server.spinUpMs = spinUp * 6 / 5
-        assertEquals(listOf("book.cbz"), fs.list("").map { it.name })
+        // The default timeout outlasts a spin-up with room to spare, and no cap on the whole call cuts one short.
+        assertTrue(Remotes.DEFAULT_ANSWER_MS >= Remotes.SPIN_UP_MS * 6 / 5)
+        val fs = DavFs(server.share(), answerMs = { Remotes.DEFAULT_ANSWER_MS }).also { opened += it }
+        assertEquals(0, fs.client.callTimeoutMillis)
+        // The first answer after the disk slept comes only once it spun up.
+        val spinUp = CountDownLatch(1)
+        server.spinUp = spinUp
+        val listing = FutureTask { fs.list("") }.also { Thread(it).start() }
+        awaitUntil("the listing to be held while the disk spins up") { server.heldAtSpinUp.get() == 1 }
+        assertFalse(listing.isDone)
+        spinUp.countDown()
+        awaitUntil("the listing") { listing.isDone }
+        assertEquals(listOf("book.cbz"), listing.get().map { it.name })
         fs.open("book.cbz").use { input ->
             val got = ByteArray(bytes.size)
             var at = 0
@@ -411,7 +419,8 @@ class DavFsTest {
     @Test(timeout = Waits.LIVENESS_MS)
     fun aShortTimeoutGivesUpOnASpinUp() {
         val fs = DavFs(server.share(), answerMs = { 300 }).also { opened += it }
-        server.spinUpMs = 1_500
+        // Never opened: only the client's timeout ends the call; closing the server ends the hold.
+        server.spinUp = CountDownLatch(1)
         val e = assertThrows(RemoteException::class.java) { fs.list("") }
         assertEquals(RemoteException.Reason.UNREACHABLE, e.reason)
     }

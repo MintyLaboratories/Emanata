@@ -31,12 +31,12 @@ private fun leftoverScreens(): List<Activity> {
 private fun Activity.working(): Boolean = when (this) {
     is ListActivity -> {
         val busy = if (lifecycle.currentState == Lifecycle.State.DESTROYED) {
-            // Canceled with the screen: each still runs until its blocking step returns.
-            listOf(listJob, classifyJob, presenceJob, moreLook, factsJob).any { it?.isCompleted == false }
+            // All canceled with the screen: each still runs until its blocking step returns.
+            lifecycleScope.coroutineContext[Job]!!.children.any { !it.isCompleted }
         } else {
             // A live screen's facts job waits, not works, while the screen is out of sight.
             val started = lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
-            listJob?.isActive == true || listOf(classifyJob, presenceJob, moreLook).any { it?.isActive == true } ||
+            listJob?.isActive == true || listOf(classifyJob, presenceJob, moreLook, markJob, factsLoad).any { it?.isActive == true } ||
                 (started && factsJob?.isActive == true)
         }
         busy || (findViewById<RecyclerView>(R.id.recycler)?.adapter as? BookAdapter)?.coversBusy == true

@@ -334,6 +334,10 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
 
     private lateinit var factsCache: BookFactsCache
 
+    /** Reading [factsCache] from storage as the screen is made; tests wait for it. */
+    internal var factsLoad: Job? = null
+        private set
+
     /** Folder totals found so far, by path. */
     private val folderSizes = HashMap<String, Long>()
 
@@ -394,7 +398,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
             if (list == LibraryList.HISTORY && started && mode == TAB_BROWSE) updateRecentHeader()
             if (!lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) listsChangedAway = true
         }
-        lifecycleScope.launch {
+        factsLoad = lifecycleScope.launch {
             withContext(AppDispatchers.io) { factsCache.load() }
             // A list shown before the facts were in sorts again with them.
             if (allEntries.isNotEmpty()) applyFilterAndSort()

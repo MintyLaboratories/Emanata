@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.ComponentCallbacks2
 import android.graphics.Bitmap
 import com.infinity.comicreader.App
+import com.infinity.comicreader.testing.Waits
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -14,6 +15,8 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.util.Collections
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /**
  * [NativeResampler.trim] and its callers: which memory trims, engine changes and ends of
@@ -23,8 +26,11 @@ import java.util.Collections
 @Config(sdk = [34], application = Application::class)
 class ResampleTrimTest {
 
-    /** Kernels that only record the threads their trims ran on, and whether each freed the shaders. */
-    private class Trims : PixelKernels {
+    /**
+     * Kernels that only record the threads their trims ran on, and whether each freed the shaders.
+     * With a [gate], each trim first waits for the test to open it, holding the idle timer's thread.
+     */
+    private class Trims(private val gate: CountDownLatch? = null) : PixelKernels {
         val threads: MutableList<String> = Collections.synchronizedList(ArrayList())
         val programs: MutableList<Boolean> = Collections.synchronizedList(ArrayList())
 
@@ -37,6 +43,7 @@ class ResampleTrimTest {
         override fun end(job: Long) {}
 
         override fun trim(programs: Boolean) {
+            if (gate != null && !gate.await(Waits.LIVENESS_MS, TimeUnit.MILLISECONDS)) throw AssertionError("Gave up waiting for the test to free the idle timer")
             this.programs += programs
             threads += Thread.currentThread().name
         }
@@ -138,13 +145,26 @@ class ResampleTrimTest {
     @Test
     fun trimsOnceGpuJobsPause() {
         val k = Trims().also { NativeResampler.kernels = it }
-        NativeResampler.idleTrimMs = 500
+        // A pause longer than the test: a trim queued now has not run once the timer ran what was due.
+        NativeResampler.idleTrimMs = TimeUnit.HOURS.toMillis(1)
         gpuJob()
-        gpuJob()
+        NativeResampler.awaitTrims()
         assertEquals(0, k.threads.size)
-        val until = System.nanoTime() + 5_000_000_000L
-        while (k.threads.isEmpty() && System.nanoTime() < until) Thread.sleep(10)
-        Thread.sleep(300)
+        // The timer held, so both jobs' trims fall due before it runs one: the second job put off the first's.
+        val gate = CountDownLatch(1)
+        NativeResampler.kernels = Trims(gate)
+        NativeResampler.trim()
+        NativeResampler.kernels = k
+        try {
+            NativeResampler.idleTrimMs = 0
+            gpuJob()
+            gpuJob()
+            assertEquals(0, k.threads.size)
+        } finally {
+            gate.countDown()
+        }
+        // Runs once every trim that fell due ran.
+        NativeResampler.awaitTrims()
         assertEquals(listOf("resample-idle"), k.threads)
         assertEquals("compiled shaders stay", listOf(false), k.programs)
     }
@@ -162,9 +182,10 @@ class ResampleTrimTest {
     @Test
     fun cpuJobsLeaveNoIdleTrim() {
         val k = Trims().also { NativeResampler.kernels = it }
-        NativeResampler.idleTrimMs = 10
+        // No pause: a trim the job queued would fall due before the timer's next task.
+        NativeResampler.idleTrimMs = 0
         gpuJob(PixelEngine.NATIVE)
-        Thread.sleep(300)
+        NativeResampler.awaitTrims()
         assertEquals(0, k.threads.size)
     }
 

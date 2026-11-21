@@ -63,16 +63,28 @@ enum class PreviewPicture(val asset: String) {
     DOTS("import-preview/dots.png");
 
     companion object {
-        /** Each picture that reads, opaque ARGB_8888 at its own size. Blocking. */
+        private const val TAG = "PreviewPicture"
+
+        /** Each picture that reads, opaque ARGB_8888 at its own size; each other one logged and left out. Blocking. */
         fun load(context: Context): List<Pair<PreviewPicture, Bitmap>> {
             val options = BitmapFactory.Options().apply {
                 inPreferredConfig = Bitmap.Config.ARGB_8888
                 inScaled = false
             }
             return entries.mapNotNull { p ->
-                runCatching { context.assets.open(p.asset).use { BitmapFactory.decodeStream(it, null, options) } }
-                    .getOrNull()?.takeIf { it.config == Bitmap.Config.ARGB_8888 }?.let { p to it }
+                val decoded = runCatching { context.assets.open(p.asset).use { BitmapFactory.decodeStream(it, null, options) } }
+                    .onFailure { Log.w(TAG, "${p.asset}: ${it.message}") }
+                    .getOrNull()
+                usable(p, decoded)?.let { p to it }
             }
+        }
+
+        /** [b] when it is ARGB_8888; else null, [p] logged as left out and [b] recycled. */
+        internal fun usable(p: PreviewPicture, b: Bitmap?): Bitmap? {
+            if (b?.config == Bitmap.Config.ARGB_8888) return b
+            Log.w(TAG, "${p.asset}: left out, decoded as ${b?.config}")
+            b?.recycle()
+            return null
         }
     }
 }

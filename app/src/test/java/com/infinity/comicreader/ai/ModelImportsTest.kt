@@ -4,6 +4,7 @@ import android.app.Application
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.SystemClock
+import android.util.Log
 import androidx.test.core.app.ApplicationProvider
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -19,6 +20,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import org.robolectric.shadows.ShadowLog
 import java.io.File
 import java.util.concurrent.CancellationException
 import java.util.concurrent.CountDownLatch
@@ -150,6 +152,22 @@ class ModelImportsTest {
         val dots = pictures[2].second
         val dark = (0 until 128 * 128).count { i -> (dots.getPixel(i % 128, i / 128) and 0xFF) < 32 }
         assertTrue("$dark", dark > 128 * 128 * 3 / 100)
+    }
+
+    @Test
+    fun aTestPictureThatDoesNotDecodeAsARGBIsLoggedAndLeftOut() {
+        ShadowLog.clear()
+        val argb = Bitmap.createBitmap(4, 4, Bitmap.Config.ARGB_8888)
+        assertTrue(PreviewPicture.usable(PreviewPicture.GRADIENTS, argb) === argb)
+        assertTrue(ShadowLog.getLogsForTag("PreviewPicture").isEmpty())
+        val small = Bitmap.createBitmap(4, 4, Bitmap.Config.RGB_565)
+        assertNull(PreviewPicture.usable(PreviewPicture.JPEG, small))
+        assertTrue(small.isRecycled)
+        assertNull(PreviewPicture.usable(PreviewPicture.DOTS, null))
+        val logged = ShadowLog.getLogsForTag("PreviewPicture")
+        assertEquals(listOf(Log.WARN, Log.WARN), logged.map { it.type })
+        assertTrue(logged[0].msg.contains(PreviewPicture.JPEG.asset))
+        assertTrue(logged[1].msg.contains(PreviewPicture.DOTS.asset))
     }
 
     @Test

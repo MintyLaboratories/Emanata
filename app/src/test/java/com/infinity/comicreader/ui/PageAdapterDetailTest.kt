@@ -3,7 +3,6 @@ package com.infinity.comicreader.ui
 import android.app.Application
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
-import android.os.Looper
 import android.view.View
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -13,13 +12,13 @@ import com.infinity.comicreader.reader.PageSource
 import com.infinity.comicreader.reader.Region
 import com.infinity.comicreader.reader.Scaling
 import com.infinity.comicreader.reader.Target
+import com.infinity.comicreader.testing.idleUntil
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.util.Collections
 
@@ -65,15 +64,6 @@ class PageAdapterDetailTest {
 
     private val context get() = ApplicationProvider.getApplicationContext<Application>()
 
-    private fun idle(done: () -> Boolean = { false }) {
-        val deadline = System.currentTimeMillis() + 3_000
-        while (!done() && System.currentTimeMillis() < deadline) {
-            Thread.sleep(10)
-            shadowOf(Looper.getMainLooper()).idle()
-        }
-        shadowOf(Looper.getMainLooper()).idle()
-    }
-
     private fun RecyclerView.layOut(w: Int, h: Int) {
         measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY))
         layout(0, 0, w, h)
@@ -89,14 +79,14 @@ class PageAdapterDetailTest {
             layOut(2960, 1848)
         }
         val images = (rv.findViewHolderForAdapterPosition(0) as PageAdapter.PageHolder).images
-        idle { images.all { it.detailSource != null } }
+        idleUntil("both halves' details") { images.all { it.detailSource != null } }
 
         val shown = arrayOfNulls<Bitmap>(2)
         images.forEachIndexed { i, image ->
             assertNotNull(image.detailSource)
             image.detailSource!!.render(Region(0.25, 0.25, 0.5, 0.5), 1480, 1848) { shown[i] = it }
         }
-        idle { shown.all { it != null } }
+        idleUntil("both halves' renders") { shown.all { it != null } }
         assertEquals(1480, shown[0]!!.width)
         assertEquals(1480, shown[1]!!.width)
         assertEquals(setOf(0, 1), source.details.map { it.page }.toSet())
@@ -121,19 +111,19 @@ class PageAdapterDetailTest {
             layOut(2960, 1848)
         }
         val pair = (rv.findViewHolderForAdapterPosition(0) as PageAdapter.PageHolder).images
-        idle { pair.all { it.detailSource != null } }
+        idleUntil("both halves' details") { pair.all { it.detailSource != null } }
         var shown: Bitmap? = null
         pair[0].detailSource!!.render(Region(0.0, 0.0, 1.0, 1.0), 10, 10) { shown = it }
-        idle { shown != null }
+        idleUntil("the render") { shown != null }
 
         rv.scrollToPosition(1)
         rv.layOut(2960, 1848)
         val lone = (rv.findViewHolderForAdapterPosition(1) as PageAdapter.PageHolder).images
         assertEquals(View.GONE, lone[1].visibility)
-        idle { lone[0].detailSource != null }
+        idleUntil("the lone page's detail") { lone[0].detailSource != null }
         shown = null
         lone[0].detailSource!!.render(Region(0.0, 0.0, 1.0, 1.0), 10, 10) { shown = it }
-        idle { shown != null }
+        idleUntil("the render") { shown != null }
 
         val (half, whole) = source.budgets.map { it.second }
         assertEquals(2 * half, whole)
@@ -150,14 +140,15 @@ class PageAdapterDetailTest {
             layOut(1848, 2960)
         }
         val image = (rv.findViewHolderForAdapterPosition(0) as PageAdapter.PageHolder).images[0]
-        idle { image.detailSource != null }
+        idleUntil("the page's detail") { image.detailSource != null }
         var tile: Bitmap? = null
         image.detailSource!!.render(Region(0.25, 0.25, 0.5, 0.5), 100, 100) { tile = it }
-        idle { tile != null }
+        idleUntil("the tile") { tile != null }
 
         adapter.fitMode = ZoomImageView.FitMode.HEIGHT
         rv.layOut(1848, 2960)
-        idle { (image.drawable as BitmapDrawable).bitmap.height == 2960 }
+        // Any decode asked for is under way until put away: none is, once the new fit shows.
+        idleUntil("the page at the height of the screen, no decode under way") { (image.drawable as BitmapDrawable).bitmap.height == 2960 && !adapter.decoding }
         // The 1848 x 2772 page at the height of the screen, made without decoding it again.
         assertEquals(1973, (image.drawable as BitmapDrawable).bitmap.width)
         assertEquals(listOf(Target(1848, 2960, banded = true)), source.loads.toList())
@@ -167,7 +158,7 @@ class PageAdapterDetailTest {
         // The next zoom, at the new fit, renders from the same detail.
         tile = null
         image.detailSource!!.render(Region(0.25, 0.25, 0.5, 0.5), 100, 100) { tile = it }
-        idle { tile != null }
+        idleUntil("the tile") { tile != null }
         assertNotNull(tile)
         assertEquals(1, source.details.size)
         assertTrue(source.details.none { it.released })
@@ -184,15 +175,15 @@ class PageAdapterDetailTest {
             layOut(1848, 2960)
         }
         val image = (rv.findViewHolderForAdapterPosition(0) as PageAdapter.PageHolder).images[0]
-        idle { image.detailSource != null }
+        idleUntil("the page's detail") { image.detailSource != null }
         var tile: Bitmap? = null
         image.detailSource!!.render(Region(0.25, 0.25, 0.5, 0.5), 100, 100) { tile = it }
-        idle { tile != null }
+        idleUntil("the tile") { tile != null }
 
         source.details.single().failing = true
         adapter.fitMode = ZoomImageView.FitMode.HEIGHT
         rv.layOut(1848, 2960)
-        idle { (image.drawable as BitmapDrawable).bitmap.height == 2960 }
+        idleUntil("the page at the height of the screen") { (image.drawable as BitmapDrawable).bitmap.height == 2960 }
         assertEquals(listOf(Target(1848, 2960, banded = true), Target(0, 2960, banded = true)), source.loads.toList())
         assertTrue(image.drawsOneToOne)
         adapter.release()
@@ -208,15 +199,15 @@ class PageAdapterDetailTest {
             layOut(2960, 1848)
         }
         val images = (rv.findViewHolderForAdapterPosition(0) as PageAdapter.PageHolder).images
-        idle { images.all { it.detailSource != null } }
+        idleUntil("both halves' details") { images.all { it.detailSource != null } }
         val tiles = arrayOfNulls<Bitmap>(2)
         images.forEachIndexed { i, image -> image.detailSource!!.render(Region(0.25, 0.25, 0.5, 0.5), 100, 100) { tiles[i] = it } }
-        idle { tiles.all { it != null } }
+        idleUntil("both halves' tiles") { tiles.all { it != null } }
 
         // Fit width: each 1480 px half shows its 2:3 page 2220 px tall.
         adapter.fitMode = ZoomImageView.FitMode.WIDTH
         rv.layOut(2960, 1848)
-        idle { images.all { (it.drawable as BitmapDrawable).bitmap.height == 2220 } }
+        idleUntil("both halves at fit width, no decode under way") { images.all { (it.drawable as BitmapDrawable).bitmap.height == 2220 } && !adapter.decoding }
         assertTrue(images.all { (it.drawable as BitmapDrawable).bitmap.width == 1480 })
         assertTrue(images.all { it.drawsOneToOne })
         assertEquals(listOf(Target(1480, 1848, banded = true), Target(1480, 1848, banded = true)), source.loads.toList())
@@ -236,10 +227,10 @@ class PageAdapterDetailTest {
             layOut(1848, 2960)
         }
         val image = (rv.findViewHolderForAdapterPosition(0) as PageAdapter.PageHolder).images[0]
-        idle { image.detailSource != null }
+        idleUntil("the page's detail") { image.detailSource != null }
         assertTrue(image.detailSource!!.bands)
         image.detailSource!!.renderBand(Region(0.0, 0.0, 1.0, 0.02), 1848, 1024, {}) { }
-        idle { source.budgets.isNotEmpty() }
+        idleUntil("the detail's budget") { source.budgets.isNotEmpty() }
         val am = context.getSystemService(android.app.ActivityManager::class.java)
         val budget = DetailStore.budget(android.app.ActivityManager.MemoryInfo().also { am.getMemoryInfo(it) }.totalMem)
         assertEquals(budget / 2, source.budgets.first().second)

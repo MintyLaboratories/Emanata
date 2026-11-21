@@ -21,6 +21,7 @@ import com.infinity.comicreader.data.ResumeMode
 import com.infinity.comicreader.reader.Fixtures
 import com.infinity.comicreader.reader.TestImages
 import com.infinity.comicreader.testing.bookId
+import com.infinity.comicreader.testing.idleUntil
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -81,16 +82,14 @@ class ViewerActivityTallTest {
         if (page > 0) intent.putExtra(ViewerActivity.EXTRA_PAGE, page)
         val viewer = Robolectric.buildActivity(ViewerActivity::class.java, intent).setup().get()
         val progress = viewer.findViewById<View>(R.id.viewer_progress)
-        await { progress.visibility != View.VISIBLE }
+        idleUntil("the book open") { progress.visibility != View.VISIBLE }
         return viewer
     }
 
-    private fun await(ms: Long = 5_000, done: () -> Boolean) {
-        val deadline = System.currentTimeMillis() + ms
-        while (!done() && System.currentTimeMillis() < deadline) {
-            Thread.sleep(10)
-            idle()
-        }
+    /** Waits past the scans' two-second hold until all the open started is done: a question coming at all has come. */
+    private fun ViewerActivity.settle() {
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(2))
+        idleUntil("all the open started done") { openSettled() }
     }
 
     private fun asked(): AlertDialog? = (ShadowDialog.getLatestDialog() as? AlertDialog)?.takeIf { it.isShowing }
@@ -103,7 +102,7 @@ class ViewerActivityTallTest {
     fun aBookOfTallPagesAsksOnceAndYesReadsItAsAStrip() {
         val tall = book("Tall 01.cbz", listOf(400, 900, 600, 140, 700))
         val viewer = launch(tall)
-        await { asked() != null }
+        idleUntil("the question") { asked() != null }
         val dialog = asked()!!
         assertEquals("Tall pages: read as a continuous strip?", dialog.message())
         assertFalse(viewer.continuous())
@@ -127,7 +126,7 @@ class ViewerActivityTallTest {
     fun noIsKeptAndNeverAskedAgain() {
         val tall = book("Tall 02.cbz", listOf(400, 900, 600))
         val viewer = launch(tall)
-        await { asked() != null }
+        idleUntil("the question") { asked() != null }
         asked()!!.getButton(DialogInterface.BUTTON_NEGATIVE).performClick()
         idle()
         assertFalse(viewer.continuous())
@@ -136,7 +135,7 @@ class ViewerActivityTallTest {
         idle()
         ShadowDialog.reset()
         val again = launch(tall)
-        await(500) { asked() != null }
+        again.settle()
         assertNull(asked())
         assertFalse(again.continuous())
     }
@@ -144,15 +143,13 @@ class ViewerActivityTallTest {
     @Test
     fun aFolderWithItsOwnDirectionIsNeverAsked() {
         library.setFolderLayout(dir.absolutePath, FolderLayout.Direction("ltr"))
-        launch(book("Tall 03.cbz", listOf(400, 900, 600)))
-        await(500) { asked() != null }
+        launch(book("Tall 03.cbz", listOf(400, 900, 600))).settle()
         assertNull(asked())
     }
 
     @Test
     fun aBookOfFewTallPagesIsNotAsked() {
-        launch(book("Mixed 01.cbz", listOf(140, 140, 900, 140, 140)))
-        await(500) { asked() != null }
+        launch(book("Mixed 01.cbz", listOf(140, 140, 900, 140, 140))).settle()
         assertNull(asked())
     }
 
@@ -160,7 +157,7 @@ class ViewerActivityTallTest {
     fun looseImagesAreJudgedByTheirFolderAndAnsweredForIt() {
         val images = (1..5).map { i -> File(dir, "img$i.png").apply { writeBytes(TestImages.png(100, 500)) } }
         val viewer = launch(images[2])
-        await { asked() != null }
+        idleUntil("the question") { asked() != null }
         asked()!!.getButton(DialogInterface.BUTTON_POSITIVE).performClick()
         idle()
         assertTrue(viewer.continuous())
@@ -185,10 +182,10 @@ class ViewerActivityTallTest {
         prefs.volumeKeys = true
         val viewer = launch(book("Mixed 02.cbz", listOf(140, 1000, 140)))
         val pager = viewer.findViewById<ViewPager2>(R.id.viewer_pager)
-        await { asked() == null }
+        idleUntil("no question showing") { asked() == null }
         viewer.next()
         assertEquals(1, pager.currentItem)
-        await { viewer.shownImage().drawable != null }
+        idleUntil("the page shown") { viewer.shownImage().drawable != null }
         val image = viewer.shownImage()
         assertEquals(ZoomImageView.FitMode.WIDTH, image.fitMode)
         fun top() = FloatArray(9).also { image.imageMatrix.getValues(it) }[Matrix.MTRANS_Y]
@@ -224,11 +221,11 @@ class ViewerActivityTallTest {
     fun swipingBackOntoATallPageLandsAtItsBottom() {
         val viewer = launch(book("Mixed 03.cbz", listOf(140, 1000, 140)), page = 2)
         val pager = viewer.findViewById<ViewPager2>(R.id.viewer_pager)
-        await { asked() == null && pager.currentItem == 2 }
+        idleUntil("the third page, no question") { asked() == null && pager.currentItem == 2 }
         assertEquals(2, pager.currentItem)
         swipe(pager, 1)
         assertEquals(1, pager.currentItem)
-        await { viewer.shownImage().drawable != null }
+        idleUntil("the page shown") { viewer.shownImage().drawable != null }
         val (top, bottom) = viewer.shownTop()
         assertEquals(bottom, top, 1f)
     }
@@ -238,11 +235,11 @@ class ViewerActivityTallTest {
         prefs.volumeKeys = true
         val viewer = launch(book("Mixed 05.cbz", listOf(140, 1000, 140)), page = 2)
         val pager = viewer.findViewById<ViewPager2>(R.id.viewer_pager)
-        await { asked() == null && pager.currentItem == 2 }
+        idleUntil("the third page, no question") { asked() == null && pager.currentItem == 2 }
         viewer.onKeyDown(KeyEvent.KEYCODE_VOLUME_DOWN, KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_VOLUME_DOWN))
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(400))
         assertEquals(1, pager.currentItem)
-        await { viewer.shownImage().drawable != null }
+        idleUntil("the page shown") { viewer.shownImage().drawable != null }
         // A short drag on, let go: the pager springs back.
         pager.beginFakeDrag()
         pager.fakeDragBy(-pager.width * 0.05f)
@@ -252,7 +249,7 @@ class ViewerActivityTallTest {
         // Bound again where it is, it stays at its bottom.
         pager.adapter!!.notifyItemChanged(1)
         idle()
-        await { viewer.shownImage().drawable != null }
+        idleUntil("the page shown") { viewer.shownImage().drawable != null }
         val (top, bottom) = viewer.shownTop()
         assertEquals(bottom, top, 1f)
     }
@@ -262,7 +259,7 @@ class ViewerActivityTallTest {
         // Opened on the tall page, which stays bound off screen while the next one shows.
         val viewer = launch(book("Mixed 04.cbz", listOf(140, 1000, 140, 140)), page = 1)
         val pager = viewer.findViewById<ViewPager2>(R.id.viewer_pager)
-        await { asked() == null && pager.currentItem == 1 && viewer.shownImage().drawable != null }
+        idleUntil("the second page shown, no question") { asked() == null && pager.currentItem == 1 && viewer.shownImage().drawable != null }
         assertEquals(0f, viewer.shownTop().first, 1f)
         swipe(pager, -1)
         assertEquals(2, pager.currentItem)

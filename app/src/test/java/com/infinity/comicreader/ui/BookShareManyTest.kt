@@ -8,6 +8,7 @@ import android.os.Looper
 import android.view.View
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
+import androidx.lifecycle.lifecycleScope
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.BookEntry
@@ -15,7 +16,9 @@ import com.infinity.comicreader.data.EntryType
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ShareChoice
 import com.infinity.comicreader.files.BookUris
+import com.infinity.comicreader.testing.awaitUntil
 import com.infinity.comicreader.testing.idleUntil
+import kotlinx.coroutines.Job
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -34,7 +37,6 @@ import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
 import java.io.File
 import java.util.concurrent.Semaphore
-import java.util.concurrent.TimeUnit
 
 /** Several items shared in one action: one dialog, one intent. */
 @RunWith(RobolectricTestRunner::class)
@@ -61,11 +63,18 @@ class BookShareManyTest {
 
     @After
     fun tearDown() {
+        // No cover still being made runs on into the next test.
+        awaitShareWork()
         controller.pause().stop().destroy()
     }
 
     /** Runs what is due on the main thread: what a dialog or a click posts there. */
     private fun idle() = shadowOf(Looper.getMainLooper()).idle()
+
+    /** Waits until the screen runs no share work: a cover made, written or sent ends only once its blocking part returns. */
+    private fun awaitShareWork() = idleUntil("the share's work ended") {
+        controller.get().lifecycleScope.coroutineContext[Job]!!.children.none { !it.isCompleted }
+    }
 
     private fun awaitChooser() = idleUntil("the chooser started") { shadowOf(context).peekNextStartedActivity() != null }
 
@@ -145,8 +154,9 @@ class BookShareManyTest {
             assertEquals(0, sent)
             dialog.getButton(DialogInterface.BUTTON_NEGATIVE).performClick()
             taps.release(2)
-            assertTrue(held.tryAcquire(10, TimeUnit.SECONDS))
+            awaitUntil("the first cover let go") { held.tryAcquire() }
             // Canceled before the cover was let go: nothing after it runs.
+            awaitShareWork()
             idle()
             assertNull(shadowOf(context).nextStartedActivity)
             assertEquals(0, sent)
@@ -175,6 +185,7 @@ class BookShareManyTest {
             // Closed, and so canceled, before the cover is let go: nothing after it runs.
             idle()
             taps.release()
+            awaitShareWork()
             idle()
             assertNull(shadowOf(context).nextStartedActivity)
             assertEquals(0, sent)

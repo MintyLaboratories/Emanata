@@ -136,7 +136,7 @@ class SmbFsTest {
                     failure.set(t)
                 }
             }
-            val socket = silent.accepted.poll(10, TimeUnit.SECONDS)!!
+            val socket = silent.accepted.poll(Waits.LIVENESS_MS, TimeUnit.MILLISECONDS) ?: throw AssertionError("Gave up waiting for the listing's connection")
             val started = System.nanoTime()
             fs.close()
             val tookMs = (System.nanoTime() - started) / 1_000_000

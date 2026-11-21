@@ -2,14 +2,12 @@ package com.infinity.comicreader.net
 
 import com.infinity.comicreader.net.Metered.Link
 import com.infinity.comicreader.net.Metered.Verdict
-import com.infinity.comicreader.testing.Waits
+import com.infinity.comicreader.testing.awaitUntil
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
 
@@ -102,11 +100,10 @@ class MeteredTest {
         }
         Metered.forget()
         val first = thread { Metered.now() }
-        assertTrue(asking.await(Waits.LIVENESS_MS, TimeUnit.MILLISECONDS))
+        awaitUntil("the first answer asked for") { asking.count == 0L }
         Metered.forget()
         release.countDown()
-        first.join(Waits.LIVENESS_MS)
-        assertFalse(first.isAlive)
+        awaitUntil("the first answer judged") { !first.isAlive }
         Metered.now()
         assertEquals(2, asked.get())
     }

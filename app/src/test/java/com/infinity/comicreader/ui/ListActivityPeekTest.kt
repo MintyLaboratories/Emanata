@@ -14,6 +14,7 @@ import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.R
+import com.infinity.comicreader.testing.idleUntil
 import com.infinity.comicreader.data.BookEntry
 import com.infinity.comicreader.data.BookFacts
 import com.infinity.comicreader.data.BookFactsCache
@@ -63,11 +64,36 @@ class ListActivityPeekTest {
         Prefs(context).moreActions = MoreActions.DEFAULT.with(MoreAction.PEEK, true)
     }
 
-    private fun idle(ms: Long = 0) {
-        repeat(10) {
-            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(ms / 10 + 20))
-            Thread.sleep(20)
+    /** True once the screen waits on nothing but the test: listed, favorites classified, facts read, presence asked, its menu looked into. */
+    private fun ListActivity.quiet() =
+        listJob?.isCompleted == true && listOf(classifyJob, factsJob, presenceJob, moreLook).none { it?.isActive == true }
+
+    /** Runs the main looper until the screen is quiet. */
+    private fun ListActivity.settle() = idleUntil("the library screen quiet") { quiet() }
+
+    /** The screen [launch] started. */
+    private lateinit var shown: ListActivity
+
+    private fun launch(): ListActivity = Robolectric.buildActivity(ListActivity::class.java).setup().get().also {
+        shown = it
+        idle()
+    }
+
+    /** True once the peek, if one is open, has what it shows: its spinner gone. */
+    private fun ListActivity.peekLoaded(): Boolean {
+        val peek = peek()
+        fun spinner(v: View): View? = when (v) {
+            is android.widget.ProgressBar -> v
+            is ViewGroup -> (0 until v.childCount).firstNotNullOfOrNull { spinner(v.getChildAt(it)) }
+            else -> null
         }
+        return !peek.isShowing || spinner(peek)?.visibility != View.VISIBLE
+    }
+
+    /** Moves the main looper's clock on by [ms] and a little more, as touches and animations take; then waits until the screen and its peek are quiet. */
+    private fun idle(ms: Long = 0) {
+        repeat(10) { shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(ms / 10 + 20)) }
+        idleUntil("the screen and its peek quiet") { shown.quiet() && shown.peekLoaded() }
     }
 
     private fun ListActivity.peek(): PeekOverlay {
@@ -91,8 +117,7 @@ class ListActivityPeekTest {
 
     @Test
     fun peekFromTheMenuOpensAndBackClosesIt() {
-        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        val activity = launch()
         activity.longPress(book)
         idle()
         activity.more(MoreAction.PEEK)
@@ -160,8 +185,7 @@ class ListActivityPeekTest {
 
     @Test
     fun spreadingPartWayKeepsAPeekOpenWithoutALongPress() {
-        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        val activity = launch()
         activity.spread(book, spread = 130f)
         assertNull(ShadowDialog.getLatestDialog())
         assertFalse(activity.selection.active)
@@ -171,8 +195,7 @@ class ListActivityPeekTest {
 
     @Test
     fun spreadingFullyOpensTheBook() {
-        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        val activity = launch()
         activity.spread(book, spread = 2000f)
         val started = shadowOf(activity).nextStartedActivity
         assertEquals(ViewerActivity::class.java.name, started?.component?.className)
@@ -182,8 +205,7 @@ class ListActivityPeekTest {
 
     @Test
     fun twoFingersThatDoNotSpreadDoNothing() {
-        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        val activity = launch()
         activity.spread(book, spread = null)
         assertNull(ShadowDialog.getLatestDialog())
         assertFalse(activity.peek().isShowing)
@@ -211,8 +233,7 @@ class ListActivityPeekTest {
     @Test
     fun folderPeekShowsWhatItHoldsInBrowseOrder() {
         val extras = extrasWithBooks()
-        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        val activity = launch()
         activity.longPress(extras)
         idle()
         activity.more(MoreAction.PEEK)
@@ -259,8 +280,7 @@ class ListActivityPeekTest {
             bookId(manga),
             BookFacts(1, 0, DirectionDetection.Detected(ReadingDirection.RTL, DirectionDetection.Source.COMIC_INFO))
         )
-        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        val activity = launch()
         val entries = activity.peekedEntries(extras)
         assertEquals(ReadingDirection.RTL, entries.single { it.name == "Part 2.cbz" }.direction)
         assertEquals(ReadingDirection.LTR, entries.single { it.name == "Part 1.cbz" }.direction)
@@ -272,8 +292,7 @@ class ListActivityPeekTest {
         File(extras, "Sketch.png").writeBytes(TestImages.png(4, 6))
         val context = ApplicationProvider.getApplicationContext<Application>()
         Prefs(context).setFilter(Prefs.TAB_BROWSE, LibraryFilter(types = setOf(EntryType.FOLDER, EntryType.ARCHIVE)))
-        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        val activity = launch()
         assertEquals(listOf("Part 1.cbz", "Part 2.cbz", "Part 10.cbz"), activity.peekedEntries(extras).map { it.name })
     }
 
@@ -287,8 +306,7 @@ class ListActivityPeekTest {
 
     @Test
     fun peekIntoAnEmptyFolderSaysSo() {
-        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        val activity = launch()
         val entries = activity.peekedEntriesOrNull(File(book.parentFile, "Extras"))
         assertNull(entries)
         assertEquals(listOf(activity.getString(R.string.peek_folder_empty)), texts(activity.peek()))
@@ -306,14 +324,29 @@ class ListActivityPeekTest {
         return (0 until grid.childCount).map { grid.getChildAt(it).findViewById<android.widget.ImageView>(R.id.peek_cover).drawable }
     }
 
+    /** The cells of [adapter] that showed their cover or settled without one, from now on. */
+    private fun settled(adapter: CoverPeekAdapter): Set<Int> {
+        val settled = HashSet<Int>()
+        val before = adapter.onShown
+        adapter.onShown = { position, exact ->
+            before?.invoke(position, exact)
+            settled += position
+        }
+        return settled
+    }
+
     /** Covers shown in [extras]' peek with the library's covers setting [on]. */
     private fun folderPeekCovers(on: Boolean): List<android.graphics.drawable.Drawable?> {
         val extras = extrasWithBooks()
         Prefs(ApplicationProvider.getApplicationContext<Application>()).thumbnails = on
-        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        val activity = launch()
         assertEquals(3, activity.peekedEntries(extras).size)
-        return activity.peekCovers()
+        val covers = activity.peekCovers()
+        // Covers on are made in the background; off, none is asked for.
+        if (!on) return covers
+        val grid = activity.peek().grid()
+        idleUntil("every cover made") { (0 until grid.childCount).all { grid.getChildAt(it).findViewById<android.widget.ImageView>(R.id.peek_cover).drawable != null } }
+        return (0 until grid.childCount).map { grid.getChildAt(it).findViewById<android.widget.ImageView>(R.id.peek_cover).drawable }
     }
 
     @Test
@@ -336,12 +369,12 @@ class ListActivityPeekTest {
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun folderPeekNotMakingCoversShowsOnlyThoseMade() {
         val extras = extrasWithBooks()
-        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        val activity = launch()
         val entries = activity.peekedEntries(extras)
         val style = Prefs(activity).coverStyle
         assertTrue(com.infinity.comicreader.data.Thumbs.load(activity, entries[0], "UTF-8", 60, 90, style) != null)
         val adapter = CoverPeekAdapter(activity, entries, 60, 90, style, "UTF-8", showCovers = true, makeCovers = false) {}
+        val settled = settled(adapter)
         val grid = RecyclerView(activity).apply {
             layoutManager = androidx.recyclerview.widget.GridLayoutManager(activity, 3)
             this.adapter = adapter
@@ -349,7 +382,7 @@ class ListActivityPeekTest {
         activity.findViewById<ViewGroup>(android.R.id.content).addView(grid, ViewGroup.LayoutParams(600, 600))
         grid.measure(View.MeasureSpec.makeMeasureSpec(600, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(600, View.MeasureSpec.EXACTLY))
         grid.layout(0, 0, 600, 600)
-        idle(1000)
+        idleUntil("every cell settled") { settled.containsAll((0 until grid.childCount).toList()) }
         val covers = (0 until grid.childCount).map { grid.getChildAt(it).findViewById<android.widget.ImageView>(R.id.peek_cover).drawable }
         assertEquals(listOf(true, false, false), covers.map { it != null })
         adapter.release()
@@ -358,8 +391,7 @@ class ListActivityPeekTest {
     @Test
     fun spreadingFullyOnAFolderOpensIt() {
         val extras = extrasWithBooks()
-        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        val activity = launch()
         activity.spread(extras, spread = 2000f)
         assertFalse(activity.peek().isShowing)
         assertNull(shadowOf(activity).nextStartedActivity)

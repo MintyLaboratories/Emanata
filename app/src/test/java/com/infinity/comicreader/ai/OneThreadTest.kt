@@ -1,5 +1,6 @@
 package com.infinity.comicreader.ai
 
+import com.infinity.comicreader.testing.awaitUntil
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertSame
@@ -44,18 +45,24 @@ class OneThreadTest {
         val caller = thread {
             result = one.run {
                 started.countDown()
-                release.await(5, TimeUnit.SECONDS)
+                release.await()
                 ended.set(true)
                 7
             }
             interrupted = Thread.currentThread().isInterrupted
         }
-        assertTrue(started.await(5, TimeUnit.SECONDS))
-        caller.interrupt()
-        Thread.sleep(50)
-        assertTrue("the caller left while its block ran", caller.isAlive)
-        release.countDown()
-        caller.join(5_000)
+        try {
+            assertTrue(started.await(5, TimeUnit.SECONDS))
+            caller.interrupt()
+            // Taken: the flag cleared and the caller waiting again, or gone.
+            awaitUntil("the caller to take the interrupt") {
+                caller.state == Thread.State.TERMINATED || (!caller.isInterrupted && caller.state == Thread.State.WAITING)
+            }
+            assertTrue("the caller left while its block ran", caller.isAlive)
+        } finally {
+            release.countDown()
+        }
+        awaitUntil("the caller to end") { !caller.isAlive }
         assertTrue(ended.get())
         assertEquals(7, result)
         assertTrue(interrupted)

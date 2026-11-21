@@ -15,6 +15,8 @@ import com.infinity.comicreader.ai.Fallback
 import com.infinity.comicreader.ai.PageEnhancer
 import com.infinity.comicreader.reader.PageSource
 import com.infinity.comicreader.reader.Target
+import com.infinity.comicreader.testing.Waits
+import com.infinity.comicreader.testing.idleUntil
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import org.junit.After
@@ -49,7 +51,7 @@ class PageAdapterAiTest {
         val held = ConcurrentHashMap<Int, CountDownLatch>()
 
         override fun loadPage(index: Int, target: Target): Bitmap {
-            held[index]?.await(5, TimeUnit.SECONDS)
+            held[index]?.await(Waits.LIVENESS_MS, TimeUnit.MILLISECONDS)
             val plan = target.plan(1000.0, 1500.0)
             return Bitmap.createBitmap(plan.width, plan.height, Bitmap.Config.ARGB_8888).apply { eraseColor(color) }
         }
@@ -122,21 +124,12 @@ class PageAdapterAiTest {
         enhancer.close()
     }
 
-    private fun idle(done: () -> Boolean) {
-        // Only decodes still run on threads of their own: a generous bound, reached only on failure.
-        val deadline = System.currentTimeMillis() + 30_000
-        while (!done() && System.currentTimeMillis() < deadline) {
-            Thread.sleep(10)
-            shadowOf(Looper.getMainLooper()).idle()
-        }
-        shadowOf(Looper.getMainLooper()).idle()
-    }
-
-    /** Lets work run for a while, whatever it does. */
-    private fun aWhile() = repeat(20) {
-        Thread.sleep(10)
-        shadowOf(Looper.getMainLooper()).idle()
-    }
+    /**
+     * Idles until no decode of [adapter] is under way. Decodes are asked for on the main thread
+     * only, AI work runs on it here, and a decode is under way until the main thread has handled
+     * its end: once none is, nothing more is processed until the test acts.
+     */
+    private fun settled(adapter: PageAdapter) = idleUntil("the decodes under way to end") { !adapter.decoding }
 
     private fun RecyclerView.layOut(w: Int, h: Int) {
         measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY))
@@ -164,10 +157,10 @@ class PageAdapterAiTest {
     @Test
     fun thePlainPageShowsThenTheProcessedOneTakesItsPlaceAtTheSameSize() {
         val (adapter, rv) = reader()
-        idle { colorAt(rv, 0) == plain }
+        idleUntil("page 0 shown plain") { colorAt(rv, 0) == plain }
         val before = shownBitmap(rv, 0)!!
         adapter.reading(0)
-        idle { colorAt(rv, 0) == processed }
+        idleUntil("page 0 shown processed") { colorAt(rv, 0) == processed }
         assertEquals(processed, colorAt(rv, 0))
         val after = shownBitmap(rv, 0)!!
         assertEquals(before.width, after.width)
@@ -178,11 +171,11 @@ class PageAdapterAiTest {
     @Test
     fun zoomsSharpenThePlainPageButNotTheProcessedOne() {
         val (adapter, rv) = reader()
-        idle { colorAt(rv, 0) == plain }
+        idleUntil("page 0 shown plain") { colorAt(rv, 0) == plain }
         val image = (rv.findViewHolderForAdapterPosition(0) as PageAdapter.PageHolder).images[0]
         assertTrue(image.sharpensPage)
         adapter.reading(0)
-        idle { colorAt(rv, 0) == processed }
+        idleUntil("page 0 shown processed") { colorAt(rv, 0) == processed }
         assertFalse(image.sharpensPage)
         adapter.release()
     }
@@ -190,12 +183,12 @@ class PageAdapterAiTest {
     @Test
     fun thePageReadGoesFirstThenTheNextAndNoFurther() {
         val (adapter, rv) = reader(preload = 2)
-        idle { colorAt(rv, 0) == plain }
-        // Let reading ahead decode the pages after it.
-        aWhile()
+        idleUntil("page 0 shown plain") { colorAt(rv, 0) == plain }
+        // Reading ahead decodes the pages after it.
+        settled(adapter)
         adapter.reading(0)
-        idle { enhancer.asked.size >= 2 }
-        aWhile()
+        idleUntil("two pages processed") { enhancer.asked.size >= 2 }
+        settled(adapter)
         assertEquals(listOf(0, 1), enhancer.asked.toList())
         adapter.release()
     }
@@ -204,8 +197,10 @@ class PageAdapterAiTest {
     fun nothingIsProcessedUntilThePageReadHasDecoded() {
         val source = Source(4, plain)
         val held = CountDownLatch(1).also { source.held[0] = it }
+        val loaded = ArrayList<Int>()
         val adapter = PageAdapter(
-            source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false, preload = 0, enhancer = enhancer
+            source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false, preload = 0, enhancer = enhancer,
+            onLoaded = { loaded += it }
         )
         val rv = RecyclerView(context).apply {
             layoutManager = LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false)
@@ -216,11 +211,12 @@ class PageAdapterAiTest {
         val next = adapter.onCreateViewHolder(rv, 0)
         adapter.onBindViewHolder(next, 1)
         adapter.reading(0)
-        idle { (next.images[0].drawable as? BitmapDrawable) != null }
-        aWhile()
+        idleUntil("the next page shown") { (next.images[0].drawable as? BitmapDrawable) != null }
+        // Its end handled, where AI work is asked for: still none while the page read decodes.
+        idleUntil("the next page's decode handled") { 1 in loaded }
         assertTrue("the next page waits for the page read", enhancer.asked.isEmpty())
         held.countDown()
-        idle { enhancer.asked.size >= 2 }
+        idleUntil("two pages processed") { enhancer.asked.size >= 2 }
         assertEquals(listOf(0, 1), enhancer.asked.toList())
         adapter.release()
     }
@@ -228,9 +224,9 @@ class PageAdapterAiTest {
     @Test
     fun aProcessedPageShowsAtOnceWhenBoundAgain() {
         val (adapter, rv) = reader()
-        idle { colorAt(rv, 0) == plain }
+        idleUntil("page 0 shown plain") { colorAt(rv, 0) == plain }
         adapter.reading(0)
-        idle { colorAt(rv, 0) == processed }
+        idleUntil("page 0 shown processed") { colorAt(rv, 0) == processed }
         val holder = adapter.onCreateViewHolder(rv, 0)
         adapter.onBindViewHolder(holder, 0)
         val bitmap = (holder.images[0].drawable as BitmapDrawable).bitmap
@@ -251,9 +247,9 @@ class PageAdapterAiTest {
             this.adapter = first
             layOut(600, 900)
         }
-        idle { colorAt(rv, 0) == plain }
+        idleUntil("page 0 shown plain") { colorAt(rv, 0) == plain }
         first.reading(0)
-        idle { colorAt(rv, 0) == processed }
+        idleUntil("page 0 shown processed") { colorAt(rv, 0) == processed }
         val decoded = first.decoded(source)
         val done = first.processedOf(decoded)
         first.release(closeSources = false)
@@ -262,13 +258,13 @@ class PageAdapterAiTest {
         rv.adapter = second
         rv.layOut(600, 900)
         second.reading(0)
-        idle { colorAt(rv, 0) == processed }
-        aWhile()
+        idleUntil("page 0 shown processed") { colorAt(rv, 0) == processed }
+        settled(second)
         assertEquals("taken as processed, not processed again", 1, enhancer.asked.size)
         enhancer.on = false
         second.aiChanged()
         rv.layOut(600, 900)
-        idle { colorAt(rv, 0) == plain }
+        idleUntil("page 0 shown plain") { colorAt(rv, 0) == plain }
         assertEquals(plain, colorAt(rv, 0))
         second.release()
     }
@@ -276,20 +272,20 @@ class PageAdapterAiTest {
     @Test
     fun aChangedChainShowsPagesPlainAgain() {
         val (adapter, rv) = reader()
-        idle { colorAt(rv, 0) == plain }
+        idleUntil("page 0 shown plain") { colorAt(rv, 0) == plain }
         adapter.reading(0)
-        idle { colorAt(rv, 0) == processed }
+        idleUntil("page 0 shown processed") { colorAt(rv, 0) == processed }
         enhancer.on = false
         adapter.aiChanged()
         rv.layOut(600, 900)
-        idle { colorAt(rv, 0) == plain }
+        idleUntil("page 0 shown plain") { colorAt(rv, 0) == plain }
         assertEquals(plain, colorAt(rv, 0))
         assertTrue(enhancer.asked.size >= 1)
         // Back on, the plain page goes through AI again without a decode.
         enhancer.on = true
         adapter.aiChanged()
         rv.layOut(600, 900)
-        idle { colorAt(rv, 0) == processed }
+        idleUntil("page 0 shown processed") { colorAt(rv, 0) == processed }
         assertEquals(processed, colorAt(rv, 0))
         adapter.release()
     }
@@ -297,14 +293,14 @@ class PageAdapterAiTest {
     @Test
     fun aPausedReaderProcessesNothingUntilResumed() {
         val (adapter, rv) = reader()
-        idle { colorAt(rv, 0) == plain }
+        idleUntil("page 0 shown plain") { colorAt(rv, 0) == plain }
         adapter.pauseAi()
         adapter.reading(0)
-        aWhile()
+        settled(adapter)
         assertTrue("out of sight, nothing is processed", enhancer.asked.isEmpty())
         assertEquals(plain, colorAt(rv, 0))
         adapter.resumeAi()
-        idle { colorAt(rv, 0) == processed }
+        idleUntil("page 0 shown processed") { colorAt(rv, 0) == processed }
         assertEquals(processed, colorAt(rv, 0))
         adapter.release()
     }
@@ -312,8 +308,8 @@ class PageAdapterAiTest {
     @Test
     fun turningFasterThanPagesAreProcessedSkipsToThePagesReachedOnceDone() {
         val (adapter, rv) = reader(preload = 7, pages = 8)
-        idle { colorAt(rv, 0) == plain }
-        aWhile()
+        idleUntil("page 0 shown plain") { colorAt(rv, 0) == plain }
+        settled(adapter)
         // Three turns 3 s apart with nothing to process set the pace.
         enhancer.on = false
         for (item in 0..2) {
@@ -324,8 +320,8 @@ class PageAdapterAiTest {
         enhancer.ms = 5_000
         enhancer.kept += 4
         adapter.reading(3)
-        idle { enhancer.asked.size >= 3 }
-        aWhile()
+        idleUntil("three pages processed") { enhancer.asked.size >= 3 }
+        settled(adapter)
         // Page 4 is kept on disk: read back first; 3 would be done after the reader left it.
         assertEquals(listOf(4, 5, 6), enhancer.asked.toList())
         adapter.release()
@@ -335,8 +331,8 @@ class PageAdapterAiTest {
     fun thePagesAskedForAsAPageDoneAtOnceArrivesAreProcessed() {
         val e = Enhancer(processed, InlineOnce())
         val (adapter, rv) = reader(preload = 7, pages = 8, enhancer = e)
-        idle { colorAt(rv, 0) == plain }
-        aWhile()
+        idleUntil("page 0 shown plain") { colorAt(rv, 0) == plain }
+        settled(adapter)
         // Three turns 3 s apart with nothing to process set the pace.
         e.on = false
         for (item in 0..2) {
@@ -347,8 +343,8 @@ class PageAdapterAiTest {
         // Page 3 ends before the main thread waits for it; its time then puts the work two items on, at 5 and 6.
         e.onEnhance = { e.ms = 5_000 }
         adapter.reading(3)
-        idle { e.asked.size >= 3 }
-        aWhile()
+        idleUntil("three pages processed") { e.asked.size >= 3 }
+        settled(adapter)
         assertEquals(listOf(3, 5, 6), e.asked.toList())
         adapter.release()
     }
@@ -364,10 +360,10 @@ class PageAdapterAiTest {
             this.adapter = adapter
             layOut(600, 900)
         }
-        idle { colorAt(rv, 0) == plain }
-        aWhile()
+        idleUntil("page 0 shown plain") { colorAt(rv, 0) == plain }
+        settled(adapter)
         adapter.reading(0)
-        idle { colorAt(rv, 0) == processed }
+        idleUntil("page 0 shown processed") { colorAt(rv, 0) == processed }
         assertEquals(processed, colorAt(rv, 0))
         assertEquals(0, enhancer.asked.first())
         adapter.release()
@@ -380,10 +376,10 @@ class PageAdapterAiTest {
         adapter.onAiBusy = { heard += it }
         val during = ArrayList<List<Boolean>>()
         enhancer.onEnhance = { during += heard.toList() }
-        idle { colorAt(rv, 0) == plain }
-        aWhile()
+        idleUntil("page 0 shown plain") { colorAt(rv, 0) == plain }
+        settled(adapter)
         adapter.reading(0)
-        idle { enhancer.asked.size >= 2 && heard.lastOrNull() == false }
+        idleUntil("two pages processed, busy over") { enhancer.asked.size >= 2 && heard.lastOrNull() == false }
         assertEquals(listOf(0, 1), enhancer.asked.toList())
         assertEquals("busy through both pages, the next screen's included", listOf(listOf(true), listOf(true)), during)
         assertEquals(listOf(true, false), heard)
@@ -397,11 +393,11 @@ class PageAdapterAiTest {
         enhancer.kept += listOf(0, 1)
         val (adapter, rv) = reader()
         adapter.onAiBusy = { heard += it }
-        idle { colorAt(rv, 0) == plain }
-        aWhile()
+        idleUntil("page 0 shown plain") { colorAt(rv, 0) == plain }
+        settled(adapter)
         adapter.reading(0)
-        idle { enhancer.asked.size >= 2 }
-        aWhile()
+        idleUntil("two pages processed") { enhancer.asked.size >= 2 }
+        settled(adapter)
         assertEquals(processed, colorAt(rv, 0))
         assertTrue(heard.isEmpty())
         adapter.release()
@@ -413,11 +409,11 @@ class PageAdapterAiTest {
         enhancer.unneeded = true
         val (adapter, rv) = reader()
         adapter.onAiBusy = { heard += it }
-        idle { colorAt(rv, 0) == plain }
-        aWhile()
+        idleUntil("page 0 shown plain") { colorAt(rv, 0) == plain }
+        settled(adapter)
         adapter.reading(0)
-        idle { enhancer.asked.size >= 2 }
-        aWhile()
+        idleUntil("two pages processed") { enhancer.asked.size >= 2 }
+        settled(adapter)
         assertTrue(heard.isEmpty())
         adapter.release()
     }
@@ -428,9 +424,9 @@ class PageAdapterAiTest {
         enhancer.on = false
         val (adapter, rv) = reader()
         adapter.onAiBusy = { heard += it }
-        idle { colorAt(rv, 0) == plain }
+        idleUntil("page 0 shown plain") { colorAt(rv, 0) == plain }
         adapter.reading(0)
-        aWhile()
+        settled(adapter)
         adapter.release()
         assertTrue(heard.isEmpty())
     }

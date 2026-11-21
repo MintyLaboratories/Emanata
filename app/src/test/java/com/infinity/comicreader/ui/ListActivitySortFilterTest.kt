@@ -4,7 +4,6 @@ import com.infinity.comicreader.testing.bookId
 import android.Manifest
 import android.app.Application
 import android.os.Environment
-import android.os.Looper
 import android.view.View
 import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.RecyclerView
@@ -136,7 +135,9 @@ class ListActivitySortFilterTest {
         // Created but not yet in sight, as under a book opened over it.
         val controller = Robolectric.buildActivity(ListActivity::class.java).create()
         // Facts are read only once the library is started: nothing can be read before.
-        shadowOf(Looper.getMainLooper()).idle()
+        // With no I/O step of its own running, the facts job can only be held at the started gate.
+        val a = controller.get()
+        idleUntil("facts held until started") { a.listJob?.isCompleted == true && a.factsJob?.isActive == true && a.factsJob!!.children.none() }
         fun counted(): Int {
             val cache = BookFactsCache(ApplicationProvider.getApplicationContext()).apply { load() }
             return books.count { cache.get(bookId(it))?.pages == 2 }

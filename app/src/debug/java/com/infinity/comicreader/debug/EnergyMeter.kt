@@ -63,20 +63,26 @@ internal class EnergyMeter(private val context: Context, private val everyMs: Lo
         val t0 = SystemClock.elapsedRealtime()
         val until = t0 + ms
         val done = AtomicBoolean(false)
+        var error: String? = null
         val sampler = thread(name = "energy") {
             var n = 0
-            while (!done.get()) {
-                if (n++ % CHECK_EVERY == 0) {
-                    heat?.see(thermal())
-                    if (onCharger()) charger = true
+            // A failure ends the readings and refuses the estimate, without taking the process down.
+            try {
+                while (!done.get()) {
+                    if (n++ % CHECK_EVERY == 0) {
+                        heat?.see(thermal())
+                        if (onCharger()) charger = true
+                    }
+                    // Microamperes, as on most devices.
+                    val ua = battery.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
+                    if (ua != Int.MIN_VALUE) {
+                        val v = volts()
+                        synchronized(samples) { samples += EnergyRuns.Sample(SystemClock.elapsedRealtime() - t0, ua / 1000.0, v) }
+                    }
+                    Thread.sleep(everyMs)
                 }
-                // Microamperes, as on most devices.
-                val ua = battery.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
-                if (ua != Int.MIN_VALUE) {
-                    val v = volts()
-                    synchronized(samples) { samples += EnergyRuns.Sample(SystemClock.elapsedRealtime() - t0, ua / 1000.0, v) }
-                }
-                Thread.sleep(everyMs)
+            } catch (t: Throwable) {
+                error = "${t.javaClass.simpleName}: ${t.message}"
             }
         }
         try {
@@ -87,7 +93,7 @@ internal class EnergyMeter(private val context: Context, private val everyMs: Lo
             sampler.join()
         }
         if (onCharger()) charger = true
-        return synchronized(samples) { EnergyRuns.Draw(samples.toList(), charger) }
+        return synchronized(samples) { EnergyRuns.Draw(samples.toList(), charger, error) }
     }
 
     /** [idleS] s of rest sampled as the baseline, then [work] for [seconds] s, returning the pages it made. */

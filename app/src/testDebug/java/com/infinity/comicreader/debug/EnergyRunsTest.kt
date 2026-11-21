@@ -58,6 +58,16 @@ class EnergyRunsTest {
     }
 
     @Test
+    fun aFailedSamplerRefusesTheEstimate() {
+        val failed = Draw(listOf(Sample(0, -900.0, 4.0)), error = "DeadObjectException: gone")
+        val run = Run(draw(-400.0, -400.0), failed, 10.0, 20, 0)
+        assertEquals("the sampler failed: DeadObjectException: gone", run.refused)
+        assertNull(run.mJPerPage)
+        // Before a charger: no reading after the failure can tell.
+        assertEquals("the sampler failed: x", Run(Draw(emptyList(), charger = true, error = "x"), draw(-900.0), 10.0, 20, 0).refused)
+    }
+
+    @Test
     fun aChargerShowsByStatusOrPlug() {
         assertTrue(EnergyRuns.onCharger(BatteryManager.BATTERY_STATUS_CHARGING, 0))
         assertTrue(EnergyRuns.onCharger(BatteryManager.BATTERY_STATUS_FULL, 0))

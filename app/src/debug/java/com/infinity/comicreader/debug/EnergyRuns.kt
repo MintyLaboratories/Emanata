@@ -11,8 +11,11 @@ internal object EnergyRuns {
     /** One reading [atMs] into its window: current in mA (negative while draining) and voltage in V (0 when unknown). */
     data class Sample(val atMs: Long, val currentMa: Double, val volts: Double)
 
-    /** Readings over one window; [charger] when a charger showed at any check during it. */
-    class Draw(val samples: List<Sample>, val charger: Boolean = false) {
+    /**
+     * Readings over one window; [charger] when a charger showed at any check during it;
+     * [error] when the sampler failed, its readings stopping there.
+     */
+    class Draw(val samples: List<Sample>, val charger: Boolean = false, val error: String? = null) {
         val meanMa: Double get() = if (samples.isEmpty()) Double.NaN else samples.map { it.currentMa }.average()
 
         private val withVolts: List<Sample> get() = samples.filter { it.volts > 0 }
@@ -72,6 +75,7 @@ internal object EnergyRuns {
     class Run(val idle: Draw, val busy: Draw, val seconds: Double, val pages: Int, val cpuMs: Long) {
         /** Why no energy per page counts; null when it does. */
         val refused: String? get() = when {
+            idle.error != null || busy.error != null -> "the sampler failed: ${idle.error ?: busy.error}"
             idle.charger || busy.charger -> "a charger was connected"
             !idle.draining || !busy.draining -> "the battery did not drain throughout"
             idle.meanMw.isNaN() || busy.meanMw.isNaN() -> "no battery voltage"

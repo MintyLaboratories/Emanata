@@ -44,11 +44,13 @@ internal object EnergyRuns {
     const val DISTINCT_WINDOW_MS = 10_000L
 
     /**
-     * True when the battery reports a charger: its own [status] charging or full (which
-     * `dumpsys battery unplug` does not hide), or a [plugged] type other than none.
+     * True when the battery may sit on a charger: its own [status] (which `dumpsys battery
+     * unplug` does not hide) anything but discharging, such as not charging at a charge
+     * limit with the cable in, or a [plugged] type other than none. A status the battery
+     * does not report (unknown, or none at all) leaves only the plug.
      */
     fun onCharger(status: Int, plugged: Int): Boolean =
-        status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL || plugged != 0
+        plugged != 0 || (status > BatteryManager.BATTERY_STATUS_UNKNOWN && status != BatteryManager.BATTERY_STATUS_DISCHARGING)
 
     /**
      * [text] of a sysfs voltage node in volts: microvolts as most report it, or millivolts;

@@ -20,7 +20,8 @@ import kotlin.concurrent.thread
  * is BatteryManager's `CURRENT_NOW`; voltage is the battery's sysfs node where the app may
  * read it, else the battery broadcast, which refreshes only when the battery service posts
  * (`voltageSource`). Every second it reads the thermal status and the charger state (the
- * battery's own status and the plug): a charger seen at any check refuses the estimate.
+ * battery's own status other than discharging, or the plug): a charger seen at any check
+ * refuses the estimate.
  * Valid only with the cable out (adb over Wi-Fi): under `dumpsys battery unplug` a charger
  * still supplies power.
  */

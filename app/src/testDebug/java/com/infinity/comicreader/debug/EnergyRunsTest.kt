@@ -65,7 +65,12 @@ class EnergyRunsTest {
         assertTrue(EnergyRuns.onCharger(BatteryManager.BATTERY_STATUS_NOT_CHARGING, BatteryManager.BATTERY_PLUGGED_USB))
         assertTrue(EnergyRuns.onCharger(BatteryManager.BATTERY_STATUS_DISCHARGING, BatteryManager.BATTERY_PLUGGED_WIRELESS))
         assertFalse(EnergyRuns.onCharger(BatteryManager.BATTERY_STATUS_DISCHARGING, 0))
-        assertFalse(EnergyRuns.onCharger(BatteryManager.BATTERY_STATUS_NOT_CHARGING, 0))
+        // Held at a charge limit under `dumpsys battery unplug`: the plug reads none, the status not charging.
+        assertTrue(EnergyRuns.onCharger(BatteryManager.BATTERY_STATUS_NOT_CHARGING, 0))
+        // A battery without a status leaves only the plug.
+        assertFalse(EnergyRuns.onCharger(BatteryManager.BATTERY_STATUS_UNKNOWN, 0))
+        assertFalse(EnergyRuns.onCharger(Int.MIN_VALUE, 0))
+        assertTrue(EnergyRuns.onCharger(Int.MIN_VALUE, BatteryManager.BATTERY_PLUGGED_AC))
     }
 
     @Test

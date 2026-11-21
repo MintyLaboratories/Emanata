@@ -5105,8 +5105,8 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         /** How long after the last page newly on screen the pages seen are stored. */
         private const val VISITS_DELAY_MS = 5_000L
 
-        /** Reads and writes pages seen one at a time, in order, so a book opened again reads what was just stored. */
-        private val seenIo = Executors.newSingleThreadExecutor { r -> Thread(r, "pages-seen").apply { isDaemon = true } }.asCoroutineDispatcher()
+        /** Reads and writes pages seen one at a time, in order, so a book opened again reads what was just stored; tests drain it. */
+        internal val seenIo =Executors.newSingleThreadExecutor { r -> Thread(r, "pages-seen").apply { isDaemon = true } }.asCoroutineDispatcher()
 
         /** Stores pages seen, outliving the reader that saw them. */
         private val visitWrites = CoroutineScope(SupervisorJob() + seenIo)

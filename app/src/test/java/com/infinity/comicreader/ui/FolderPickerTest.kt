@@ -1,8 +1,10 @@
 package com.infinity.comicreader.ui
 
+import com.infinity.comicreader.testing.idleUntil
 import com.infinity.comicreader.testing.toggleFavorite
 import android.Manifest
 import android.app.Application
+import android.app.Dialog
 import android.content.DialogInterface
 import android.os.Environment
 import android.os.Looper
@@ -39,15 +41,11 @@ class FolderPickerTest {
         root.mkdirs()
     }
 
-    private fun idle() {
-        // Folders are read on the IO pool; let the dialog land on the main thread.
-        repeat(10) {
-            shadowOf(Looper.getMainLooper()).idle()
-            Thread.sleep(20)
-        }
+    /** Waits until a dialog other than [shown] opens: each list of folders does once read on the IO pool. Returns it. */
+    private fun dialogAfter(what: String, shown: Dialog?): AlertDialog {
+        idleUntil(what) { ShadowDialog.getLatestDialog()?.let { it !== shown && it.isShowing } == true }
+        return ShadowDialog.getLatestDialog() as AlertDialog
     }
-
-    private fun dialog() = ShadowDialog.getLatestDialog() as AlertDialog
 
     private fun AlertDialog.items(): List<String> =
         (0 until listView.adapter.count).map { listView.adapter.getItem(it).toString() }
@@ -62,17 +60,16 @@ class FolderPickerTest {
         val activity = Robolectric.buildActivity(SettingsActivity::class.java).setup().get()
         var picked: String? = null
         FolderPicker(activity, activity.lifecycleScope) { picked = it }.show()
-        idle()
-        assertEquals(listOf("Alpha", "Beta", "Device", "Other folder…"), dialog().items())
+        val first = dialogAfter("the picker", null)
+        assertEquals(listOf("Alpha", "Beta", "Device", "Other folder…"), first.items())
 
-        dialog().listView.performItemClick(null, 3, 3)
-        idle()
-        assertEquals(listOf("Alpha", "Beta"), dialog().items().filter { it == "Alpha" || it == "Beta" })
-        val alphaAt = dialog().items().indexOf("Alpha")
-        dialog().listView.performItemClick(null, alphaAt, alphaAt.toLong())
-        idle()
-        dialog().getButton(DialogInterface.BUTTON_POSITIVE).performClick()
-        idle()
+        first.listView.performItemClick(null, 3, 3)
+        val top = dialogAfter("the device's folders", first)
+        assertEquals(listOf("Alpha", "Beta"), top.items().filter { it == "Alpha" || it == "Beta" })
+        val alphaAt = top.items().indexOf("Alpha")
+        top.listView.performItemClick(null, alphaAt, alphaAt.toLong())
+        dialogAfter("the folders in Alpha", top).getButton(DialogInterface.BUTTON_POSITIVE).performClick()
+        shadowOf(Looper.getMainLooper()).idle()
         assertEquals(alpha.absolutePath, picked)
     }
 

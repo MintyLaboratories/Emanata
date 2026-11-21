@@ -274,6 +274,8 @@ internal object Sessions {
      * [clock] and ranks them (then [maxTile]'s sizes, as without), the choice kept for the next
      * open once its check passes; timing waits while [hold] (the reader moving). A size past [maxTile] that fails to run is remembered as too
      * large ([TileChoice.ceiling]), also when the app ends while it runs for the first time.
+     * A model that fails its checks in fp16 at every size is opened in fp32 from then on
+     * ([TileTuning.fp16Fails]).
      */
     fun attempt(
         runtime: InferenceRuntime,
@@ -359,7 +361,8 @@ internal object Sessions {
      * within [memoryBytes], less the weights of both copies checked side by side (the CPU's
      * [cpuWeights] and the GPU's); null when none does. [measured]: the CPU's working bytes
      * per input pixel in fp32, a floor for the estimate. With [tuning], sizes past [maxTile] as
-     * [attempt] says.
+     * [attempt] says, and fp16 skipped where it failed its checks before ([TileTuning.fp16Fails]):
+     * where checks ran in fp16 and none passed, that is kept for later opens.
      */
     private fun onGpu(
         runtime: InferenceRuntime, files: ModelFiles, threads: Int, info: GpuInfo, geometry: Geometry, widest: Int,
@@ -367,7 +370,9 @@ internal object Sessions {
         canceled: () -> Boolean, tuning: TileTuning?, clock: () -> Long, hold: () -> Boolean
     ): Session? {
         val name = files.param.name
-        for (half in if (fp16) listOf(true, false) else listOf(false)) {
+        val failedBefore = fp16 && tuning?.fp16Fails(info.name) == true
+        if (failedBefore) Log.i(TAG, "$name: failed its checks in fp16 on this GPU before: fp32")
+        for (half in if (fp16 && !failedBefore) listOf(true, false) else listOf(false)) {
             val precision = if (half) "fp16" else "fp32"
             val model = runtime.open(files, true, threads, half) ?: return null
             var kept = false
@@ -390,6 +395,9 @@ internal object Sessions {
                 val budget = min(info.budgetMb.toLong() * (1L shl 20) / TileSizing.GPU_SHARE, work)
                 // The chosen size kept from an earlier open, when its check found it wrong now (not short of memory).
                 var choiceFailed = false
+                // Whether any size's check passed, and any failed (not short of memory).
+                var anyPassed = false
+                var anyFailed = false
                 var g = geometry
                 var widenings = 0
                 while (true) {
@@ -442,6 +450,7 @@ internal object Sessions {
                             if (unproven) slot?.trying(0)
                         }
                         Log.i(TAG, "$name: $precision, $size px tiles, margin ${g.margin}: $check (${SystemClock.elapsedRealtime() - t0} ms)")
+                        if (check.passes) anyPassed = true else anyFailed = true
                         if (check.passes && check.peakBytes > budget) {
                             Log.w(TAG, "$name: $precision, $size px tiles held ${check.peakBytes shr 20} MB, over ${budget shr 20} MB")
                             continue
@@ -496,6 +505,10 @@ internal object Sessions {
                     widenings++
                 }
                 nonePassed()
+                if (half && anyFailed && !anyPassed && tuning != null) {
+                    Log.i(TAG, "$name: fp16 fails its checks on this GPU: fp32 from now on")
+                    tuning.fp16Failed(info.name)
+                }
             } catch (e: ModelProbe.Unfit) {
                 Log.w(TAG, "$name: $precision fails: ${e.message}")
                 nonePassed()

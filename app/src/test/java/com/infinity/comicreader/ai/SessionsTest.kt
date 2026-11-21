@@ -117,6 +117,37 @@ class SessionsTest {
     }
 
     @Test
+    fun aModelFailingInFp16OpensInFp32FromThenOnOnThatGpu() {
+        val choices = TileChoices(tmp.newFolder())
+        val tuning = TileTuning(emptyList(), choices, "model-a")
+        fun open(gpuName: String = "Test GPU", key: String = "model-a"): FakeRuntime {
+            val runtime = FakeRuntime(gpu = GpuInfo(gpuName, 2048, Fp16Modes.ALL, Long.MAX_VALUE), make = { gpu, fp16 -> FakeModel(onGpu = gpu, edgeNoise = gpu && fp16) })
+            val s = Sessions.open(runtime, fakeFiles(tmp.root), threads = 4, tuning = TileTuning(emptyList(), choices, key))!!
+            assertTrue(s.model.onGpu)
+            assertFalse(s.fp16)
+            return runtime
+        }
+        assertFalse(tuning.fp16Fails("Test GPU"))
+        assertEquals(listOf(false, true, false), open().askedFp16)
+        assertTrue(tuning.fp16Fails("Test GPU"))
+        assertEquals("fp16 skipped", listOf(false, false), open().askedFp16)
+        assertEquals("another GPU checks it", listOf(false, true, false), open(gpuName = "Other GPU").askedFp16)
+        assertEquals("other files check it", listOf(false, true, false), open(key = "model-b").askedFp16)
+    }
+
+    @Test
+    fun fp16IsNotMarkedFailingWhenItPassesOrRunsShortOfMemory() {
+        val choices = TileChoices(tmp.newFolder())
+        val tuning = TileTuning(emptyList(), choices, "model-a")
+        assertTrue(Sessions.open(FakeRuntime(), fakeFiles(tmp.root), threads = 4, tuning = tuning)!!.fp16)
+        assertFalse(tuning.fp16Fails("Test GPU"))
+        // No tile fits the GPU's budget: nothing was checked.
+        val small = FakeRuntime(gpu = gpu(budgetMb = 1), make = { gpu, fp16 -> FakeModel(onGpu = gpu, edgeNoise = gpu && fp16) })
+        assertFalse(Sessions.open(small, fakeFiles(tmp.root, channels = 1024), threads = 4, tuning = tuning)!!.model.onGpu)
+        assertFalse(tuning.fp16Fails("Test GPU"))
+    }
+
+    @Test
     fun aLargeTileGoneWrongGetsTheNextSmallerSize() {
         val runtime = FakeRuntime(make = { gpu, _ -> FakeModel(onGpu = gpu, breaksAbove = if (gpu) 150 else Int.MAX_VALUE) })
         val s = Sessions.open(runtime, fakeFiles(tmp.root), threads = 4)!!

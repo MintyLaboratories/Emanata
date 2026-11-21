@@ -1094,7 +1094,10 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   fp16 (pairs in 32-bit words, computed in fp32) is checked in fp16 first, with
   only the fp16 modes it supports turned on. Seams from fp16 rounding widen the margin by
   8 pixels (at most 3 times, while fp16 stays the cheaper per pixel), then fp32
-  is tried; other failures try the next smaller size. Catalog models may take
+  is tried; other failures try the next smaller size. A model that fails in
+  fp16 at every size opens in fp32 on that GPU from then on, until a system
+  update or new model files (ncnn reports packed fp16 on every Vulkan GPU, so
+  every model is checked in fp16 once). Catalog models may take
   larger GPU tiles (`TileTuning`): at a model's first open each device times
   192, 256, 384 and 512 px tiles where they fit (smallest first, in three
   rounds taken in turn, so speed drifting over minutes hits every size alike;

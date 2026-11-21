@@ -416,11 +416,13 @@ class ReaderAi internal constructor(
         return null
     }
 
-    /** [m]'s tile sizes to choose among on this device: a catalog model's ([CatalogModel.tiles]), kept by its files; null for others. */
+    /**
+     * What this device learns of [m], kept by its files: its tile sizes to choose among (a
+     * catalog model's, [CatalogModel.tiles]; none for others) and whether it fails in fp16.
+     */
     private fun tuningOf(m: AiModel): TileTuning? {
         val choices = tiles ?: return null
-        val sizes = (m as? CatalogModel)?.tiles?.takeIf { it.isNotEmpty() } ?: return null
-        return TileTuning(sizes, choices, TileTuning.keyOf(m.fingerprint))
+        return TileTuning((m as? CatalogModel)?.tiles.orEmpty(), choices, TileTuning.keyOf(m.fingerprint))
     }
 
     /** Why model [id] did not open when last tried; null when it opened or was not tried. Any thread. */

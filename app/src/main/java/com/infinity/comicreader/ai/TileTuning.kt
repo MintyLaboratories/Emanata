@@ -14,17 +14,27 @@ import kotlin.math.max
 
 /**
  * A model's tile sizes to choose among on the GPU ([candidates]; those past [TileSizing.DEFAULT_MAX]
- * only where they fit), and where what this device learns of them is kept: [choices], under
- * [key] (what identifies the model's files, as [keyOf] makes it).
+ * only where they fit; none: the usual sizes), and where what this device learns of them and
+ * of its fp16 ([fp16Fails]) is kept: [choices], under [key] (what identifies the model's
+ * files, as [keyOf] makes it).
  */
 internal class TileTuning(val candidates: List<Int>, val choices: TileChoices, val key: String) {
+    /** Whether the model failed its GPU checks in fp16 on GPU [gpu] at an earlier open ([fp16Failed]), so opens take fp32 at once. */
+    fun fp16Fails(gpu: String): Boolean = choices.marked(fp16Key(gpu))
+
+    /** Remembers that the model failed its GPU checks in fp16 on GPU [gpu]. */
+    fun fp16Failed(gpu: String) = choices.mark(fp16Key(gpu))
+
+    private fun fp16Key(gpu: String) = "$gpu|fp16 fails|$key"
+
     companion object {
-        /** How sizes are timed and kept; a new version times them afresh. */
+        /** How sizes are timed and fp16 is judged, with the ncnn that runs them; a new version (bumped with ncnn) learns afresh. */
         const val VERSION = 1
 
         /**
          * The key for a model whose files are [model] on [system] (the OS build: its GPU driver
-         * sets tiles' speed and memory, so an update times them afresh and lifts ceilings).
+         * sets tiles' speed, memory and fp16 rounding, so an update times them afresh, lifts
+         * ceilings and checks fp16 again).
          */
         fun keyOf(model: String, system: String = Build.FINGERPRINT): String = "v$VERSION|$system|$model"
     }
@@ -60,7 +70,7 @@ internal data class TileChoice(
 }
 
 /**
- * [TileChoice]s by key, one small file each under [dir]: kept across runs, never backed up
+ * [TileChoice]s and [mark]s by key, one small file each under [dir]: kept across runs, never backed up
  * (another device learns its own), written whole so a file is never half written.
  */
 internal class TileChoices(private val dir: File) {
@@ -84,6 +94,19 @@ internal class TileChoices(private val dir: File) {
             tmp.writeText(String.format(Locale.ROOT, "%d %d %d %d%s\n", choice.size, choice.ceiling, choice.trying, choice.timings, ms))
             Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING)
         }.onFailure { Log.w(TAG, "cannot keep tile choice: ${it.message}") }
+    }
+
+    /** Whether [key] was [mark]ed. */
+    @Synchronized
+    fun marked(key: String): Boolean = fileOf(key).isFile
+
+    /** Marks [key] (a fact without a choice); a failed write is logged and forgotten. */
+    @Synchronized
+    fun mark(key: String) {
+        runCatching {
+            dir.mkdirs()
+            fileOf(key).writeText("1\n")
+        }.onFailure { Log.w(TAG, "cannot keep mark: ${it.message}") }
     }
 
     private fun fileOf(key: String): File {

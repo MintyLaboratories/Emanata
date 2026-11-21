@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.SystemClock
 import android.util.Log
 import androidx.test.core.app.ApplicationProvider
+import com.infinity.comicreader.testing.awaitUntil
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -23,9 +24,11 @@ import org.robolectric.annotation.GraphicsMode
 import org.robolectric.shadows.ShadowLog
 import java.io.File
 import java.util.concurrent.CancellationException
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
+import kotlin.concurrent.thread
 
 /** Importing the user's own models: picked files copied, checked, then named and given a step. */
 @RunWith(RobolectricTestRunner::class)
@@ -55,6 +58,12 @@ class ModelImportsTest {
         ModelImports.clock = SystemClock::elapsedRealtime
         store.root.deleteRecursively()
         UserModels.load(store)
+    }
+
+    /** Waits for the imports' work queued so far ([ModelImports.settle]); fails naming [what] should it hang. */
+    private fun settle(what: String) {
+        val drained = thread(isDaemon = true) { ModelImports.settle() }
+        awaitUntil(what) { !drained.isAlive }
     }
 
     /** Checks run a model whose every tile takes 2 s on the check's clock: a page of about a minute, warned of as slow. */
@@ -93,8 +102,7 @@ class ModelImportsTest {
     fun aModelWithWarningsIsNamedOnlyOnceAccepted() {
         slow()
         ModelImports.start(context, pair("Slow lines"))
-        val until = System.currentTimeMillis() + 20_000
-        while (ModelImports.state.value !is ImportState.Fit && System.currentTimeMillis() < until) Thread.sleep(10)
+        settle("the import")
         val fit = ModelImports.state.value as ImportState.Fit
         assertEquals(setOf(ImportWarning.SLOW), fit.warnings)
         assertTrue(fit.warned)
@@ -115,7 +123,7 @@ class ModelImportsTest {
         ModelImports.previewed()
         assertEquals(accepted.copy(seen = true), ModelImports.state.value)
         ModelImports.save(context, "Slow lines", AiStep.UPSCALE)
-        while (ModelImports.state.value !is ImportState.Imported && System.currentTimeMillis() < until) Thread.sleep(10)
+        settle("the save")
         assertEquals("Slow lines", (ModelImports.state.value as ImportState.Imported).model.name)
     }
 
@@ -174,13 +182,12 @@ class ModelImportsTest {
     fun aModelWithWarningsCanceledKeepsNothing() {
         slow()
         ModelImports.start(context, pair("Slow lines"))
-        val until = System.currentTimeMillis() + 20_000
-        while (ModelImports.state.value !is ImportState.Fit && System.currentTimeMillis() < until) Thread.sleep(10)
+        settle("the import")
         val fit = ModelImports.state.value as ImportState.Fit
         assertTrue(store.staging(fit.id).isDirectory)
         ModelImports.dismiss(context)
         assertEquals(ImportState.Idle, ModelImports.state.value)
-        while (store.staging(fit.id).exists() && System.currentTimeMillis() < until) Thread.sleep(10)
+        settle("the dismissed model's delete")
         assertFalse(store.staging(fit.id).exists())
         assertTrue(UserModels.all.isEmpty())
     }
@@ -191,9 +198,7 @@ class ModelImportsTest {
         ModelImports.runtime = FakeRuntime(gpu = null, make = { onGpu, _ -> FakeModel(onGpu = onGpu, onClose = { ModelImports.cancel() }) })
         ModelImports.start(context, pair())
         val staged = store.staging("x").parentFile!!
-        val until = System.currentTimeMillis() + 20_000
-        while (!staged.exists() && System.currentTimeMillis() < until) Thread.sleep(10)
-        while (staged.list().orEmpty().isNotEmpty() && System.currentTimeMillis() < until) Thread.sleep(10)
+        settle("the canceled import")
         assertEquals(emptyList<String>(), staged.list().orEmpty().toList())
         assertEquals(ImportState.Idle, ModelImports.state.value)
     }
@@ -202,12 +207,11 @@ class ModelImportsTest {
     fun aFitModelReplacedByAnotherImportKeepsNothing() {
         slow()
         ModelImports.start(context, pair("Slow lines"))
-        val until = System.currentTimeMillis() + 20_000
-        while (ModelImports.state.value !is ImportState.Fit && System.currentTimeMillis() < until) Thread.sleep(10)
+        settle("the first import")
         val fit = ModelImports.state.value as ImportState.Fit
         val (_, param) = pair("Second")
         ModelImports.start(context, listOf(param))
-        while (store.staging(fit.id).exists() && System.currentTimeMillis() < until) Thread.sleep(10)
+        settle("the second import")
         assertFalse(store.staging(fit.id).exists())
         ModelImports.cancel()
     }
@@ -294,21 +298,26 @@ class ModelImportsTest {
     fun theStartsTidyingWaitsForAnImportUnderWay() {
         val checking = CountDownLatch(1)
         val release = CountDownLatch(1)
+        lateinit var files: ModelFiles
+        // Whether the checked files were there at each run of the check after the tidy was queued.
+        val kept = CopyOnWriteArrayList<Boolean>()
         ModelImports.runtime = FakeRuntime(make = { onGpu, _ ->
             FakeModel(onGpu = onGpu, onRun = {
                 checking.countDown()
-                release.await(10, TimeUnit.SECONDS)
+                release.await()
+                kept += files.param.exists() && files.bin.exists()
             })
         })
-        ModelImports.start(context, pair())
-        assertTrue(checking.await(10, TimeUnit.SECONDS))
-        val files = store.userFiles(store.staging("x").parentFile!!.listFiles()!!.single())
-        ModelImports.tidyAtStart(store)
-        // Long enough for a tidy on a thread of its own to delete the staged files.
-        Thread.sleep(300)
-        assertTrue("the checked files stay", files.param.exists() && files.bin.exists())
-        release.countDown()
-        ModelImports.settle()
+        try {
+            ModelImports.start(context, pair())
+            assertTrue(checking.await(10, TimeUnit.SECONDS))
+            files = store.userFiles(store.staging("x").parentFile!!.listFiles()!!.single())
+            ModelImports.tidyAtStart(store)
+        } finally {
+            release.countDown()
+        }
+        settle("the import and the tidy")
+        assertTrue("the checked files stay: $kept", kept.isNotEmpty() && kept.all { it })
         assertTrue(ModelImports.state.value is ImportState.Fit)
     }
 
@@ -319,18 +328,19 @@ class ModelImportsTest {
         ModelImports.runtime = FakeRuntime(make = { onGpu, _ ->
             FakeModel(onGpu = onGpu, onRun = {
                 checking.countDown()
-                release.await(10, TimeUnit.SECONDS)
+                release.await()
             })
         })
-        ModelImports.start(context, pair("First"))
-        assertTrue(checking.await(10, TimeUnit.SECONDS))
-        ModelImports.cancel()
-        // One file: the new import waits for the other, once the canceled one has ended.
-        val (_, param) = pair("Second")
-        ModelImports.start(context, listOf(param))
-        release.countDown()
-        val until = System.currentTimeMillis() + 10_000
-        while (ModelImports.state.value !is ImportState.Half && System.currentTimeMillis() < until) Thread.sleep(10)
+        val param = try {
+            ModelImports.start(context, pair("First"))
+            assertTrue(checking.await(10, TimeUnit.SECONDS))
+            ModelImports.cancel()
+            // One file: the new import waits for the other, once the canceled one has ended.
+            pair("Second")[1].also { ModelImports.start(context, listOf(it)) }
+        } finally {
+            release.countDown()
+        }
+        settle("the canceled import and the new one")
         assertEquals(ImportState.Half(param, isParam = true), ModelImports.state.value)
         ModelImports.cancel()
     }
@@ -351,13 +361,12 @@ class ModelImportsTest {
     @Test
     fun aModelTheStoreWillNotTakeIsNotBlamedOnSpace() {
         ModelImports.start(context, pair())
-        val until = System.currentTimeMillis() + 10_000
-        while (ModelImports.state.value !is ImportState.Fit && System.currentTimeMillis() < until) Thread.sleep(10)
+        settle("the import")
         // A file where the imported models' folder goes: the move fails.
         store.userRoot.writeText("")
         ModelImports.previewed()
         ModelImports.save(context, "Mine", AiStep.UPSCALE)
-        while (ModelImports.state.value !is ImportState.Failed && System.currentTimeMillis() < until) Thread.sleep(10)
+        settle("the save")
         assertEquals(ImportState.Failed(ImportFailure.STORAGE), ModelImports.state.value)
     }
 }

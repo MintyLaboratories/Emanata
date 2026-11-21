@@ -20,6 +20,7 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.slider.Slider
 import com.google.android.material.tabs.TabLayout
 import com.infinity.comicreader.R
+import com.infinity.comicreader.testing.idleUntil
 import com.infinity.comicreader.data.BookId
 import com.infinity.comicreader.data.Bookmark
 import com.infinity.comicreader.data.CoverShape
@@ -81,20 +82,12 @@ class ListActivityViewLiveTest {
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(20))
     }
 
-    /** Runs the main thread until [done], while listing goes on in the background; fails after [timeoutMs]. */
-    private fun awaitUntil(what: String, timeoutMs: Long = 5000, done: () -> Boolean) {
-        val end = System.currentTimeMillis() + timeoutMs
-        while (true) {
-            settle()
-            if (done()) return
-            assertTrue("timed out waiting for $what", System.currentTimeMillis() < end)
-            Thread.sleep(10)
-        }
-    }
+    /** Runs the main thread, frames included, until [done], while listing goes on in the background. */
+    private fun settleUntil(what: String, done: () -> Boolean) = idleUntil(what, step = { settle() }, done = done)
 
     /** Waits until [list] has [count] items or more. */
     private fun awaitRows(list: ListActivity, count: Int) =
-        awaitUntil("$count items") { (list.recycler().adapter?.itemCount ?: 0) >= count }
+        settleUntil("$count items") { (list.recycler().adapter?.itemCount ?: 0) >= count }
 
     private fun launch(tab: Int = 0): ListActivity {
         // Touched, as on a phone or tablet: no row takes focus and scrolls itself into view.
@@ -108,9 +101,8 @@ class ListActivityViewLiveTest {
         return activity
     }
 
-    /** Waits until the tab is listed: the spinner is gone. */
-    private fun ListActivity.awaitListing() =
-        awaitUntil("the listing") { findViewById<View>(R.id.progress).visibility != View.VISIBLE }
+    /** Waits until the tab is listed. */
+    private fun ListActivity.awaitListing() = settleUntil("the listing") { listJob?.isCompleted == true }
 
     private fun ListActivity.recycler(): RecyclerView = findViewById(R.id.recycler)
 
@@ -382,10 +374,10 @@ class ListActivityViewLiveTest {
         fun fits() = 2 * (r.adapter as BookAdapter).cellHeight + sectionHeight(r) * sections() <=
             r.height - r.paddingTop - r.paddingBottom
         // Favorites are sorted into sections once their kinds are found.
-        awaitUntil("sections") { sections() > 0 }
+        settleUntil("sections") { sections() > 0 }
         assertTrue(fits())
         prefs.groupFavorites = false
-        awaitUntil("no sections") { sections() == 0 }
+        settleUntil("no sections") { sections() == 0 }
         // Without section headers the two rows take the whole height.
         val rowSpace = r.height - r.paddingTop - r.paddingBottom
         assertTrue(rowSpace - 2 * (r.adapter as BookAdapter).cellHeight < rowSpace / 10)
@@ -402,7 +394,7 @@ class ListActivityViewLiveTest {
         val list = launch()
         assertFalse(list.titles().any { it.startsWith(".") })
         list.onOptionsItemSelected(list.menuItem(R.id.menu_show_hidden))
-        awaitUntil("hidden files") { list.titles().any { it.startsWith(".") } }
+        settleUntil("hidden files") { list.titles().any { it.startsWith(".") } }
     }
 
     // ------------------------------------------------------------------ without the settings feed
@@ -504,7 +496,7 @@ class ListActivityViewLiveTest {
         File(dir, "Box").mkdirs()
         val list = launch()
         muteFeed()
-        awaitUntil("the folder") { list.titles().contains("Box") }
+        settleUntil("the folder") { list.titles().contains("Box") }
         list.onOptionsItemSelected(list.menuItem(R.id.menu_filter))
         settle()
         tapText(latestDialogRoot(), context.getString(R.string.filter_folders))
@@ -517,10 +509,10 @@ class ListActivityViewLiveTest {
         File(dir, ".Book 00.cbz").createNewFile()
         val list = launch()
         muteFeed()
-        awaitUntil("the listing") { list.titles().isNotEmpty() }
+        settleUntil("the listing") { list.titles().isNotEmpty() }
         assertFalse(list.titles().any { it.startsWith(".") })
         list.onOptionsItemSelected(list.menuItem(R.id.menu_show_hidden))
-        awaitUntil("hidden files") { list.titles().any { it.startsWith(".") } }
+        settleUntil("hidden files") { list.titles().any { it.startsWith(".") } }
     }
 
     @Test
@@ -538,7 +530,7 @@ class ListActivityViewLiveTest {
         list.findViewById<TabLayout>(R.id.tabs).getTabAt(1)!!.select()
         val r = list.recycler()
         fun sections() = (0 until r.childCount).count { r.getChildAt(it).findViewById<View>(R.id.title) !is TitleView }
-        awaitUntil("sections") { sections() > 0 }
+        settleUntil("sections") { sections() > 0 }
         muteFeed()
         // As if changed in Settings: the screen is out of sight meanwhile.
         controller.pause().stop()
@@ -547,7 +539,7 @@ class ListActivityViewLiveTest {
         prefs.setGrid(Prefs.TAB_FAVORITES, !prefs.view(Prefs.TAB_FAVORITES).grid)
         val grid = prefs.view(Prefs.TAB_FAVORITES).grid
         controller.start().resume()
-        awaitUntil("no sections") { sections() == 0 && list.rows().isNotEmpty() }
+        settleUntil("no sections") { sections() == 0 && list.rows().isNotEmpty() }
         assertEquals(grid, list.showsGrid())
         assertEquals(CoverShape.WIDE, (r.adapter as BookAdapter).options.shape)
     }

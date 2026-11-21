@@ -21,6 +21,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.tabs.TabLayout
 import com.infinity.comicreader.R
+import com.infinity.comicreader.testing.idleUntil
 import com.infinity.comicreader.data.DetailDisplay
 import com.infinity.comicreader.data.ListDensity
 import com.infinity.comicreader.data.Prefs
@@ -82,15 +83,6 @@ class ListActivityViewRingTest {
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(ms))
     }
 
-    private fun awaitUntil(what: String, timeoutMs: Long = 5000, done: () -> Boolean) {
-        val end = System.currentTimeMillis() + timeoutMs
-        while (true) {
-            settle()
-            if (done()) return
-            assertTrue("timed out waiting for $what", System.currentTimeMillis() < end)
-            Thread.sleep(10)
-        }
-    }
 
     private fun launch(tab: Int = 0, touch: Boolean = true): ListActivity {
         InstrumentationRegistry.getInstrumentation().setInTouchMode(touch)
@@ -104,8 +96,8 @@ class ListActivityViewRingTest {
         return activity
     }
 
-    private fun ListActivity.awaitListing() =
-        awaitUntil("the listing") { findViewById<View>(R.id.progress).visibility != View.VISIBLE }
+    /** Runs the main thread, frames included, until the tab is listed. */
+    private fun ListActivity.awaitListing() = idleUntil("the listing", step = { settle() }) { listJob?.isCompleted == true }
 
     private fun ListActivity.fab(): FloatingActionButton = findViewById(R.id.fab)
 

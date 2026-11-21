@@ -190,6 +190,10 @@ class BookAdapter(
     /** Cover loads running or waiting, with the row each is for. */
     private val loads = HashMap<Job, BookHolder>()
 
+    /** True while a cover is looked up or made, one told to stop included until it has; tests wait for none. */
+    internal val coversBusy: Boolean
+        get() = scope.coroutineContext.job.children.any { !it.isCompleted } || makers.coroutineContext.job.children.any { !it.isCompleted }
+
     /**
      * Set by [cancelCovers] until the next [submit]: rows still shown ask for no cover (the
      * new tab's view may redraw them meanwhile), and the next list redraws every row, so

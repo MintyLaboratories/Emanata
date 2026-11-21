@@ -28,6 +28,7 @@ import com.infinity.comicreader.ai.OfflineDownloads
 import com.infinity.comicreader.ai.PageTimes
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.Thrift
+import com.infinity.comicreader.testing.idleUntil
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -85,11 +86,7 @@ class SettingsAiTest {
 
     /** Waits for [pref]'s summary to read [expected]: it shows once the store is read off the main thread. */
     private fun awaitSummary(pref: Preference, expected: String) {
-        val end = System.currentTimeMillis() + 5_000
-        while (pref.summary?.toString() != expected && System.currentTimeMillis() < end) {
-            idle()
-            Thread.sleep(10)
-        }
+        idleUntil("the summary to read \"$expected\"") { pref.summary?.toString() == expected }
         assertEquals(expected, pref.summary?.toString())
     }
 
@@ -409,11 +406,7 @@ class SettingsAiTest {
 
     /** Waits for [pref]'s bar to show [expected]: it is set once the store is read off the main thread. */
     private fun awaitLoad(pref: AiChainPreference, expected: Long) {
-        val end = System.currentTimeMillis() + 5_000
-        while (pref.pageMs != expected && System.currentTimeMillis() < end) {
-            idle()
-            Thread.sleep(10)
-        }
+        idleUntil("the bar at $expected ms a page") { pref.pageMs == expected }
         assertEquals(expected, pref.pageMs)
     }
 

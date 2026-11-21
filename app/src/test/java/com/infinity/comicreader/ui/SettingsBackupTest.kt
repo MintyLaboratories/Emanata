@@ -16,6 +16,7 @@ import com.infinity.comicreader.net.SecretBox
 import com.infinity.comicreader.net.Share
 import com.infinity.comicreader.net.SharePath
 import com.infinity.comicreader.net.ShareStore
+import com.infinity.comicreader.testing.idleUntil
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -59,12 +60,8 @@ class SettingsBackupTest {
         val fragment = activity.supportFragmentManager.findFragmentById(R.id.settings_container) as PreferenceFragmentCompat
         val pref = fragment.findPreference<Preference>("pref_backup")!!
         pref.onPreferenceClickListener!!.onPreferenceClick(pref)
-        repeat(200) {
-            shadowOf(Looper.getMainLooper()).idle()
-            (ShadowDialog.getLatestDialog() as? AlertDialog)?.takeIf { it.isShowing }?.let { return it }
-            Thread.sleep(10)
-        }
-        throw AssertionError("no dialog")
+        idleUntil("the backup dialog") { (ShadowDialog.getLatestDialog() as? AlertDialog)?.isShowing == true }
+        return ShadowDialog.getLatestDialog() as AlertDialog
     }
 
     private fun AlertDialog.message() = findViewById<TextView>(android.R.id.message)!!.text.toString()

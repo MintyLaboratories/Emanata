@@ -18,6 +18,7 @@ import com.infinity.comicreader.data.HistoryItem
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.reader.Adjustments
+import com.infinity.comicreader.testing.idleUntil
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -117,7 +118,7 @@ class SettingsConfirmTest {
         val pref = fragment.findPreference<Preference>(key)!!
         val before = ShadowDialog.getLatestDialog()
         pref.onPreferenceClickListener!!.onPreferenceClick(pref)
-        awaitUntil { ShadowDialog.getLatestDialog() !== before }
+        idleUntil("$key's dialog") { ShadowDialog.getLatestDialog() !== before }
         return ShadowDialog.getLatestDialog() as AlertDialog
     }
 
@@ -131,7 +132,7 @@ class SettingsConfirmTest {
         asked.press(DialogInterface.BUTTON_NEGATIVE)
         assertTrue(thumb.exists())
         tapLater("pref_clear_cache").press(DialogInterface.BUTTON_POSITIVE)
-        awaitUntil { !thumb.exists() && ShadowToast.getTextOfLatestToast() != null }
+        idleUntil("the cache cleared and said so") { !thumb.exists() && ShadowToast.getTextOfLatestToast() != null }
         assertFalse(thumb.exists())
         assertFalse(sizes.exists())
         assertEquals(context.getString(R.string.pref_cleared_cache), ShadowToast.getTextOfLatestToast())
@@ -154,7 +155,7 @@ class SettingsConfirmTest {
         asked.findViewById<android.widget.CheckBox>(R.id.dialog_check)!!.performClick()
         assertTrue(clear.isEnabled)
         asked.press(DialogInterface.BUTTON_POSITIVE)
-        awaitUntil { ShadowToast.getTextOfLatestToast() != null }
+        idleUntil("the library data cleared and said so") { ShadowToast.getTextOfLatestToast() != null }
         assertFalse(library.isRead(one.id))
         assertTrue(library.bookmarks().isEmpty())
         assertNull(library.folderLayout("/books/attic"))
@@ -186,15 +187,6 @@ class SettingsConfirmTest {
         assertEquals(context.getString(R.string.confirm_clear_library_export), asked.getButton(DialogInterface.BUTTON_NEUTRAL).text.toString())
         asked.press(DialogInterface.BUTTON_NEGATIVE)
         assertTrue(library.isRead(one.id))
-    }
-
-    /** Runs the main looper until [done] holds, for work that hops to a background thread. */
-    private fun awaitUntil(done: () -> Boolean) {
-        repeat(100) {
-            idle()
-            if (done()) return
-            Thread.sleep(20)
-        }
     }
 
     @Test

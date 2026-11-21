@@ -4,6 +4,8 @@ import com.infinity.comicreader.reader.ChannelZipReader
 import com.infinity.comicreader.reader.Fixtures
 import com.infinity.comicreader.reader.RarReader
 import com.infinity.comicreader.reader.TarReader
+import com.infinity.comicreader.testing.Waits
+import com.infinity.comicreader.testing.awaitUntil
 import org.apache.commons.compress.archivers.zip.ZipFile
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -15,6 +17,7 @@ import java.nio.ByteBuffer
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
+import java.util.concurrent.FutureTask
 import java.util.concurrent.TimeUnit
 
 class RemoteChannelTest {
@@ -424,7 +427,7 @@ class RemoteChannelTest {
             asked += position
             if (position >= first) {
                 started.countDown()
-                go.await(5, TimeUnit.SECONDS)
+                if (!go.await(Waits.LIVENESS_MS, TimeUnit.MILLISECONDS)) throw AssertionError("Gave up waiting for the test to let the read at $position go")
             }
             val n = minOf(if (position >= first) maxOf(1, count / 2) else count, big.size - position.toInt())
             System.arraycopy(big, position.toInt(), buffer, offset, n)
@@ -465,6 +468,8 @@ class RemoteChannelTest {
         val big = ByteArray(100_000) { (it * 5).toByte() }
         val input = Gated(big, first = 16_384)
         val background = Executors.newSingleThreadExecutor()
+        // What runs coming ahead for other channels hold of the shared budget.
+        val budget = RemoteChannel.aheadBytes
         try {
             val channel = RemoteChannel(input, minBlock = 1024, maxBlock = 16_384, background = background)
             channel.expect(0, 60_000)
@@ -472,10 +477,17 @@ class RemoteChannelTest {
             assertTrue(input.started.await(5, TimeUnit.SECONDS))
             // Reading on inside the second run coming lets the first go unread.
             channel.position(40_000)
-            // Let go once the read below has let the first run go and waits for the second.
-            Thread { Thread.sleep(300); input.go.countDown() }.start()
+            // Let go once the read below has let both runs go, their bytes back in the budget: the first dropped unread, the second waited on.
+            val opener = FutureTask {
+                try {
+                    awaitUntil("the read to let both runs coming ahead go") { RemoteChannel.aheadBytes == budget }
+                } finally {
+                    input.go.countDown()
+                }
+            }.also { Thread(it).start() }
             val far = ByteBuffer.allocate(100)
             channel.read(far)
+            opener.get()
             assertArrayEquals(big.copyOfRange(40_000, 40_100), far.array())
             channel.close()
             background.shutdown()

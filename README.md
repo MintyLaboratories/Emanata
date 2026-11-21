@@ -1414,9 +1414,11 @@ to 26.6 ms).
 The `sustain` modes of `ResampleCheckService`, `DecodeCheckService` and
 `AiCheckService` measure energy per page on battery alone: an idle baseline, then
 pages back to back, with the battery current and voltage sampled together every
-100 ms. A charger (the battery's status or its plug) refuses the estimate; each
-setup's energy per page is reported across rounds with its spread. Unplug the cable
-and use adb over Wi-Fi: under `dumpsys battery unplug` a charger still supplies power.
+100 ms. A charger (the battery's status other than discharging, or its plug), the
+screen turning off or a failed sampler refuses the estimate; each setup's energy per
+page is reported across its valid rounds with their spread. Unplug the cable, use adb
+over Wi-Fi and keep the screen on: under `dumpsys battery unplug` a charger still
+supplies power.
 
 `AiCheckService` (debug and bench builds, shell only) runs an ncnn model end to end
 on synthetic pages: how it opens (measuring, checks, tile size, precision), seams

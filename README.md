@@ -652,7 +652,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   is not wide shows; then the reader's own orientation is back. Lying flat,
   where the sensor cannot tell which way is up, the screen turns back to the
   way it was and stays so until the device is picked up. *Do nothing* shows it
-  as it is. In landscape nothing turns.
+  as it is. In landscape and in split screen nothing turns.
 - **Page thumbnails:** grid picker to jump straight to any page.
 - **Crop:** crop the current page to a PNG.
 - **Reading direction:** left-to-right, right-to-left (left/right tap zones
@@ -786,7 +786,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   Layout (paged or continuous, direction, fit, two-page, shift pairs, spreads,
   auto-crop, page gap), Color (filter, brightness, contrast, saturation, night filter)
   and Behavior (auto next chapter, auto-scroll speed, keep screen on, fullscreen,
-  orientation, rotate for spreads).
+  orientation, wide pages in portrait).
   Each single choice is a row of segmented buttons with one always selected. It
   opens over half the screen, so changes show behind it.
 - The overflow menu stays short: Go to page…, Chapters, Bookmarks, Favorites ▸,

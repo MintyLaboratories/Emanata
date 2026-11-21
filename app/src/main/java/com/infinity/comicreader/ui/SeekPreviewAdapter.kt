@@ -253,9 +253,12 @@ class SeekPreviewAdapter(
                 }
             }
         }?.also {
-            previews.put(PartKey(key.page, Half.WHOLE), it)
-            // Past the read, so never inside a layout: the reshaped cells can be rebound.
-            learn(key.page, it)
+            // Queued on the main thread, so the reshaped cells can be rebound: a read that ends
+            // before its caller suspends resumes it at once, inside the bind that asked, mid-layout.
+            withContext(AppDispatchers.mainQueued) {
+                previews.put(PartKey(key.page, Half.WHOLE), it)
+                learn(key.page, it)
+            }
         } ?: return null
         if (key.half == Half.WHOLE) return whole
         val w = (whole.width / 2).coerceAtLeast(1)

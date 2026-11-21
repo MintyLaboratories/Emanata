@@ -5,7 +5,6 @@ import com.infinity.comicreader.data.BookId
 import android.Manifest
 import android.app.Application
 import android.os.Environment
-import android.os.Looper
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -16,6 +15,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.google.android.material.button.MaterialButtonToggleGroup
 import com.google.android.material.textfield.TextInputLayout
 import com.infinity.comicreader.R
+import com.infinity.comicreader.testing.idleUntil
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.SortKey
@@ -90,12 +90,21 @@ class ListActivitySharesTest {
         Remotes.serve(emptyList()) { throw AssertionError("no shares") }
     }
 
-    private fun idle() {
-        repeat(20) {
-            shadowOf(Looper.getMainLooper()).idle()
-            Thread.sleep(20)
-        }
+    /** True once the screen waits on nothing but the test: listed, favorites classified, facts read, presence asked, its menu looked into, free space told. */
+    private fun ListActivity.quiet() =
+        listJob?.isCompleted == true && listOf(classifyJob, factsJob, presenceJob, moreLook).none { it?.isActive == true } &&
+            locations?.spaceJobs?.none { it.isActive } != false
+
+    /** The screen [launch] started. */
+    private lateinit var shown: ListActivity
+
+    private fun launch(): ListActivity = Robolectric.buildActivity(ListActivity::class.java).setup().get().also {
+        shown = it
+        idle()
     }
+
+    /** Runs the main looper until the screen is quiet. */
+    private fun idle() = idleUntil("the library screen quiet") { shown.quiet() }
 
     private fun rows(recycler: RecyclerView): List<String> {
         recycler.measure(0, 0)
@@ -124,8 +133,7 @@ class ListActivitySharesTest {
 
     @Test
     fun aShareIsALocationBrowsedLikeADrive() {
-        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        val activity = launch()
         openSheet(activity)
         assertEquals(listOf("Device", "Share A"), activity.locations?.shownRoots?.map { it.name })
         // Its free space comes from the share.
@@ -155,8 +163,7 @@ class ListActivitySharesTest {
     fun aShareWithoutThumbnailsIsNotReadForBookIds() {
         ShareStore(context).put(FakeRemoteFs.share().copy(thumbnails = false))
         Remotes.init(context)
-        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        val activity = launch()
         openSheet(activity)
         row("Share A").performClick()
         idle()
@@ -172,13 +179,13 @@ class ListActivitySharesTest {
         Prefs(context).setSort(Prefs.TAB_BROWSE, TabSort(SortLevel(SortKey.LENGTH)))
         Metered.probe = { Metered.Link(connected = true, notMetered = false, activeMetered = true) }
         Metered.forget()
-        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        val activity = launch()
         openSheet(activity)
         row("Share A").performClick()
         idle()
         assertEquals(listOf("Loose.cbz", "Series"), rows(activity.findViewById(R.id.recycler)).sorted())
-        idle()
+        // Said as the reading for page counts ends, having read nothing; the note shows once posted.
+        idleUntil("the note") { activity.findViewById<TextView>(com.google.android.material.R.id.snackbar_text) != null }
         assertEquals(0L, fake.bytesRead)
         val note = activity.findViewById<TextView>(com.google.android.material.R.id.snackbar_text)
         assertEquals(activity.getString(R.string.facts_metered), note?.text?.toString())
@@ -198,8 +205,7 @@ class ListActivitySharesTest {
     @Test
     fun anUnreachableShareSaysSoAndRetries() {
         fake.offline = true
-        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        val activity = launch()
         openSheet(activity)
         assertEquals(
             activity.getString(R.string.share_unreachable),
@@ -219,8 +225,7 @@ class ListActivitySharesTest {
 
     @Test
     fun aShareTakesNewFoldersButIsNotSearchedForDuplicates() {
-        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        val activity = launch()
         openSheet(activity)
         row("Share A").performClick()
         idle()
@@ -239,8 +244,7 @@ class ListActivitySharesTest {
 
     @Test
     fun theFormAddsAShareAndSaysWhatIsWrongWithAPath() {
-        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        val activity = launch()
         openSheet(activity)
         sheetList().findViewById<View>(R.id.location_add).performClick()
         idle()
@@ -261,6 +265,7 @@ class ListActivitySharesTest {
         dialog.findViewById<TextView>(R.id.share_user)!!.text = "user"
         dialog.findViewById<TextView>(R.id.share_password)!!.text = "pw"
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
+        idleUntil("the share stored") { !dialog.isShowing }
         idle()
         assertFalse(dialog.isShowing)
         val added = ShareStore(context, box).all().last()
@@ -272,8 +277,7 @@ class ListActivitySharesTest {
 
     @Test
     fun theFormAddsAWebDavShareAndEditsItAsOne() {
-        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        val activity = launch()
         openSheet(activity)
         sheetList().findViewById<View>(R.id.location_add).performClick()
         idle()
@@ -300,6 +304,7 @@ class ListActivitySharesTest {
         dialog.findViewById<TextView>(R.id.share_user)!!.text = "user"
         dialog.findViewById<TextView>(R.id.share_password)!!.text = "pw"
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
+        idleUntil("the share stored") { !dialog.isShowing }
         idle()
         assertFalse(dialog.isShowing)
         val added = ShareStore(context, box).all().last()
@@ -323,8 +328,7 @@ class ListActivitySharesTest {
     @Test
     fun aShareFolderFoundGoneGoesToItsNearestParent() {
         Prefs(context).lastPath = "/net/s1/Series/Gone/Deeper"
-        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        val activity = launch()
         assertEquals(listOf("Share A", "Series"), activity.findViewById<CrumbBar>(R.id.pathbar).crumbs.map { it.label })
         assertEquals(listOf("001.cbz"), rows(activity.findViewById(R.id.recycler)))
         assertEquals(activity.getString(R.string.folder_gone), ShadowToast.getTextOfLatestToast())
@@ -335,8 +339,7 @@ class ListActivitySharesTest {
     @Test
     fun pathsOnARemovedShareCountAsGone() {
         Prefs(context).lastPath = "/net/gone1/Series"
-        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        val activity = launch()
         assertEquals(listOf("Device"), activity.findViewById<CrumbBar>(R.id.pathbar).crumbs.map { it.label })
         val orphan = Remotes.file("/net/gone1/Series/001.cbz", askNetwork = false)
         assertFalse(orphan.exists())
@@ -346,8 +349,7 @@ class ListActivitySharesTest {
 
     @Test
     fun aKeystoreFailureKeepsTheFormOpenSayingSo() {
-        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        val activity = launch()
         openSheet(activity)
         ShareStore.defaultBox = object : SecretBox {
             override fun seal(plain: ByteArray): ByteArray = throw java.security.GeneralSecurityException("keystore")
@@ -359,7 +361,7 @@ class ListActivitySharesTest {
         dialog.findViewById<TextView>(R.id.share_path)!!.text = "nas.local/books"
         dialog.findViewById<TextView>(R.id.share_password)!!.text = "pw"
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
-        idle()
+        idleUntil("the store's failure said") { dialog.findViewById<TextInputLayout>(R.id.share_password_layout)!!.error != null }
         assertTrue(dialog.isShowing)
         assertEquals(
             activity.getString(R.string.share_save_failed),
@@ -384,6 +386,8 @@ class ListActivitySharesTest {
         assertEquals(activity.getString(R.string.share_remove_library), check.text.toString())
         check.isChecked = forget
         confirm.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
+        // Removed off the main thread, then the picker shows the locations left.
+        idleUntil("the share removed") { activity.locations?.shownRoots?.none { it.name == "Share A" } == true }
         idle()
     }
 
@@ -402,8 +406,7 @@ class ListActivitySharesTest {
         val prefs = Prefs(context)
         prefs.setLocationStart("/net/s1", "/net/s1/Series")
         val library = fillLibrary()
-        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        val activity = launch()
         removeShare(activity, forget = false)
         assertEquals(emptyList<String>(), ShareStore(context, box).all().map { it.name })
         assertEquals(listOf("Device"), activity.locations?.shownRoots?.map { it.name })
@@ -417,8 +420,7 @@ class ListActivitySharesTest {
     fun removingAShareCanForgetItsFavoritesHistoryAndBookmarks() {
         val library = fillLibrary()
         library.setRead(loose, true)
-        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        val activity = launch()
         removeShare(activity, forget = true)
         assertEquals(listOf("/books/attic"), library.favorites())
         assertEquals(0, library.history().size)
@@ -428,8 +430,7 @@ class ListActivitySharesTest {
 
     @Test
     fun freeSpaceShowsAsKeptAndIsAskedAgainOnlyWhenOld() {
-        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        val activity = launch()
         openSheet(activity)
         val asked = fake.attempts
         val free = activity.getString(R.string.location_free, "3.0 GB", "8.0 GB")
@@ -444,8 +445,7 @@ class ListActivitySharesTest {
 
     @Test
     fun theFormClearsAPasswordAndTurnsThumbnailsOff() {
-        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        val activity = launch()
         openSheet(activity)
         row("Share A").performLongClick()
         idle()
@@ -463,6 +463,7 @@ class ListActivitySharesTest {
         )
         dialog.findViewById<android.widget.CompoundButton>(R.id.share_thumbnails)!!.isChecked = false
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
+        idleUntil("the share stored") { !dialog.isShowing }
         idle()
         val saved = ShareStore(context, box).all().single()
         assertEquals("", saved.password)
@@ -485,8 +486,7 @@ class ListActivitySharesTest {
             }
             val estimate = ShareSpeeds.estimate("s1")!!
             assertTrue(ShareSpeeds.slow("s1"))
-            val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-            idle()
+            val activity = launch()
             openSheet(activity)
             row("Share A").performLongClick()
             idle()
@@ -506,6 +506,7 @@ class ListActivitySharesTest {
             dialog.findViewById<MaterialButtonToggleGroup>(R.id.share_speed)!!.check(R.id.share_speed_fast)
             assertEquals(activity.getString(R.string.share_speed_hint_fast), hint.text.toString())
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
+            idleUntil("the share stored") { !dialog.isShowing }
             idle()
             assertEquals(ShareSpeed.FAST, ShareStore(context, box).all().single().speed)
             assertFalse(ShareSpeeds.slow("s1"))
@@ -523,8 +524,7 @@ class ListActivitySharesTest {
         library.addHistory(com.infinity.comicreader.data.HistoryItem(loose.path, "Loose.cbz", 2, 10, 1000, loose.id))
         fake.offline = true
         Prefs(context).startupTab = Prefs.TAB_HISTORY
-        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        val activity = launch()
         assertEquals(listOf("Loose.cbz"), rows(activity.findViewById(R.id.recycler)))
         assertEquals(0, fake.stats + fake.lists)
         assertNotNull(activity)
@@ -533,8 +533,7 @@ class ListActivitySharesTest {
     @Test
     fun aLostPasswordIsAskedForWithoutReplacingAFormBeingFilled() {
         ShareStore(context, box).put(FakeRemoteFs.share().copy(password = "", passwordLost = true))
-        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        val activity = launch()
         openSheet(activity)
         row("Share A").performClick()
         idle()
@@ -566,8 +565,7 @@ class ListActivitySharesTest {
     fun aShareFolderShowsItsSubfoldersCountedThenAsKeptWhileUnreachable() {
         // Covers would list folders too.
         Prefs(context).thumbnails = false
-        val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        val activity = launch()
         openSheet(activity)
         row("Share A").performClick()
         idle()

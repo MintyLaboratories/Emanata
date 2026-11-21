@@ -47,6 +47,7 @@ import androidx.core.view.doOnPreDraw
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.lifecycle.withResumed
 import androidx.lifecycle.withStarted
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -891,9 +892,12 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
      */
     private fun startOnDevice(dir: RemoteFile, attempt: Deferred<Result<List<RemoteFile>>>, say: Boolean) {
         val device = deviceStart()
-        // Never over the reader the startup offer opened, which may be reading from that share.
-        if (say && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
-            toast(getString(R.string.network_wait_gave_up, locationName(dir.absolutePath), locationName(device.absolutePath)))
+        if (say) {
+            val gaveUp = getString(R.string.network_wait_gave_up, locationName(dir.absolutePath), locationName(device.absolutePath))
+            // Before the screen first shows (a share failing at once): said once it does. After, never over
+            // the reader the startup offer opened, which may be reading from that share.
+            if (!resumedOnce) lifecycleScope.launch { withResumed { toast(gaveUp) } }
+            else if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) toast(gaveUp)
         }
         loadDirectory(device)
         val fallback = currentDir?.absolutePath ?: return

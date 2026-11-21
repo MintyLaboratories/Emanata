@@ -518,6 +518,25 @@ class ListActivityStartFolderTest {
     }
 
     @Test
+    fun aStartupShareFailingBeforeTheScreenShowsSaysSoOnceItDoes() {
+        prefs.lastPath = "/net/s1/Series"
+        fake.offline = true
+        fake.slow = CountDownLatch(1)
+        val controller = Robolectric.buildActivity(ListActivity::class.java).create().start()
+        val activity = controller.get()
+        idleUntil("the startup share asked") { startup(activity).attempt != null }
+        val attempt = activity.attempt()
+        fake.slow!!.countDown()
+        answered(attempt)
+        activity.awaitListed()
+        assertEquals(listOf("Device"), activity.crumbs())
+        assertNull("not shown yet", ShadowToast.getTextOfLatestToast())
+        controller.resume()
+        idle()
+        assertEquals(activity.getString(R.string.network_wait_gave_up, "Share A", "Device"), ShadowToast.getTextOfLatestToast())
+    }
+
+    @Test
     fun aStartupShareThatRefusesSaysWhy() {
         prefs.lastPath = "/net/s1/Series"
         fake.refuse = RemoteException.Reason.DENIED

@@ -53,7 +53,7 @@ import kotlin.random.Random
  * `adb shell am start-foreground-service -n <package>/com.infinity.comicreader.debug.ResampleCheckService
  *  [--es do check|time|sustain|all] [--es setups kotlin/8,native/4/big,native/1/little,gpu,gpu/big] [--ei reps 10]
  *  [--ei seconds 20] [--ei rounds 2] [--ei cooldown 30] [--es filters lanczos3,lanczos6,bicubic,hermite] [--es rings 0,50,100]
- *  [--es size 1848x2772|screen] [--es source 2000x3000] [--ei idle 5] [--ez trace true]`
+ *  [--es size 1848x2772|screen] [--es source 2000x3000] [--ei idle 5] [--ei pages 0] [--ei idleAfter 0] [--ez trace true]`
  *
  * A setup is `engine[/threads[/cores]]`: Kotlin or native code on that many workers, native
  * workers pinned to the large or little cores ([CpuCores]), to the fastest alone (`prime`),
@@ -77,7 +77,10 @@ import kotlin.random.Random
  *   after, and the highest thermal status seen, sampled after each setup's turn (`thermalPeak`).
  * - sustain: per setup in each of `rounds` interleaved rounds, a `cooldown` s pause, an
  *   `idle` s baseline, then a synthetic `source` page (default 2000x3000) shrunk to `size`
- *   back to back for `seconds`, by the first of `filters` and `rings`, measured by
+ *   back to back for `seconds`, or until `pages` pages when given (the same count for every
+ *   setup; `seconds` then caps the run, and `endedBy` tells which ended it), then with
+ *   `idleAfter` that many s of rest (`afterIdleMa`, `afterIdleW`: logged, not
+ *   subtracted), by the first of `filters` and `rings`, measured by
  *   [EnergyMeter]: current and voltage sampled together every 100 ms, the thermal status and
  *   charger every second; pages per second, energy per page above idle, and the distinct
  *   current values per 10 s at idle (a slow fuel gauge repeats itself). Then per setup the
@@ -128,6 +131,8 @@ class ResampleCheckService : Service() {
         val asSource = intent?.getStringExtra("source")
         val source = ResampleRuns.source(asSource)
         val idle = intent?.getIntExtra("idle", 5)?.coerceIn(1, 600) ?: 5
+        val pageLimit = intent?.getIntExtra("pages", 0)?.coerceIn(0, 1_000_000) ?: 0
+        val idleAfter = intent?.getIntExtra("idleAfter", 0)?.coerceIn(0, 600) ?: 0
         val screen = Calibrator.screenSize(this)
         val size = ResampleRuns.size(asSized, screen.first, screen.second)
         val trace = intent?.getBooleanExtra("trace", false) ?: false
@@ -152,7 +157,7 @@ class ResampleCheckService : Service() {
                 if (what == "check" || what == "all") check()
                 if ((what == "time" || what == "all") && size != null) time(timed, filters, rings, reps, size)
                 if ((what == "sustain" || what == "all") && size != null && source != null) {
-                    sustain(sustained, seconds, rounds, cooldown, idle, source, size, Scaling(filters.first(), 0, rings.first()))
+                    sustain(sustained, seconds, rounds, cooldown, idle, source, size, Scaling(filters.first(), 0, rings.first()), pageLimit, idleAfter)
                 }
             } catch (t: Throwable) {
                 log(JSONObject().put("failed", "${t.javaClass.simpleName}: ${t.message}"))
@@ -516,7 +521,10 @@ class ResampleCheckService : Service() {
      * rounds, each after a [cooldown] s pause and an [idle] s baseline; then each setup's
      * energy per page across rounds.
      */
-    private fun sustain(setups: List<Setup>, seconds: Int, rounds: Int, cooldown: Int, idle: Int, source: Pair<Int, Int>, size: Pair<Int, Int>, scaling: Scaling) {
+    private fun sustain(
+        setups: List<Setup>, seconds: Int, rounds: Int, cooldown: Int, idle: Int, source: Pair<Int, Int>, size: Pair<Int, Int>, scaling: Scaling,
+        pageLimit: Int, idleAfter: Int
+    ) {
         val page = SyntheticPage.draw(source.first, source.second)
         val meter = EnergyMeter(this)
         val runs = setups.associateWith { EnergyRuns.Rounds() }
@@ -525,9 +533,9 @@ class ResampleCheckService : Service() {
                 for (s in order) {
                     Thread.sleep(cooldown * 1000L)
                     val heat = ResampleRuns.Heat().apply { see(meter.thermal()) }
-                    val run = meter.measure(idle, seconds, heat) { until ->
+                    val run = meter.measure(idle, seconds, heat, idleAfter) { until ->
                         var pages = 0
-                        while (SystemClock.elapsedRealtime() < until) {
+                        while (EnergyRuns.goOn(pages, pageLimit, SystemClock.elapsedRealtime(), until)) {
                             run(s, page, size.first, size.second, scaling).recycle()
                             pages++
                         }
@@ -541,7 +549,8 @@ class ResampleCheckService : Service() {
                     val line = JSONObject().put("sustain", s.key).put("round", round)
                         .put("source", "${source.first}x${source.second}").put("to", "${size.first}x${size.second}")
                         .put("filter", scaling.filter.key).put("downRing", scaling.downRing)
-                    meter.json(run, idle).let { m -> m.keys().forEach { line.put(it, m.get(it)) } }
+                        .put("pageLimit", pageLimit).put("endedBy", EnergyRuns.endedBy(run.pages, pageLimit))
+                    meter.json(run, idle, idleAfter).let { m -> m.keys().forEach { line.put(it, m.get(it)) } }
                     log(
                         line.put("after", after).put("thermalPeak", heat.peak).put("conditions", conditions).put("valid", valid)
                     )

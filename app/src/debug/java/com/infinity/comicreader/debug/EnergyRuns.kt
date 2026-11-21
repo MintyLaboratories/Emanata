@@ -76,7 +76,7 @@ internal object EnergyRuns {
      * One measured run: an [idle] baseline, then [pages] made in [seconds] while [busy] was
      * sampled, taking [cpuMs] of the process's CPU time.
      */
-    class Run(val idle: Draw, val busy: Draw, val seconds: Double, val pages: Int, val cpuMs: Long) {
+    class Run(val idle: Draw, val busy: Draw, val seconds: Double, val pages: Int, val cpuMs: Long, val after: Draw? = null) {
         /** Why no energy per page counts; null when it does. */
         val refused: String? get() = when {
             idle.error != null || busy.error != null -> "the sampler failed: ${idle.error ?: busy.error}"
@@ -116,6 +116,15 @@ internal object EnergyRuns {
         val measured: Int get() = valid.size + invalid.size
         val spread: Spread? get() = spread(valid)
     }
+
+    /**
+     * True while a busy window goes on: before its deadline [until] at [now], and below
+     * [limit] [pages] when given (above 0), so runs of differing speed make equal counts.
+     */
+    fun goOn(pages: Int, limit: Int, now: Long, until: Long): Boolean = now < until && (limit <= 0 || pages < limit)
+
+    /** What ended a busy window of [pages] under [limit] ([goOn]): "pages" when it reached the limit, else "seconds". */
+    fun endedBy(pages: Int, limit: Int): String = if (limit > 0 && pages >= limit) "pages" else "seconds"
 
     /** The [mean], [min] and [max] of values, and half their range as a share of the mean ([pct], ±%). */
     data class Spread(val mean: Double, val min: Double, val max: Double, val pct: Double)

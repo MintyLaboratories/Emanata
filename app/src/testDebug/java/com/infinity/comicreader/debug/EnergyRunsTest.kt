@@ -142,6 +142,26 @@ class EnergyRunsTest {
     }
 
     @Test
+    fun aPageLimitEndsTheWindowBeforeItsDeadline() {
+        assertTrue(EnergyRuns.goOn(99, 100, 5_000, 10_000))
+        assertFalse(EnergyRuns.goOn(100, 100, 5_000, 10_000))
+        assertEquals("pages", EnergyRuns.endedBy(100, 100))
+        // The deadline caps a slow setup short of the limit.
+        assertFalse(EnergyRuns.goOn(40, 100, 10_000, 10_000))
+        assertEquals("seconds", EnergyRuns.endedBy(40, 100))
+        // No limit: the deadline alone.
+        assertTrue(EnergyRuns.goOn(1_000_000, 0, 5_000, 10_000))
+        assertEquals("seconds", EnergyRuns.endedBy(1_000_000, 0))
+    }
+
+    @Test
+    fun theIdleAfterIsNotSubtracted() {
+        val run = Run(draw(-400.0), draw(-900.0), 10.0, 20, 0, after = draw(-600.0))
+        assertEquals(1000.0, run.mJPerPage!!, 1e-9)
+        assertEquals(-600.0, run.after!!.meanMa, 1e-9)
+    }
+
+    @Test
     fun spreadIsHalfTheRangeOverTheMean() {
         val s = EnergyRuns.spread(listOf(78.6, 81.3, 84.5))!!
         assertEquals(81.4667, s.mean, 1e-3)

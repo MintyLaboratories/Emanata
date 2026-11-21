@@ -111,11 +111,12 @@ internal class EnergyMeter(private val context: Context, private val everyMs: Lo
 
     /**
      * [idleS] s of rest sampled as the baseline, then [work] for [seconds] s, returning what
-     * it made; the busy window ends with its last counted page. Under a partial wake lock.
+     * it made; the busy window ends with its last counted page. Then [afterS] s of rest
+     * sampled when given, as the idle after, not subtracted. Under a partial wake lock.
      */
-    fun measure(idleS: Int, seconds: Int, heat: ResampleRuns.Heat, work: (until: Long) -> Made): EnergyRuns.Run {
+    fun measure(idleS: Int, seconds: Int, heat: ResampleRuns.Heat, afterS: Int = 0, work: (until: Long) -> Made): EnergyRuns.Run {
         val lock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, WAKE_TAG)
-        lock.acquire((idleS + seconds) * 1000L + WAKE_SLACK_MS)
+        lock.acquire((idleS + seconds + afterS) * 1000L + WAKE_SLACK_MS)
         try {
             val idle = sample(idleS * 1000L, heat) { until -> SystemClock.sleep(until - SystemClock.elapsedRealtime()) }
             var made = Made(0)
@@ -126,18 +127,27 @@ internal class EnergyMeter(private val context: Context, private val everyMs: Lo
                 made = work(until)
             }
             val endMs = (made.endAt - from).coerceAtLeast(0)
-            return EnergyRuns.Run(idle, busy.until(endMs), endMs / 1000.0, made.pages, made.cpuAt - cpu0)
+            val after = if (afterS > 0) sample(afterS * 1000L, heat) { until -> SystemClock.sleep(until - SystemClock.elapsedRealtime()) } else null
+            return EnergyRuns.Run(idle, busy.until(endMs), endMs / 1000.0, made.pages, made.cpuAt - cpu0, after)
         } finally {
             if (lock.isHeld) lock.release()
         }
     }
 
-    /** [run] as one result's fields: what it made, its draw, its voltages, the gauge's refresh and the energy per page. */
-    fun json(run: EnergyRuns.Run, idleS: Int): JSONObject = JSONObject()
+    /**
+     * [run] as one result's fields: what it made, its draw, its voltages, the gauge's
+     * refresh, the energy per page, and the idle after when measured ([afterS] s).
+     */
+    fun json(run: EnergyRuns.Run, idleS: Int, afterS: Int = 0): JSONObject = JSONObject()
         .put("seconds", run.seconds).put("pages", run.pages).put("pagesPerS", run.pagesPerS).put("cpuMsPerPage", run.cpuMsPerPage)
         .put("idleS", idleS).put("idleMa", num(run.idle.meanMa)).put("busyMa", num(run.busy.meanMa))
         .put("idleW", num(run.idle.meanMw / 1000)).put("busyW", num(run.busy.meanMw / 1000))
         .put("aboveIdleW", run.aboveIdleW ?: JSONObject.NULL)
+        .apply {
+            run.after?.let { a ->
+                put("afterIdleS", afterS).put("afterIdleMa", num(a.meanMa)).put("afterIdleW", num(a.meanMw / 1000))
+            }
+        }
         .put("volts", JSONObject().put("source", voltageSource).put("min", num(run.busy.minVolts)).put("max", num(run.busy.maxVolts))
             .put("distinct", run.busy.distinctVolts))
         .put("samples", JSONObject().put("idle", run.idle.samples.size).put("busy", run.busy.samples.size))

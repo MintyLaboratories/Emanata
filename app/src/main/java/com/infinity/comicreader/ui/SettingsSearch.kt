@@ -14,6 +14,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
 import androidx.appcompat.widget.SearchView
+import androidx.preference.ListPreference
 import androidx.preference.Preference
 import androidx.preference.PreferenceGroup
 import androidx.recyclerview.widget.RecyclerView
@@ -25,8 +26,9 @@ import java.text.Normalizer
 import java.util.Locale
 
 /**
- * A setting as search finds it: [title] as Settings shows it (an advanced one tagged), [plainTitle]
- * and [summary] as it is matched, and [place], the section it is in (an AI step also its chain).
+ * A setting as search finds it: [title] as Settings shows it (an advanced one tagged), [plainTitle],
+ * [summary] and a list's [options] (one per line) as it is matched, and [place], the section it is
+ * in (an AI step also its chain).
  */
 data class SettingEntry(
     val key: String,
@@ -35,9 +37,10 @@ data class SettingEntry(
     val summary: String,
     val place: String,
     val advanced: Boolean,
+    val options: String = "",
 )
 
-/** Finds settings by their titles and summaries, ignoring case and accents. */
+/** Finds settings by their titles, summaries and a list's options, ignoring case and accents. */
 object SettingsSearch {
     private val MARKS = Regex("\\p{Mn}+")
     private val SPACES = Regex("\\s+")
@@ -50,15 +53,15 @@ object SettingsSearch {
         Normalizer.normalize(text.toString().lowercase(Locale.ROOT), Normalizer.Form.NFKD).replace(MARKS, "")
 
     /**
-     * The [entries] holding every word of [query] in their title or summary, in their order, those
-     * with every word in the title first; none for a blank query.
+     * The [entries] holding every word of [query] in their title, summary or options, in their order,
+     * those with every word in the title first; none for a blank query.
      */
     fun find(entries: List<SettingEntry>, query: String): List<SettingEntry> {
         val words = fold(query).split(SPACES).filter { it.isNotEmpty() }
         if (words.isEmpty()) return emptyList()
         val found = entries.mapNotNull { entry ->
             val title = fold(entry.plainTitle)
-            val all = title + "\n" + fold(entry.summary)
+            val all = title + "\n" + fold(entry.summary) + "\n" + fold(entry.options)
             if (words.all { it in all }) entry to words.all { it in title } else null
         }
         return found.sortedBy { (_, inTitle) -> if (inTitle) 0 else 1 }.map { it.first }
@@ -96,7 +99,8 @@ object SettingsSearch {
         val key = pref.key ?: return null
         val title = pref.title?.takeIf { it.isNotBlank() } ?: return null
         val summary = runCatching { pref.summary?.toString() }.getOrNull().orEmpty()
-        return SettingEntry(key, title, plainTitle(title), summary, place, AdvancedSettings.isAdvanced(pref))
+        val options = (pref as? ListPreference)?.entries?.joinToString("\n").orEmpty()
+        return SettingEntry(key, title, plainTitle(title), summary, place, AdvancedSettings.isAdvanced(pref), options)
     }
 
     /** [title] without the tag [AdvancedSettings.styled] adds. */

@@ -13,6 +13,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.google.android.material.appbar.MaterialToolbar
 import com.infinity.comicreader.R
 import com.infinity.comicreader.data.Prefs
+import com.infinity.comicreader.data.WidePages
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -89,6 +90,16 @@ class SettingsSearchTest {
         val (controller, fragment) = open()
         search(controller.get(), "gliding")
         assertEquals(listOf("pref_fling"), fragment.shownResults().map { it.key })
+    }
+
+    @Test
+    fun findsAListByAnOptionNotChosen() {
+        Prefs(context).widePages = WidePages.NOTHING
+        val (controller, fragment) = open()
+        search(controller.get(), "rotate")
+        assertTrue(fragment.shownResults().map { it.key }.toString(), fragment.shownResults().any { it.key == "pref_wide_pages" })
+        search(controller.get(), "orientation")
+        assertTrue(fragment.shownResults().any { it.key == "pref_wide_pages" })
     }
 
     @Test

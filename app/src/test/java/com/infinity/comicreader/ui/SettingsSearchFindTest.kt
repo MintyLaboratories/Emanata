@@ -6,7 +6,8 @@ import org.junit.Test
 /** Settings search matches titles and summaries whatever the case and accents, titles first. */
 class SettingsSearchFindTest {
 
-    private fun entry(key: String, title: String, summary: String = "") = SettingEntry(key, title, title, summary, "Section A", advanced = false)
+    private fun entry(key: String, title: String, summary: String = "", options: String = "") =
+        SettingEntry(key, title, title, summary, "Section A", advanced = false, options = options)
 
     private val entries = listOf(
         entry("a", "Pause background scans", "Folder facts wait"),
@@ -14,6 +15,7 @@ class SettingsSearchFindTest {
         entry("c", "Momentum scrolling", "Zoomed pages keep gliding after a FLICK"),
         entry("d", "Flick speed"),
         entry("e", "Page gap"),
+        entry("f", "Wide pages", "Do nothing", listOf("Do nothing", "Change orientation", "Rotate image").joinToString("\n")),
     )
 
     private fun keys(query: String) = SettingsSearch.find(entries, query).map { it.key }
@@ -36,6 +38,12 @@ class SettingsSearchFindTest {
     fun matchesSummariesAndListsTitleMatchesFirst() {
         assertEquals(listOf("d", "c"), keys("flick"))
         assertEquals(listOf("a"), keys("folder"))
+    }
+
+    @Test
+    fun matchesAListsOptionsAfterTitles() {
+        assertEquals(listOf("f"), keys("rotate"))
+        assertEquals(listOf("f"), keys("wide orientation"))
     }
 
     @Test

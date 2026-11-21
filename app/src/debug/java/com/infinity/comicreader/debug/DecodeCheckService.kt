@@ -85,8 +85,9 @@ import kotlin.math.max
  *   `idle` s baseline, then the group's pages decoded in turn back to back for `seconds`:
  *   pages per second, energy per page above idle, the distinct current values per 10 s at
  *   idle; then per setup the energy per page across valid rounds with its spread (`energy`).
- *   Refused on a charger; valid only with the cable out (adb over Wi-Fi). Compares platform
- *   JPEG pinned or not (`platform,platform/big`) and JPEG XL threads (`page/4/big,page/8/any`).
+ *   Refused on a charger or with the screen turned off; valid only with the cable out (adb
+ *   over Wi-Fi) and the screen kept on (see ResampleCheckService). Compares platform JPEG
+ *   pinned or not (`platform,platform/big`) and JPEG XL threads (`page/4/big,page/8/any`).
  *
  * Timings are valid only from a bench build with the app in front (see
  * ResampleCheckService). Results go to the log under "DecodeCheck", one JSON object per

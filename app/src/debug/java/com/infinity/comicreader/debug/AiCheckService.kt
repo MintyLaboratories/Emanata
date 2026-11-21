@@ -104,7 +104,8 @@ import kotlin.math.max
  *   page (`stoppedBy`; that page counts neither in `pages` nor in the busy window, which
  *   ends with the last whole page). Each run's energy per page on battery alone is
  *   measured as ResampleCheckService's sustain measures it
- *   ([EnergyMeter]: refused on a charger; valid only with the cable out, adb over Wi-Fi),
+ *   ([EnergyMeter]: refused on a charger or with the screen turned off; valid only with the
+ *   cable out, adb over Wi-Fi, and the screen kept on, see ResampleCheckService),
  *   then the energy per page across valid rounds with its spread (`energy`). A run is
  *   valid when it stayed cool, from a bench build, with the app in front from before it
  *   started to after it ended (`before`, `after`: as ResampleCheckService's `conditions`).

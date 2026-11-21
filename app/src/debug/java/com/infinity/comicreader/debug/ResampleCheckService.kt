@@ -87,7 +87,9 @@ import kotlin.random.Random
  *   energy per page across valid rounds with its spread (`energy`).
  *   Valid only on battery alone: unplug the cable (adb over Wi-Fi). A charger keeps
  *   supplying power under `dumpsys battery unplug`, so a battery reporting a charger (its
- *   status or its plug), or any sample not draining, refuses the estimate.
+ *   status other than discharging, or its plug), or any sample not draining, refuses the
+ *   estimate. So does the screen turning off: keep the debug calibration screen in front,
+ *   or set `screen_off_timeout` longer than the whole run.
  *
  * Timings are valid only from a bench build (`assembleBench`: a debuggable build runs
  * Kotlin many times slower) with the app in front (`am start` its list first; otherwise the

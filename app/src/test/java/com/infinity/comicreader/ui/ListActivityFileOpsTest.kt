@@ -118,6 +118,10 @@ class ListActivityFileOpsTest {
     /** Runs the main looper until the screen launched last is quiet. */
     private fun idle() = idleUntil("the library screen quiet") { quiet() }
 
+    /** Runs the main looper until [activity] plans no file work, none is queued, and the screen launched last is quiet. */
+    private fun idleWithoutFileWork(activity: ListActivity) =
+        idleUntil("no file work planned or queued") { !activity.fileActions.busy && FileWork.operations.value.isEmpty() && quiet() }
+
     /** Waits until [done], then for the file operation under way to end, its outcome to be shown and the screen to list what it changed. */
     private fun settle(done: () -> Boolean = { true }) =
         idleUntil("the operation done and its outcome shown") { done() && FileWork.operations.value.isEmpty() && quiet() }
@@ -435,7 +439,10 @@ class ListActivityFileOpsTest {
         assertFalse(item.isEnabled)
         assertEquals(activity.getString(R.string.pack_why_other_files), item.findViewById<android.widget.TextView>(R.id.more_action_reason).text.toString())
         item.performClick()
-        idle()
+        idleWithoutFileWork(activity)
+        // A disabled item plans nothing.
+        assertTrue(activity.fileActions.launched.isEmpty())
+        assertTrue(FileWork.operations.value.isEmpty())
         assertTrue(activity.selection.active)
         assertTrue(other.exists())
     }
@@ -530,8 +537,11 @@ class ListActivityFileOpsTest {
         cbz.delete()
         other.mkdirs()
         unusualFiles()
-        packAnswering(DialogInterface.BUTTON_NEUTRAL)
-        idle()
+        val asked = packAnswering(DialogInterface.BUTTON_NEUTRAL)
+        idleWithoutFileWork(asked)
+        // Only the planning that asked ran; Cancel planned and queued nothing more.
+        assertEquals(1, asked.fileActions.launched.size)
+        assertTrue(FileWork.operations.value.isEmpty())
         assertFalse(cbz.exists())
         assertTrue(File(other, ".thumbs/1.png").exists())
     }
@@ -880,7 +890,10 @@ class ListActivityFileOpsTest {
         // Its bubble shows here too, and says where it pastes.
         ShadowToast.reset()
         activity.paste().performClick()
-        idle()
+        idleWithoutFileWork(activity)
+        // Paste in History plans nothing.
+        assertTrue(activity.fileActions.launched.isEmpty())
+        assertTrue(FileWork.operations.value.isEmpty())
         assertEquals(context.getString(R.string.paste_hint_browse), ShadowToast.getTextOfLatestToast())
         assertTrue(book.exists())
 

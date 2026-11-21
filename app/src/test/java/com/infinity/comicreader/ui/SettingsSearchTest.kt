@@ -227,4 +227,31 @@ class SettingsSearchTest {
         assertTrue(controller.get().item(R.id.settings_search).isActionViewExpanded)
         assertEquals(listOf("pref_fling"), fragment.shownResults().map { it.key })
     }
+
+    @Test
+    fun theSearchSurvivesLeavingTheAppAndComingBack() {
+        val (controller, fragment) = open()
+        search(controller.get(), "gliding")
+        controller.pause()
+        idle()
+        controller.stop()
+        idle()
+        controller.restart().resume()
+        idle()
+        assertTrue(controller.get().item(R.id.settings_search).isActionViewExpanded)
+        assertEquals(listOf("pref_fling"), fragment.shownResults().map { it.key })
+    }
+
+    @Test
+    fun theSearchSurvivesTheToolbarBeingMadeAgain() {
+        val (controller, fragment) = open()
+        val activity = controller.get()
+        search(activity, "gliding")
+        activity.invalidateMenu()
+        idle()
+        val item = activity.item(R.id.settings_search)
+        assertTrue(item.isActionViewExpanded)
+        assertEquals("gliding", (item.actionView as SearchView).query.toString())
+        assertEquals(listOf("pref_fling"), fragment.shownResults().map { it.key })
+    }
 }

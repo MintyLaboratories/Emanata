@@ -4,13 +4,16 @@ import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
 import android.animation.ValueAnimator
 import android.annotation.SuppressLint
+import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.text.Spanned
+import android.util.AttributeSet
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
+import androidx.appcompat.widget.SearchView
 import androidx.preference.Preference
 import androidx.preference.PreferenceGroup
 import androidx.recyclerview.widget.RecyclerView
@@ -116,6 +119,24 @@ object SettingsFolds {
         val sections = sections(screen)
         for (s in sections) s.collapsed = collapse
         return if (collapse) sections.mapNotNull { it.key }.toSet() else emptySet()
+    }
+}
+
+/**
+ * The settings search field; [collapsing] is true while the toolbar closes it, whose emptying
+ * of the text is not typing (it runs too when the toolbar's menu is made again).
+ */
+class SettingsSearchView @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null) : SearchView(context, attrs) {
+    var collapsing = false
+        private set
+
+    override fun onActionViewCollapsed() {
+        collapsing = true
+        try {
+            super.onActionViewCollapsed()
+        } finally {
+            collapsing = false
+        }
     }
 }
 

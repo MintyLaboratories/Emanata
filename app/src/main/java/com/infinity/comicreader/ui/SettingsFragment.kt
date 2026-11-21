@@ -142,7 +142,8 @@ class SettingsFragment : PreferenceFragmentCompat() {
             layoutManager = LinearLayoutManager(context)
             adapter = results
         }
-        requireActivity().addMenuProvider(menu, viewLifecycleOwner, Lifecycle.State.RESUMED)
+        // Kept while the screen is left: making the toolbar again would close and reopen the search.
+        requireActivity().addMenuProvider(menu, viewLifecycleOwner, Lifecycle.State.CREATED)
     }
 
     override fun onDestroyView() {
@@ -159,7 +160,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
             inflater.inflate(R.menu.menu_settings, menu)
             val item = menu.findItem(R.id.settings_search)
             searchItem = item
-            val search = item.actionView as SearchView
+            val search = item.actionView as SettingsSearchView
             search.queryHint = getString(R.string.settings_search_hint)
             search.maxWidth = Int.MAX_VALUE
             val open = query
@@ -184,7 +185,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 }
 
                 override fun onQueryTextChange(text: String?): Boolean {
-                    if (query == null) return true
+                    if (query == null || search.collapsing) return true
                     query = text.orEmpty()
                     showResults()
                     return true

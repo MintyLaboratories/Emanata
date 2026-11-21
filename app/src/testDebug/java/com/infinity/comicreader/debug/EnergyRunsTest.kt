@@ -78,6 +78,17 @@ class EnergyRunsTest {
     }
 
     @Test
+    fun aWindowCutAtItsLastPageDropsLaterSamples() {
+        // Pages at -900 mA until 300 ms, then a page stopped partway at -1500 mA.
+        val busy = Draw(listOf(Sample(0, -900.0, 4.0), Sample(100, -900.0, 4.0), Sample(300, -900.0, 4.0), Sample(400, -1500.0, 4.0)), screenOff = true)
+        val cut = busy.until(300)
+        assertEquals(3, cut.samples.size)
+        assertEquals(-900.0, cut.meanMa, 1e-9)
+        assertTrue(cut.screenOff)
+        assertEquals(0, busy.until(-1).samples.size)
+    }
+
+    @Test
     fun aChargerShowsByStatusOrPlug() {
         assertTrue(EnergyRuns.onCharger(BatteryManager.BATTERY_STATUS_CHARGING, 0))
         assertTrue(EnergyRuns.onCharger(BatteryManager.BATTERY_STATUS_FULL, 0))

@@ -42,6 +42,9 @@ internal object EnergyRuns {
 
         /** Distinct voltages over the whole window. */
         val distinctVolts: Int get() = withVolts.map { it.volts }.distinct().size
+
+        /** This window cut at [ms]: the samples up to then, its checks as they were. */
+        fun until(ms: Long): Draw = Draw(samples.filter { it.atMs <= ms }, charger, error, screenOff)
     }
 
     /** The window [Draw.distinctPer] counts in by default. */

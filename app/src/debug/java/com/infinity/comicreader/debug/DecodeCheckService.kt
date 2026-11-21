@@ -351,7 +351,7 @@ class DecodeCheckService : Service() {
                             decode(setup, group.pages[pages % group.pages.size]).recycle()
                             pages++
                         }
-                        pages
+                        EnergyMeter.Made(pages)
                     }
                     val after = conditions()
                     heat.see(meter.thermal())

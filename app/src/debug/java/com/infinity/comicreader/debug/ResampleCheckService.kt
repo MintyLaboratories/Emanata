@@ -531,7 +531,7 @@ class ResampleCheckService : Service() {
                             run(s, page, size.first, size.second, scaling).recycle()
                             pages++
                         }
-                        pages
+                        EnergyMeter.Made(pages)
                     }
                     val after = state()
                     heat.see(after.getInt("thermal"))

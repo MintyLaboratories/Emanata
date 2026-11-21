@@ -99,8 +99,9 @@ import kotlin.math.max
  * - sustain (not part of all): per engine, `rounds` runs, each after a `cooldown` s pause
  *   and an `idle` s baseline: pages of `size` back to back for `seconds`, through the gate
  *   reading heat and battery saver ([AiConditions]), each with its time, thermal status and
- *   headroom, until the time is up or the gate stops a page (`stoppedBy`). Each run's energy
- *   per page on battery alone is measured as ResampleCheckService's sustain measures it
+ *   headroom, until the time is up or the gate stops a page (`stoppedBy`; that page counts
+ *   neither in `pages` nor in the busy window, which ends with the last whole page). Each
+ *   run's energy per page on battery alone is measured as ResampleCheckService's sustain measures it
  *   ([EnergyMeter]: refused on a charger; valid only with the cable out, adb over Wi-Fi),
  *   then the energy per page across valid rounds with its spread (`energy`). A run is
  *   valid when it stayed cool, from a bench build, with the app in front from before it
@@ -429,6 +430,7 @@ class AiCheckService : Service() {
                 val run = meter.measure(idle, seconds, heat) { until ->
                     val t0 = SystemClock.elapsedRealtime()
                     var pages = 0
+                    var made = EnergyMeter.Made(0)
                     while (SystemClock.elapsedRealtime() < until) {
                         val p0 = SystemClock.elapsedRealtime()
                         val ran = TileEngine.run(s, page, UNLIMITED, gate = gate)
@@ -443,8 +445,9 @@ class AiCheckService : Service() {
                             break
                         }
                         pages++
+                        made = EnergyMeter.Made(pages)
                     }
-                    pages
+                    made
                 }
                 val after = conditions()
                 heat.see(meter.thermal())

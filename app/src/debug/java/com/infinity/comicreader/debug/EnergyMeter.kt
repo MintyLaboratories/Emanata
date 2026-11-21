@@ -103,20 +103,30 @@ internal class EnergyMeter(private val context: Context, private val everyMs: Lo
     }
 
     /**
-     * [idleS] s of rest sampled as the baseline, then [work] for [seconds] s, returning the
-     * pages it made; under a partial wake lock.
+     * What a busy window made: [pages], the last of them ending at [endAt]
+     * ([SystemClock.elapsedRealtime]) with the process at [cpuAt] ms of CPU time. Made when
+     * the last counted page ends, so work after it (a page stopped partway) is left out.
      */
-    fun measure(idleS: Int, seconds: Int, heat: ResampleRuns.Heat, work: (until: Long) -> Int): EnergyRuns.Run {
+    class Made(val pages: Int, val endAt: Long = SystemClock.elapsedRealtime(), val cpuAt: Long = Process.getElapsedCpuTime())
+
+    /**
+     * [idleS] s of rest sampled as the baseline, then [work] for [seconds] s, returning what
+     * it made; the busy window ends with its last counted page. Under a partial wake lock.
+     */
+    fun measure(idleS: Int, seconds: Int, heat: ResampleRuns.Heat, work: (until: Long) -> Made): EnergyRuns.Run {
         val lock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, WAKE_TAG)
         lock.acquire((idleS + seconds) * 1000L + WAKE_SLACK_MS)
         try {
             val idle = sample(idleS * 1000L, heat) { until -> SystemClock.sleep(until - SystemClock.elapsedRealtime()) }
-            var pages = 0
-            val t0 = SystemClock.elapsedRealtime()
+            var made = Made(0)
+            var from = 0L
             val cpu0 = Process.getElapsedCpuTime()
-            val busy = sample(seconds * 1000L, heat) { until -> pages = work(until) }
-            val wall = (SystemClock.elapsedRealtime() - t0) / 1000.0
-            return EnergyRuns.Run(idle, busy, wall, pages, Process.getElapsedCpuTime() - cpu0)
+            val busy = sample(seconds * 1000L, heat) { until ->
+                from = until - seconds * 1000L
+                made = work(until)
+            }
+            val endMs = (made.endAt - from).coerceAtLeast(0)
+            return EnergyRuns.Run(idle, busy.until(endMs), endMs / 1000.0, made.pages, made.cpuAt - cpu0)
         } finally {
             if (lock.isHeld) lock.release()
         }

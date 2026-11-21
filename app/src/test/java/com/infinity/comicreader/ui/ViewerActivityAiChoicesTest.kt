@@ -26,7 +26,6 @@ import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ResumeMode
 import com.infinity.comicreader.reader.Fixtures
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -80,15 +79,17 @@ class ViewerActivityAiChoicesTest {
     /** The folder [book] is in, as the reader keeps a folder's default chain by it. */
     private val folder: String get() = book.parent!!
 
+    /** Opens [book] and waits until everything its open started is done: a late result (its ID, its direction) would land mid-test. */
     private fun open(): ViewerActivity {
         val intent = Intent(context, ViewerActivity::class.java).putExtra(ViewerActivity.EXTRA_PATH, book.absolutePath)
         val viewer = Robolectric.buildActivity(ViewerActivity::class.java, intent).setup().get()
         val progress = viewer.findViewById<View>(R.id.viewer_progress)
-        val deadline = System.currentTimeMillis() + 5_000
+        val deadline = System.currentTimeMillis() + 30_000
         do {
             Thread.sleep(10)
             idle()
-        } while (progress.visibility == View.VISIBLE && System.currentTimeMillis() < deadline)
+        } while ((progress.visibility == View.VISIBLE || !viewer.openSettled()) && System.currentTimeMillis() < deadline)
+        assertTrue("book still opening", progress.visibility != View.VISIBLE && viewer.openSettled())
         return viewer
     }
 
@@ -201,8 +202,9 @@ class ViewerActivityAiChoicesTest {
         atVl()
         dialog.dismiss()
         idle()
-        // Waits for VL's download to fail offline, its turn on the one app-wide download worker coming whenever it comes.
-        runBlocking { ModelDownloads.state.first { it.states["anime4k-b-vl"] is DownloadState.Failed } }
+        // VL's download, queued as the picker closed, fails offline.
+        ModelDownloads.job("anime4k-b-vl")?.let { runBlocking { it.join() } }
+        assertTrue(ModelDownloads.state.value.states["anime4k-b-vl"] is DownloadState.Failed)
     }
 
     @Test

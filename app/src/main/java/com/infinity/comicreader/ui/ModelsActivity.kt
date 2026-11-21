@@ -18,6 +18,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
+import androidx.core.view.doOnLayout
 import androidx.core.view.isVisible
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
@@ -270,6 +271,9 @@ object ModelText {
 /** How an import's before and after show: both [ZOOM] times the test picture's size, in screen pixels. */
 object ImportPreviewZoom {
     const val ZOOM = 2
+
+    /** True when two pictures of [side] and a [gap] between them fit [room], all in pixels. */
+    fun sideBySide(side: Int, gap: Int, room: Int): Boolean = 2 * side + gap <= room
 
     /** [b] at [side] x [side]: whole pixels repeated where it grows, so artifacts show as they are; filtered where it shrinks (a large upscale's after). */
     fun shown(b: Bitmap, side: Int): Bitmap =
@@ -590,15 +594,18 @@ class ModelsActivity : AppCompatActivity() {
         val view = layoutInflater.inflate(R.layout.dialog_import_preview, null)
         val list = view.findViewById<LinearLayout>(R.id.import_preview_list)
         val density = resources.displayMetrics.densityDpi
-        // The dialog's content width, less its padding: roughly, as the dialog is not laid out yet.
-        val room = (resources.displayMetrics.widthPixels * 0.8f).toInt() - list.paddingLeft - list.paddingRight
+        val gap = resources.getDimensionPixelSize(R.dimen.space_2)
         for (p in s.previews) {
             val item = layoutInflater.inflate(R.layout.item_import_preview, list, false)
             val label = ModelText.previewPicture(this, p.picture)
             item.findViewById<TextView>(R.id.import_preview_label).text = label
             val side = p.before.width * ImportPreviewZoom.ZOOM
-            val gap = resources.getDimensionPixelSize(R.dimen.space_2)
-            if (2 * side + gap > room) item.findViewById<LinearLayout>(R.id.import_preview_pair).orientation = LinearLayout.VERTICAL
+            // One above the other once laid out too narrow for both: never cut.
+            val pair = item.findViewById<LinearLayout>(R.id.import_preview_pair)
+            list.doOnLayout {
+                val room = list.width - list.paddingLeft - list.paddingRight
+                pair.orientation = if (ImportPreviewZoom.sideBySide(side, gap, room)) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
+            }
             for ((id, bitmap, said) in listOf(
                 Triple(R.id.import_preview_before, p.before, R.string.ai_import_preview_before),
                 Triple(R.id.import_preview_after, p.after, R.string.ai_import_preview_after)

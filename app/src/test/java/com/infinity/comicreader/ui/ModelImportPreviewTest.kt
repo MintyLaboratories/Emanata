@@ -206,4 +206,10 @@ class ModelImportPreviewTest {
         assertTrue(ImportPreviewZoom.shown(twice, 4) === twice)
         assertEquals(4, ImportPreviewZoom.shown(Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888), 4).width)
     }
+
+    @Test
+    fun beforeAndAfterGoSideBySideOnlyWhereBothFit() {
+        assertTrue(ImportPreviewZoom.sideBySide(256, 8, 520))
+        assertFalse(ImportPreviewZoom.sideBySide(256, 8, 519))
+    }
 }

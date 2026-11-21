@@ -1,5 +1,6 @@
 package com.infinity.comicreader.ui
 
+import com.infinity.comicreader.testing.idleUntil
 import com.infinity.comicreader.testing.ref
 import android.app.Application
 import android.content.Context
@@ -68,11 +69,7 @@ class ViewerActivityChaptersTest {
             .putExtra(ViewerActivity.EXTRA_PAGE, page)
         val viewer = Robolectric.buildActivity(ViewerActivity::class.java, intent).setup().get()
         val progress = viewer.findViewById<View>(R.id.viewer_progress)
-        val deadline = System.currentTimeMillis() + 5_000
-        do {
-            Thread.sleep(10)
-            idle()
-        } while (progress.visibility == View.VISIBLE && System.currentTimeMillis() < deadline)
+        idleUntil("the book open") { progress.visibility != View.VISIBLE }
         viewer.invalidateOptionsMenu()
         idle()
         return viewer

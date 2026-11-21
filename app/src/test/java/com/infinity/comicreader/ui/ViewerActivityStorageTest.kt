@@ -2,7 +2,6 @@ package com.infinity.comicreader.ui
 
 import android.app.Application
 import android.content.Intent
-import android.os.Looper
 import android.view.View
 import androidx.preference.PreferenceManager
 import androidx.test.core.app.ApplicationProvider
@@ -12,6 +11,7 @@ import com.infinity.comicreader.data.RemovalNotices
 import com.infinity.comicreader.data.ResumeMode
 import com.infinity.comicreader.data.StorageRoot
 import com.infinity.comicreader.reader.Fixtures
+import com.infinity.comicreader.testing.idleUntil
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -22,7 +22,6 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowToast
 import java.io.File
@@ -52,11 +51,7 @@ class ViewerActivityStorageTest {
             .putExtra(ViewerActivity.EXTRA_PATH, book.absolutePath)
         val viewer = Robolectric.buildActivity(ViewerActivity::class.java, intent).setup().get()
         val progress = viewer.findViewById<View>(R.id.viewer_progress)
-        val deadline = System.currentTimeMillis() + 5_000
-        do {
-            Thread.sleep(10)
-            shadowOf(Looper.getMainLooper()).idle()
-        } while (progress.visibility == View.VISIBLE && System.currentTimeMillis() < deadline)
+        idleUntil("the book open") { progress.visibility != View.VISIBLE }
         return viewer
     }
 

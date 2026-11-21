@@ -13,6 +13,7 @@ import com.infinity.comicreader.ai.AiThresholds
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ResumeMode
 import com.infinity.comicreader.reader.Fixtures
+import com.infinity.comicreader.testing.idleUntil
 import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Rule
@@ -52,11 +53,7 @@ class ViewerActivityAiSizesTest {
         val intent = Intent(context, ViewerActivity::class.java).putExtra(ViewerActivity.EXTRA_PATH, book.absolutePath)
         val controller = Robolectric.buildActivity(ViewerActivity::class.java, intent).setup()
         val progress = controller.get().findViewById<View>(R.id.viewer_progress)
-        val deadline = System.currentTimeMillis() + 5_000
-        do {
-            Thread.sleep(10)
-            idle()
-        } while (progress.visibility == View.VISIBLE && System.currentTimeMillis() < deadline)
+        idleUntil("the book open") { progress.visibility != View.VISIBLE }
         return controller
     }
 

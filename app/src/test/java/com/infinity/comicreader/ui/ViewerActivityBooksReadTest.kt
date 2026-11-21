@@ -2,7 +2,6 @@ package com.infinity.comicreader.ui
 
 import android.app.Application
 import android.content.Intent
-import android.os.Looper
 import android.view.View
 import androidx.preference.PreferenceManager
 import androidx.test.core.app.ApplicationProvider
@@ -11,6 +10,7 @@ import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ResumeMode
 import com.infinity.comicreader.reader.TestImages
+import com.infinity.comicreader.testing.idleUntil
 import com.infinity.comicreader.testing.ref
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -21,7 +21,6 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.io.File
@@ -46,16 +45,6 @@ class ViewerActivityBooksReadTest {
         library = Library(context)
     }
 
-    private fun idle() = shadowOf(Looper.getMainLooper()).idle()
-
-    private fun await(ms: Long = 5_000, done: () -> Boolean) {
-        val deadline = System.currentTimeMillis() + ms
-        while (!done() && System.currentTimeMillis() < deadline) {
-            Thread.sleep(10)
-            idle()
-        }
-    }
-
     @Test
     fun theLastImageReadCountsItsFolderOnce() {
         val dir = tmp.newFolder("Loose")
@@ -66,8 +55,8 @@ class ViewerActivityBooksReadTest {
             .putExtra(ViewerActivity.EXTRA_PATH, images[1].absolutePath)
         val viewer = Robolectric.buildActivity(ViewerActivity::class.java, intent).setup().get()
         val progress = viewer.findViewById<View>(R.id.viewer_progress)
-        await { progress.visibility != View.VISIBLE }
-        await { library.isFolderRead(dir.absolutePath) }
+        idleUntil("the book open") { progress.visibility != View.VISIBLE }
+        idleUntil("its folder counted read") { library.isFolderRead(dir.absolutePath) }
         assertTrue(library.isRead(ref(images[1]).id))
         assertEquals(1, library.stats().books)
     }

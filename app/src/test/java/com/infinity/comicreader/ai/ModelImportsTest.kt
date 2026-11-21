@@ -146,6 +146,10 @@ class ModelImportsTest {
         assertTrue(GrayPages.isGray(pictures[2].second))
         assertFalse(GrayPages.isGray(pictures[0].second))
         assertFalse(GrayPages.isGray(pictures[1].second))
+        // At its scanned size, unresampled: dot centers near black.
+        val dots = pictures[2].second
+        val dark = (0 until 128 * 128).count { i -> (dots.getPixel(i % 128, i / 128) and 0xFF) < 32 }
+        assertTrue("$dark", dark > 128 * 128 * 3 / 100)
     }
 
     @Test

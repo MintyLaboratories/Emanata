@@ -1651,7 +1651,7 @@ app shows each license and NOTICE text under Settings → About (files in
 | [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) PP-OCRv5 mobile text detector, not bundled: downloaded unchanged the first time a cover needs it, a third party's ncnn conversion from a [pinned Hugging Face repository](https://huggingface.co/qefro/pp-OCRv5-6-ncnn) (Apache-2.0; its weights file is from the [PaddleOCR-ncnn-CPP](https://github.com/Avafly/PaddleOCR-ncnn-CPP) v0.3.0 release archive, MIT, as the repository's manifest states) | Apache-2.0 |
 | Material Symbols | Apache-2.0 |
 | Test pictures of a model import's before and after: cutouts of "Portrait of Pepper" and "In Bloom" by David Revoy ([Pepper&Carrot](https://www.peppercarrot.com/)), scaled down, the second JPEG-compressed | CC BY 4.0 |
-| Test picture with dot patterns of a model import's before and after: a cutout of a [water conservation brochure, circa 1985](https://www.flickr.com/photos/seattlemunicipalarchives/44998418715/) by the Seattle Municipal Archives, scaled down | CC BY 2.0 |
+| Test picture with dot patterns of a model import's before and after: a cutout of a [water conservation brochure, circa 1985](https://www.flickr.com/photos/seattlemunicipalarchives/44998418715/) by the Seattle Municipal Archives, at its scanned size, in gray | CC BY 2.0 |
 
 Dual-licensed components are used under Apache-2.0.
 

@@ -142,12 +142,12 @@ class NoticesTest {
         val readme = File("../README.md").readText()
         val revoy = Notices.all.single { it.name == "Pepper&Carrot artwork" }
         assertEquals("CC BY 4.0", revoy.license)
-        assertTrue(revoy.note!!.contains("By David Revoy") && revoy.note!!.contains("JPEG-compressed"))
+        assertTrue(revoy.note!!.contains("By David Revoy") && revoy.note.contains("JPEG-compressed"))
         assertTrue(readme.contains("by David Revoy ([Pepper&Carrot](https://www.peppercarrot.com/)), scaled down, the second JPEG-compressed | CC BY 4.0 |"))
         val dots = Notices.all.single { it.url == Notices.PREVIEW_DOTS_URL }
         assertEquals("CC BY 2.0", dots.license)
         assertTrue(dots.note!!.contains("By the Seattle Municipal Archives"))
-        assertTrue(readme.contains("](${Notices.PREVIEW_DOTS_URL}) by the Seattle Municipal Archives, scaled down | CC BY 2.0 |"))
+        assertTrue(readme.contains("](${Notices.PREVIEW_DOTS_URL}) by the Seattle Municipal Archives, at its scanned size, in gray | CC BY 2.0 |"))
         assertTrue(File(assetDir, "cc-by-2.0.txt").readText().startsWith("Attribution 2.0 Generic"))
     }
 

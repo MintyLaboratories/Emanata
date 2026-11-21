@@ -209,7 +209,7 @@ object Notices {
         ),
         Notice(
             "Water conservation brochure, circa 1985", "CC BY 2.0", PREVIEW_DOTS_URL, listOf("cc-by-2.0.txt"),
-            note = "By the Seattle Municipal Archives. A small cutout, scaled down, is the test picture with dot " +
+            note = "By the Seattle Municipal Archives. A small cutout at its scanned size, in gray, is the test picture with dot " +
                 "patterns an imported model's before and after shows."
         ),
     )

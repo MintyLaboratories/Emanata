@@ -1,7 +1,6 @@
 package com.infinity.comicreader.ui
 
 import android.app.Application
-import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
@@ -11,6 +10,7 @@ import com.infinity.comicreader.ai.DownloadFailure
 import com.infinity.comicreader.ai.DownloadState
 import com.infinity.comicreader.ai.ModelCatalog
 import com.infinity.comicreader.ai.ModelStore
+import com.infinity.comicreader.testing.idleUntil
 import com.infinity.comicreader.ui.ModelText.DetectorFiles
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -20,7 +20,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 /** The model manager lists the cover text detector, PP-OCR, and where its model is. */
@@ -54,14 +53,11 @@ class ModelsCoverTextTest {
     /** The Models screen, once its cover text row tells where PP-OCR's model is (looked at off the main thread). */
     private fun opened(): ModelsActivity {
         val activity = Robolectric.buildActivity(ModelsActivity::class.java).setup().get()
-        val end = System.currentTimeMillis() + 10_000
-        while (true) {
-            shadowOf(Looper.getMainLooper()).idle()
+        idleUntil("the cover text row's status") {
             val status = activity.findViewById<View>(R.id.cover_text_card)?.findViewById<TextView>(R.id.status)
-            if (status != null && status.text.isNotEmpty()) return activity
-            assertTrue("the cover text row tells nothing", System.currentTimeMillis() < end)
-            Thread.sleep(10)
+            status != null && status.text.isNotEmpty()
         }
+        return activity
     }
 
     private fun shown(): List<String> = texts(opened().findViewById(R.id.models_list))

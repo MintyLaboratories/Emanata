@@ -21,6 +21,7 @@ import com.infinity.comicreader.ai.UserModel
 import com.infinity.comicreader.ai.UserModels
 import com.infinity.comicreader.ai.AiStep
 import com.infinity.comicreader.data.Prefs
+import com.infinity.comicreader.testing.idleUntil
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -91,11 +92,7 @@ class ModelsActivityTest {
     private fun open(): ModelsActivity {
         val activity = Robolectric.buildActivity(ModelsActivity::class.java).setup().get()
         // The state shows once read off the main thread.
-        for (i in 0 until 50) {
-            shadowOf(Looper.getMainLooper()).idle()
-            if (rows(activity).all { it.findViewById<MaterialButton>(R.id.action).text.isNotEmpty() }) break
-            Thread.sleep(20)
-        }
+        idleUntil("every model row's state") { rows(activity).all { it.findViewById<MaterialButton>(R.id.action).text.isNotEmpty() } }
         return activity
     }
 
@@ -221,11 +218,9 @@ class ModelsActivityTest {
         val ask = ShadowDialog.getLatestDialog() as AlertDialog
         assertTrue(ask.findViewById<TextView>(android.R.id.message)!!.text.contains("My upscaler"))
         ask.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
-        for (i in 0 until 100) {
-            shadowOf(Looper.getMainLooper()).idle()
-            if (UserModels.all.isEmpty() && rows(activity).size == ModelCatalog.all.size + ShaderCatalog.all.size) break
-            Thread.sleep(20)
-        }
+        // The delete is queued with the imports' work; the screen hears of it after.
+        ModelImports.settle()
+        idleUntil("the deleted model's row gone") { UserModels.all.isEmpty() && rows(activity).size == ModelCatalog.all.size + ShaderCatalog.all.size }
         assertTrue(UserModels.all.isEmpty())
         assertFalse(store.userDir(mine.id).exists())
         assertEquals(ModelCatalog.all.size + ShaderCatalog.all.size, rows(activity).size)

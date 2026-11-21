@@ -7,12 +7,12 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
-import android.os.Looper
 import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
 import com.google.android.material.tabs.TabLayout
 import com.infinity.comicreader.R
+import com.infinity.comicreader.testing.idleUntil
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.StartupLocation
@@ -46,13 +46,12 @@ class ListActivityStartupTest {
         root = Environment.getExternalStorageDirectory()
     }
 
-    private fun idle() {
-        // Listings run on the IO pool; let them land on the main thread.
-        repeat(10) {
-            shadowOf(Looper.getMainLooper()).idle()
-            Thread.sleep(20)
-        }
-    }
+    /** True once the screen waits on nothing but the test: listed, favorites classified, facts read, presence asked, its menu looked into. */
+    private fun ListActivity.quiet() =
+        listJob?.isCompleted == true && listOf(classifyJob, factsJob, presenceJob, moreLook).none { it?.isActive == true }
+
+    /** Runs the main looper until the screen is quiet. */
+    private fun ListActivity.settle() = idleUntil("the library screen quiet") { quiet() }
 
     private fun ListActivity.tab() = findViewById<TabLayout>(R.id.tabs).selectedTabPosition
 
@@ -61,7 +60,7 @@ class ListActivityStartupTest {
     @Test
     fun opensOnBrowseByDefault() {
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        activity.settle()
         assertEquals(0, activity.tab())
     }
 
@@ -71,10 +70,10 @@ class ListActivityStartupTest {
         prefs.lastPath = dir.absolutePath
         prefs.startupTab = Prefs.TAB_HISTORY
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        activity.settle()
         assertEquals(2, activity.tab())
         activity.findViewById<TabLayout>(R.id.tabs).getTabAt(0)!!.select()
-        idle()
+        activity.settle()
         assertEquals(dir.absolutePath, activity.crumbPaths().last())
     }
 
@@ -84,12 +83,12 @@ class ListActivityStartupTest {
         prefs.lastPath = dir.absolutePath
         prefs.startupTab = Prefs.TAB_HISTORY
         val controller = Robolectric.buildActivity(ListActivity::class.java).setup()
-        idle()
+        controller.get().settle()
         controller.get().findViewById<TabLayout>(R.id.tabs).getTabAt(0)!!.select()
-        idle()
+        controller.get().settle()
         File(dir, "new.cbz").createNewFile()
         controller.pause().stop().restart().start().resume()
-        idle()
+        controller.get().settle()
         val adapter = controller.get().findViewById<RecyclerView>(R.id.recycler).adapter as BookAdapter
         assertTrue(adapter.positionOf(File(dir, "new.cbz").absolutePath) >= 0)
     }
@@ -100,7 +99,7 @@ class ListActivityStartupTest {
         val custom = File(root, "Custom").apply { mkdirs() }
         prefs.setStartupFolder(custom.absolutePath)
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        activity.settle()
         assertEquals(custom.absolutePath, activity.crumbPaths().last())
     }
 
@@ -115,7 +114,7 @@ class ListActivityStartupTest {
         prefs.groupFavorites = false
         prefs.startupLocation = StartupLocation.FIRST_FAVORITE
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        activity.settle()
         // Favorites sort by name, folders first.
         assertEquals(alpha.absolutePath, activity.crumbPaths().last())
     }
@@ -129,7 +128,7 @@ class ListActivityStartupTest {
         prefs.startupTab = Prefs.TAB_FAVORITES
         val incoming = File(root, "Incoming").apply { mkdirs() }
         val activity = Robolectric.buildActivity(ListActivity::class.java, viewIntent(incoming.absolutePath)).setup().get()
-        idle()
+        activity.settle()
         assertEquals(0, activity.tab())
         assertEquals(incoming.absolutePath, activity.crumbPaths().last())
     }
@@ -140,7 +139,7 @@ class ListActivityStartupTest {
         File(root, "Other").mkdirs()
         val path = File(root, "Other/../Incoming").path
         val activity = Robolectric.buildActivity(ListActivity::class.java, viewIntent(path)).setup().get()
-        idle()
+        activity.settle()
         assertEquals(listOf(root.absolutePath, incoming.absolutePath), activity.crumbPaths())
     }
 
@@ -148,12 +147,12 @@ class ListActivityStartupTest {
     fun aBookFromAnotherAppOpensOnceAcrossARecreate() {
         val book = File(root, "a.cbz").apply { createNewFile() }
         val first = Robolectric.buildActivity(ListActivity::class.java, viewIntent(book.absolutePath)).setup()
-        idle()
+        first.get().settle()
         assertEquals(ViewerActivity::class.java.name, shadowOf(first.get()).nextStartedActivity?.component?.className)
         val state = Bundle()
         first.saveInstanceState(state)
         val second = Robolectric.buildActivity(ListActivity::class.java, viewIntent(book.absolutePath)).setup(state)
-        idle()
+        second.get().settle()
         assertNull(shadowOf(second.get()).nextStartedActivity)
     }
 
@@ -163,7 +162,7 @@ class ListActivityStartupTest {
         val book = File(root, "b.cbz").apply { writeBytes(ByteArray(10)) }
         val own = Intent(Intent.ACTION_VIEW, com.infinity.comicreader.files.BookUris.of(context, book.absolutePath))
         val activity = Robolectric.buildActivity(ListActivity::class.java, own).setup().get()
-        idle()
+        activity.settle()
         assertEquals(ViewerActivity::class.java.name, shadowOf(activity).nextStartedActivity?.component?.className)
         // Never copied in, as other apps' content is.
         assertFalse(File(context.cacheDir, "incoming").exists())
@@ -171,13 +170,13 @@ class ListActivityStartupTest {
         val private = File(context.filesDir, "c.cbz").apply { writeBytes(ByteArray(10)) }
         val issued = Intent(Intent.ACTION_VIEW, com.infinity.comicreader.files.BookUris.of(context, private.absolutePath))
         val other = Robolectric.buildActivity(ListActivity::class.java, issued).setup().get()
-        idle()
+        other.settle()
         assertNull(shadowOf(other).nextStartedActivity)
 
         // A URI of ours this app never issued opens nothing, even for a book in storage.
         val made = android.net.Uri.parse("content://${com.infinity.comicreader.files.BookUris.authority(context.packageName)}/AAAAAAAAAAAAAAAAAAAAAA/b.cbz")
         val third = Robolectric.buildActivity(ListActivity::class.java, Intent(Intent.ACTION_VIEW, made)).setup().get()
-        idle()
+        third.settle()
         assertNull(shadowOf(third).nextStartedActivity)
         assertFalse(File(context.cacheDir, "incoming").exists())
     }
@@ -188,13 +187,13 @@ class ListActivityStartupTest {
         prefs.lastPath = dir.absolutePath
         prefs.startupTab = Prefs.TAB_FAVORITES
         val first = Robolectric.buildActivity(ListActivity::class.java).setup()
-        idle()
+        first.get().settle()
         first.get().findViewById<TabLayout>(R.id.tabs).getTabAt(3)!!.select()
-        idle()
+        first.get().settle()
         val state = Bundle()
         first.saveInstanceState(state)
         val second = Robolectric.buildActivity(ListActivity::class.java).setup(state)
-        idle()
+        second.get().settle()
         assertEquals(3, second.get().tab())
     }
 }

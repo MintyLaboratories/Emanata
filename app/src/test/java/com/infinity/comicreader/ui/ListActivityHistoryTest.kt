@@ -4,12 +4,12 @@ import com.infinity.comicreader.testing.bookId
 import android.Manifest
 import android.app.Application
 import android.os.Environment
-import android.os.Looper
 import android.view.View
 import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.R
+import com.infinity.comicreader.testing.idleUntil
 import com.infinity.comicreader.data.HistoryItem
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.MoreAction
@@ -46,14 +46,16 @@ class ListActivityHistoryTest {
         Prefs(context).startupTab = Prefs.TAB_HISTORY
     }
 
-    private fun idle() = repeat(10) {
-        shadowOf(Looper.getMainLooper()).idle()
-        Thread.sleep(20)
-    }
+    /** True once the screen waits on nothing but the test: listed, favorites classified, facts read, presence asked, its menu looked into. */
+    private fun ListActivity.quiet() =
+        listJob?.isCompleted == true && listOf(classifyJob, factsJob, presenceJob, moreLook).none { it?.isActive == true }
+
+    /** Runs the main looper until the screen is quiet. */
+    private fun ListActivity.settle() = idleUntil("the library screen quiet") { quiet() }
 
     private fun launch(): Pair<ListActivity, RecyclerView> {
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        activity.settle()
         val recycler = activity.findViewById<RecyclerView>(R.id.recycler)
         recycler.measure(0, 0)
         recycler.layout(0, 0, 1000, 2000)
@@ -64,7 +66,7 @@ class ListActivityHistoryTest {
     fun tapOpensTheBookWhereTheResumeSettingSays() {
         val (activity, recycler) = launch()
         recycler.findViewHolderForAdapterPosition(0)!!.itemView.performClick()
-        idle()
+        activity.settle()
         val started = shadowOf(activity).nextStartedActivity
         assertEquals(ViewerActivity::class.java.name, started.component?.className)
         assertEquals(book.absolutePath, started.getStringExtra(ViewerActivity.EXTRA_PATH))
@@ -75,16 +77,16 @@ class ListActivityHistoryTest {
     fun selectedTheButtonContinuesAndTheMenuShowsTheFolder() {
         val (activity, recycler) = launch()
         recycler.findViewHolderForAdapterPosition(0)!!.itemView.performLongClick()
-        idle()
+        activity.settle()
         activity.findViewById<View>(R.id.selection_more).performClick()
-        idle()
+        activity.settle()
         val menu = activity.moreMenu!!
         assertTrue((0 until menu.childCount).any { menu.getChildAt(it).tag == MoreAction.SHOW_IN_FOLDER })
         // The floating button opens it where reading goes on.
         val fab = activity.findViewById<View>(R.id.fab)
         assertEquals(context.getString(R.string.fab_open), fab.contentDescription)
         fab.performClick()
-        idle()
+        activity.settle()
         val started = shadowOf(activity).nextStartedActivity
         assertEquals(book.absolutePath, started.getStringExtra(ViewerActivity.EXTRA_PATH))
         assertEquals(-1, started.getIntExtra(ViewerActivity.EXTRA_PAGE, 0))

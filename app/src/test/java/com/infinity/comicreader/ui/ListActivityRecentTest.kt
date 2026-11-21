@@ -4,12 +4,12 @@ import com.infinity.comicreader.testing.bookId
 import android.Manifest
 import android.app.Application
 import android.os.Environment
-import android.os.Looper
 import android.view.View
 import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.R
+import com.infinity.comicreader.testing.idleUntil
 import com.infinity.comicreader.data.HistoryItem
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
@@ -43,10 +43,12 @@ class ListActivityRecentTest {
         library = Library(context)
     }
 
-    private fun idle() = repeat(10) {
-        shadowOf(Looper.getMainLooper()).idle()
-        Thread.sleep(20)
-    }
+    /** True once the screen waits on nothing but the test: listed, favorites classified, facts read, presence asked, its menu looked into. */
+    private fun ListActivity.quiet() =
+        listJob?.isCompleted == true && listOf(classifyJob, factsJob, presenceJob, moreLook).none { it?.isActive == true }
+
+    /** Runs the main looper until the screen is quiet. */
+    private fun ListActivity.settle() = idleUntil("the library screen quiet") { quiet() }
 
     private fun book(folder: String, name: String): File =
         File(root, folder).apply { mkdirs() }.let { File(it, name).apply { createNewFile() } }
@@ -55,7 +57,7 @@ class ListActivityRecentTest {
 
     private fun launch(): ListActivity {
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        activity.settle()
         return activity
     }
 
@@ -103,12 +105,12 @@ class ListActivityRecentTest {
 
         // Another book of the same folder: the row looks the same, nothing is redrawn.
         read(book("Series", "02.cbz"))
-        idle()
+        activity.settle()
         assertEquals(emptyList<String>(), events)
 
         // A book elsewhere: only the row changes, and it takes there.
         read(book("Other", "01.cbz"))
-        idle()
+        activity.settle()
         assertEquals(listOf("changed 0+1"), events)
         assertEquals("Other", adapter.header?.subtitle)
         val recycler = activity.findViewById<RecyclerView>(R.id.recycler)
@@ -117,7 +119,7 @@ class ListActivityRecentTest {
         val row = recycler.findViewHolderForAdapterPosition(0)
         assertNotNull(row)
         row!!.itemView.performClick()
-        idle()
+        activity.settle()
         assertEquals(File(root, "Other").absolutePath, activity.findViewById<CrumbBar>(R.id.pathbar).crumbs.last().path)
     }
 }

@@ -13,6 +13,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.preference.PreferenceManager
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.R
+import com.infinity.comicreader.testing.idleUntil
 import com.infinity.comicreader.data.HistoryItem
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
@@ -55,13 +56,18 @@ class ListActivityStartupResumeTest {
         ShadowDialog.reset()
     }
 
-    private fun idle() = repeat(10) {
-        shadowOf(Looper.getMainLooper()).idle()
-        Thread.sleep(20)
-    }
+    /** True once the screen waits on nothing but the test: listed, favorites classified, facts read, presence asked, its menu looked into. */
+    private fun ListActivity.quiet() =
+        listJob?.isCompleted == true && listOf(classifyJob, factsJob, presenceJob, moreLook).none { it?.isActive == true }
+
+    /** Runs the main looper until the screen is quiet. */
+    private fun ListActivity.settle() = idleUntil("the library screen quiet") { quiet() }
+
+    /** Runs what is due on the main thread: what a click or a dialog posts there. */
+    private fun idle() = shadowOf(Looper.getMainLooper()).idle()
 
     private fun start(): ActivityController<ListActivity> =
-        Robolectric.buildActivity(ListActivity::class.java).setup().also { idle() }
+        Robolectric.buildActivity(ListActivity::class.java).setup().also { it.get().settle() }
 
     private fun offered(): AlertDialog? = (ShadowDialog.getLatestDialog() as? AlertDialog)?.takeIf { it.isShowing }
 
@@ -121,7 +127,7 @@ class ListActivityStartupResumeTest {
         offered()!!.dismiss()
         ShadowDialog.reset()
         controller.recreate()
-        idle()
+        controller.get().settle()
         assertNull(offered())
     }
 
@@ -131,7 +137,7 @@ class ListActivityStartupResumeTest {
         offered()!!
         ShadowDialog.reset()
         controller.recreate()
-        idle()
+        controller.get().settle()
         answer(offered()!!, yes = true)
         assertEquals(book.absolutePath, controller.opened().getStringExtra(ViewerActivity.EXTRA_PATH))
     }

@@ -3,13 +3,13 @@ package com.infinity.comicreader.ui
 import android.Manifest
 import android.app.Application
 import android.os.Environment
-import android.os.Looper
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.preference.PreferenceManager
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.R
+import com.infinity.comicreader.testing.idleUntil
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.StorageRoot
 import com.infinity.comicreader.data.StorageRoots
@@ -45,13 +45,12 @@ class ListActivityCrumbsTest {
         Prefs(context).lastPath = File(root, "attic/Comics").absolutePath
     }
 
-    private fun idle() {
-        // The startup location is worked out on the IO pool; let it land on the main thread.
-        repeat(10) {
-            shadowOf(Looper.getMainLooper()).idle()
-            Thread.sleep(20)
-        }
-    }
+    /** True once the screen waits on nothing but the test: listed, favorites classified, facts read, presence asked, its menu looked into. */
+    private fun ListActivity.quiet() =
+        listJob?.isCompleted == true && listOf(classifyJob, factsJob, presenceJob, moreLook).none { it?.isActive == true }
+
+    /** Runs the main looper until the screen is quiet: the startup location is worked out, and folders listed, on the IO pool. */
+    private fun ListActivity.settle() = idleUntil("the library screen quiet") { quiet() }
 
     private fun CrumbBar.row(): LinearLayout = (getChildAt(1) as HorizontalScrollView).getChildAt(0) as LinearLayout
 
@@ -59,19 +58,19 @@ class ListActivityCrumbsTest {
     private fun pickLocation(activity: ListActivity, name: String) {
         val bar = activity.findViewById<CrumbBar>(R.id.pathbar)
         bar.locationsButton.performClick()
-        idle()
+        activity.settle()
         assertTrue(activity.locations?.isShowing == true)
         val list = ShadowDialog.getLatestDialog().findViewById<LinearLayout>(R.id.locations_list)
         val row = (0 until list.childCount).map { list.getChildAt(it) }
             .first { it.findViewById<TextView>(R.id.location_name).text == name }
         row.performClick()
-        idle()
+        activity.settle()
     }
 
     @Test
     fun crumbsNameTheRootAndNavigate() {
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        activity.settle()
         val bar = activity.findViewById<CrumbBar>(R.id.pathbar)
         assertEquals(listOf("Device", "attic", "Comics"), bar.crumbs.map { it.label })
 
@@ -79,7 +78,7 @@ class ListActivityCrumbsTest {
         val parent = bar.row().getChildAt(3) as TextView
         assertEquals("attic", parent.text)
         parent.performClick()
-        idle()
+        activity.settle()
         // The folder left stays as a forward crumb.
         assertEquals(listOf("Device", "attic", "Comics"), bar.crumbs.map { it.label })
         assertEquals(1, bar.currentIndex)
@@ -92,12 +91,12 @@ class ListActivityCrumbsTest {
     @Test
     fun rootCrumbNavigatesToTheRoot() {
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        activity.settle()
         val bar = activity.findViewById<CrumbBar>(R.id.pathbar)
         val rootCrumb = bar.row().getChildAt(1) as TextView
         assertEquals("Device", rootCrumb.text.toString())
         rootCrumb.performClick()
-        idle()
+        activity.settle()
         assertEquals(0, bar.currentIndex)
         assertEquals(root.absolutePath, bar.crumbs[0].path)
         assertTrue(activity.locations?.isShowing != true)
@@ -106,12 +105,12 @@ class ListActivityCrumbsTest {
     @Test
     fun appIconCrumbOpensTheLocationPicker() {
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        activity.settle()
         val icon = activity.findViewById<CrumbBar>(R.id.pathbar).locationsButton
         assertNotNull(icon.drawable)
         assertEquals(activity.getString(R.string.choose_root), icon.contentDescription)
         icon.performClick()
-        idle()
+        activity.settle()
         assertEquals(listOf("Device"), activity.locations?.shownRoots?.map { it.name })
         val list = ShadowDialog.getLatestDialog().findViewById<LinearLayout>(R.id.locations_list)
         // The current location is highlighted.
@@ -121,11 +120,11 @@ class ListActivityCrumbsTest {
     @Test
     fun locationPickerSurvivesRotation() {
         val controller = Robolectric.buildActivity(ListActivity::class.java).setup()
-        idle()
+        controller.get().settle()
         controller.get().findViewById<CrumbBar>(R.id.pathbar).locationsButton.performClick()
-        idle()
+        controller.get().settle()
         controller.recreate()
-        idle()
+        controller.get().settle()
         val sheet = controller.get().locations
         assertTrue(sheet?.isShowing == true)
         assertEquals(listOf("Device"), sheet?.shownRoots?.map { it.name })
@@ -133,7 +132,7 @@ class ListActivityCrumbsTest {
         // Still highlighted, and picking from the rebuilt sheet reaches the new activity.
         assertTrue(list.getChildAt(0).isActivated)
         list.getChildAt(0).performClick()
-        idle()
+        controller.get().settle()
         assertEquals(root.absolutePath, controller.get().findViewById<CrumbBar>(R.id.pathbar).let { it.crumbs[it.currentIndex].path })
     }
 
@@ -141,23 +140,23 @@ class ListActivityCrumbsTest {
     fun forwardCrumbsReopenAndDropOnAnotherFolder() {
         File(root, "attic/Other").mkdirs()
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        activity.settle()
         val bar = activity.findViewById<CrumbBar>(R.id.pathbar)
         pickLocation(activity, "Device")
         assertEquals(listOf("Device", "attic", "Comics"), bar.crumbs.map { it.label })
 
         // Separator, "Device", separator, "attic", separator, gray "Comics".
         (bar.row().getChildAt(5) as TextView).performClick()
-        idle()
+        activity.settle()
         assertEquals(2, bar.currentIndex)
 
         (bar.row().getChildAt(3) as TextView).performClick()
-        idle()
+        activity.settle()
         assertEquals(1, bar.currentIndex)
         // Opening a folder off the trail drops it.
         val crumbClick = bar.onCrumbClick!!
         crumbClick(com.infinity.comicreader.data.Crumb("Other", File(root, "attic/Other").absolutePath, false))
-        idle()
+        activity.settle()
         assertEquals(listOf("Device", "attic", "Other"), bar.crumbs.map { it.label })
         assertEquals(2, bar.currentIndex)
     }
@@ -167,7 +166,7 @@ class ListActivityCrumbsTest {
         File(root, "attic/Comics/Series/Volume").mkdirs()
         Prefs(ApplicationProvider.getApplicationContext()).lastPath = File(root, "attic/Comics/Series/Volume").absolutePath
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        activity.settle()
         val bar = activity.findViewById<CrumbBar>(R.id.pathbar)
         pickLocation(activity, "Device")
         assertEquals(listOf("Device", "attic", "Comics", "Series", "Volume"), bar.crumbs.map { it.label })
@@ -175,7 +174,7 @@ class ListActivityCrumbsTest {
         File(root, "attic/Comics/Series").deleteRecursively()
         // Separator, "Device", separator, "attic", separator, "Comics", separator, gray "Series".
         (bar.row().getChildAt(7) as TextView).performClick()
-        idle()
+        activity.settle()
         assertEquals(listOf("Device", "attic", "Comics"), bar.crumbs.map { it.label })
         assertEquals(2, bar.currentIndex)
         assertEquals(activity.getString(R.string.folder_gone), ShadowToast.getTextOfLatestToast())
@@ -185,7 +184,7 @@ class ListActivityCrumbsTest {
     fun aStartupFolderNowGoneOpensItsNearestParent() {
         Prefs(ApplicationProvider.getApplicationContext()).lastPath = File(root, "attic/Comics/Gone/Deeper").absolutePath
         val activity = Robolectric.buildActivity(ListActivity::class.java).setup().get()
-        idle()
+        activity.settle()
         val bar = activity.findViewById<CrumbBar>(R.id.pathbar)
         assertEquals(listOf("Device", "attic", "Comics"), bar.crumbs.map { it.label })
         assertEquals(2, bar.currentIndex)
@@ -195,12 +194,12 @@ class ListActivityCrumbsTest {
     @Test
     fun aDrivePluggedInOpensTheLocationPickerWithItHighlighted() {
         val controller = Robolectric.buildActivity(ListActivity::class.java).setup()
-        idle()
+        controller.get().settle()
         val activity = controller.get()
         val roots = StorageRoots.list(activity)
         val usb = StorageRoot(File(root.parentFile, "1A2B-3C4D").absolutePath, "Drive A", StorageRoot.Kind.USB)
         activity.refreshRoots(roots + usb)
-        idle()
+        activity.settle()
         assertEquals(listOf("Device", "Drive A"), activity.locations?.shownRoots?.map { it.name })
         val list = ShadowDialog.getLatestDialog().findViewById<LinearLayout>(R.id.locations_list)
         assertFalse(list.getChildAt(0).isActivated)
@@ -210,17 +209,17 @@ class ListActivityCrumbsTest {
     @Test
     fun aDrivePluggedInWhileAwayOpensTheLocationPickerOnReturn() {
         val controller = Robolectric.buildActivity(ListActivity::class.java).setup()
-        idle()
+        controller.get().settle()
         val activity = controller.get()
         val usb = StorageRoot(File(root.parentFile, "1A2B-3C4D").absolutePath, "Drive A", StorageRoot.Kind.USB)
         val mounted = StorageRoots.list(activity) + usb
         activity.listRoots = { mounted }
         controller.pause().stop()
         activity.refreshRoots()
-        idle()
+        activity.settle()
         assertTrue(activity.locations?.isShowing != true)
         controller.start().resume()
-        idle()
+        activity.settle()
         assertTrue(activity.locations?.isShowing == true)
         val list = ShadowDialog.getLatestDialog().findViewById<LinearLayout>(R.id.locations_list)
         assertTrue(list.getChildAt(1).isActivated)
@@ -229,14 +228,14 @@ class ListActivityCrumbsTest {
     @Test
     fun aDrivePulledOutBeforeTheReturnOpensNothing() {
         val controller = Robolectric.buildActivity(ListActivity::class.java).setup()
-        idle()
+        controller.get().settle()
         val activity = controller.get()
         val usb = StorageRoot(File(root.parentFile, "1A2B-3C4D").absolutePath, "Drive A", StorageRoot.Kind.USB)
         controller.pause().stop()
         activity.refreshRoots(StorageRoots.list(activity) + usb)
         activity.refreshRoots(StorageRoots.list(activity))
         controller.start().resume()
-        idle()
+        activity.settle()
         assertTrue(activity.locations?.isShowing != true)
     }
 
@@ -244,10 +243,10 @@ class ListActivityCrumbsTest {
     fun backStopsAtTheRoot() {
         Prefs(ApplicationProvider.getApplicationContext()).lastPath = root.absolutePath
         val controller = Robolectric.buildActivity(ListActivity::class.java).setup()
-        idle()
+        controller.get().settle()
         @Suppress("DEPRECATION")
         controller.get().onBackPressed()
-        idle()
+        controller.get().settle()
         assertTrue(controller.get().isFinishing)
         assertEquals(listOf("Device"), controller.get().findViewById<CrumbBar>(R.id.pathbar).crumbs.map { it.label })
     }

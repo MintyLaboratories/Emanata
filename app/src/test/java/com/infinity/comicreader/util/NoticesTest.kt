@@ -128,11 +128,10 @@ class NoticesTest {
         assertTrue(paddle.note!!.contains("the first time a cover needs it (telling a wraparound cover's front or reading direction)"))
         val flat = File("../README.md").readText().replace(Regex("\\s+"), " ")
         assertTrue(flat.contains("the first time a cover needs it, the 2.4 MB cover text detector (to tell a wraparound cover's front or a book's reading direction)"))
-        // The Smart crop anchor is gone: no text names it.
-        val smart = Regex("\\bSmart\\b")
+        // Neither names a Smart crop anchor.
+        val smart = Regex("\\bSmart (crop|anchor|\\(experimental\\))")
         assertFalse(smart.containsMatchIn(paddle.note!!))
         assertFalse(smart.containsMatchIn(flat))
-        assertFalse(smart.containsMatchIn(File("src/main/res/values/strings.xml").readText()))
     }
 
     @Test

@@ -39,6 +39,13 @@ class SettingsCropAnchorTest {
     }
 
     @Test
+    fun theChoicesAreTopAndCenter() {
+        val pref = anchorShownFor("top")
+        assertEquals(listOf("top", "center"), pref.entryValues.map { it.toString() })
+        assertEquals(listOf(R.string.crop_anchor_top, R.string.crop_anchor_center).map { context.getString(it) }, pref.entries.map { it.toString() })
+    }
+
+    @Test
     fun unknownStoredAnchorShowsTop() {
         val pref = anchorShownFor("smart")
         assertEquals("top", pref.value)

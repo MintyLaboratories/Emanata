@@ -19,6 +19,7 @@ import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.After
 import org.junit.Before
@@ -101,10 +102,12 @@ class ListActivityConfirmTest {
 
         // Canceled: nothing was started.
         activity.menu(R.id.menu_mark_all_unread).press(DialogInterface.BUTTON_NEGATIVE)
+        assertNull(activity.markJob)
         assertTrue(library.isRead(bookId(book)))
 
         activity.menu(R.id.menu_mark_all_unread).press(DialogInterface.BUTTON_POSITIVE)
-        idleUntil("the book marked unread") { !library.isRead(bookId(book)) }
+        // The marking runs on the main thread between its I/O steps.
+        idleUntil("marking unread") { activity.markJob!!.isCompleted }
         assertFalse(library.isRead(bookId(book)))
     }
 
@@ -114,10 +117,11 @@ class ListActivityConfirmTest {
 
         // Canceled: nothing was started.
         activity.menu(R.id.menu_mark_all_read).press(DialogInterface.BUTTON_NEGATIVE)
+        assertNull(activity.markJob)
         assertFalse(library.isRead(bookId(book)))
 
         activity.menu(R.id.menu_mark_all_read).press(DialogInterface.BUTTON_POSITIVE)
-        idleUntil("the book marked read") { library.isRead(bookId(book)) }
+        idleUntil("marking read") { activity.markJob!!.isCompleted }
         assertTrue(library.isRead(bookId(book)))
     }
 

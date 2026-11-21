@@ -19,6 +19,7 @@ import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
 import com.google.android.material.button.MaterialButton
 import com.infinity.comicreader.R
+import com.infinity.comicreader.testing.idleUntil
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -55,9 +56,19 @@ class CleanupActivityTest {
         File(root, "first/Other.cbz").writeBytes(Random(8).nextBytes(4096))
     }
 
-    private fun idle() = repeat(20) {
-        shadowOf(Looper.getMainLooper()).idle()
-        Thread.sleep(20)
+    /** Waits until the search is over: its progress gone and the similar-books bar no longer running. */
+    private fun settle(activity: CleanupActivity) {
+        val progress = activity.findViewById<View>(R.id.cleanup_progress)
+        val bar = activity.findViewById<View>(R.id.similar_bar)
+        val stop = activity.findViewById<View>(R.id.similar_stop)
+        idleUntil("the search over") { progress.visibility != View.VISIBLE && !(bar.visibility == View.VISIBLE && stop.visibility == View.VISIBLE) }
+    }
+
+    /** Confirms the delete asked, and waits until the list has dropped what it deleted: then nothing is left ticked. */
+    private fun confirmDelete(activity: CleanupActivity) {
+        (ShadowDialog.getLatestDialog() as AlertDialog).getButton(DialogInterface.BUTTON_POSITIVE).performClick()
+        val delete = activity.findViewById<MaterialButton>(R.id.cleanup_delete)
+        idleUntil("the ticked books deleted") { !delete.isEnabled }
     }
 
     private fun launch(): Pair<CleanupActivity, RecyclerView> {
@@ -65,7 +76,7 @@ class CleanupActivityTest {
             .putExtra(CleanupActivity.EXTRA_MODE, CleanupActivity.MODE_DUPES)
             .putExtra(CleanupActivity.EXTRA_ROOT, root.absolutePath)
         val activity = Robolectric.buildActivity(CleanupActivity::class.java, intent).setup().get()
-        idle()
+        settle(activity)
         val list = activity.findViewById<RecyclerView>(R.id.cleanup_list)
         list.measure(0, 0)
         list.layout(0, 0, 1200, 2400)
@@ -96,8 +107,7 @@ class CleanupActivityTest {
         val delete = activity.findViewById<MaterialButton>(R.id.cleanup_delete)
         assertTrue(delete.isEnabled)
         delete.performClick()
-        (ShadowDialog.getLatestDialog() as AlertDialog).getButton(DialogInterface.BUTTON_POSITIVE).performClick()
-        idle()
+        confirmDelete(activity)
         assertTrue(copies[0].exists())
         assertFalse(copies[1].exists())
         assertFalse(copies[2].exists())
@@ -110,8 +120,7 @@ class CleanupActivityTest {
         val (activity, list) = launch()
         list.row(1).findViewById<LinearLayout>(R.id.locations).getChildAt(0).performClick()
         activity.findViewById<MaterialButton>(R.id.cleanup_delete).performClick()
-        (ShadowDialog.getLatestDialog() as AlertDialog).getButton(DialogInterface.BUTTON_POSITIVE).performClick()
-        idle()
+        confirmDelete(activity)
         assertFalse(copies[0].exists())
         list.layout(0, 0, 1200, 2400)
         val places = list.row(1).findViewById<LinearLayout>(R.id.locations)
@@ -153,13 +162,13 @@ class CleanupActivityTest {
         for (step in 1..4) list.dispatchTouchEvent(touch(MotionEvent.ACTION_MOVE, y, x, x + 10 + 30f * step))
         list.dispatchTouchEvent(touch(MotionEvent.ACTION_POINTER_UP or second, y, x, x + 130))
         list.dispatchTouchEvent(touch(MotionEvent.ACTION_UP, y, x))
-        idle()
+        shadowOf(Looper.getMainLooper()).idle()
         val content = activity.findViewById<ViewGroup>(android.R.id.content)
         val peek = (0 until content.childCount).map { content.getChildAt(it) }.filterIsInstance<PeekOverlay>().single()
         assertTrue(peek.isShowing)
         @Suppress("DEPRECATION")
         activity.onBackPressed()
-        idle()
+        shadowOf(Looper.getMainLooper()).idle()
         assertFalse(peek.isShowing)
         assertFalse(activity.isFinishing)
     }

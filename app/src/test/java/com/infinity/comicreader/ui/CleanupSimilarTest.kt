@@ -6,7 +6,6 @@ import android.content.DialogInterface
 import android.content.Intent
 import android.graphics.Bitmap
 import android.os.Environment
-import android.os.Looper
 import android.os.PowerManager
 import android.view.View
 import android.widget.CheckBox
@@ -23,6 +22,7 @@ import com.infinity.comicreader.data.SimilarStore
 import com.infinity.comicreader.reader.BookPrints
 import com.infinity.comicreader.reader.Fixtures
 import com.infinity.comicreader.reader.SyntheticArt
+import com.infinity.comicreader.testing.idleUntil
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -76,16 +76,12 @@ class CleanupSimilarTest {
         book("third/Other.cbz", (101L..108L).toList(), Bitmap.CompressFormat.WEBP, "webp")
     }
 
-    /** Runs the main looper until the similar-books search is over. */
+    /** Waits until the search is over: its progress gone and the similar-books bar no longer running. */
     private fun settle(activity: CleanupActivity) {
-        val stop = activity.findViewById<View>(R.id.similar_stop)
+        val progress = activity.findViewById<View>(R.id.cleanup_progress)
         val bar = activity.findViewById<View>(R.id.similar_bar)
-        var rounds = 0
-        do {
-            shadowOf(Looper.getMainLooper()).idle()
-            Thread.sleep(20)
-            shadowOf(Looper.getMainLooper()).idle()
-        } while (((bar.isShown && stop.isShown) || rounds++ < 5) && rounds < 1000)
+        val stop = activity.findViewById<View>(R.id.similar_stop)
+        idleUntil("the search over") { progress.visibility != View.VISIBLE && !(bar.visibility == View.VISIBLE && stop.visibility == View.VISIBLE) }
     }
 
     /** Deletes the books ticked, confirmed, and runs the main looper until the list has dropped them. */
@@ -94,11 +90,7 @@ class CleanupSimilarTest {
         delete.performClick()
         (ShadowDialog.getLatestDialog() as AlertDialog).getButton(DialogInterface.BUTTON_POSITIVE).performClick()
         // Deleted off the main thread: the list follows, then the button with nothing left to delete.
-        val deadline = System.currentTimeMillis() + 10_000
-        while (delete.isEnabled && System.currentTimeMillis() < deadline) {
-            Thread.sleep(10)
-            shadowOf(Looper.getMainLooper()).idle()
-        }
+        idleUntil("the ticked books deleted") { !delete.isEnabled }
         assertFalse(delete.isEnabled)
     }
 

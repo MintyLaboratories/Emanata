@@ -23,6 +23,7 @@ import com.infinity.comicreader.net.ShareSpeed
 import com.infinity.comicreader.reader.Fixtures
 import com.infinity.comicreader.reader.SyntheticArt
 import com.infinity.comicreader.testing.Xxh3Port
+import com.infinity.comicreader.testing.idleUntil
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -85,20 +86,25 @@ class CleanupSharesTest {
 
     @After
     fun tearDown() {
+        fake.slow?.countDown()
         Metered.probe = { Metered.Link(connected = true, notMetered = true, activeMetered = false) }
         Metered.forget()
         Remotes.serve(emptyList()) { throw AssertionError("no shares") }
     }
 
+    /** Waits until the search is over: its progress gone and the similar-books bar no longer running. */
     private fun settle(activity: CleanupActivity) {
-        val stop = activity.findViewById<View>(R.id.similar_stop)
+        val progress = activity.findViewById<View>(R.id.cleanup_progress)
         val bar = activity.findViewById<View>(R.id.similar_bar)
-        var rounds = 0
-        do {
-            shadowOf(Looper.getMainLooper()).idle()
-            Thread.sleep(20)
-            shadowOf(Looper.getMainLooper()).idle()
-        } while (((bar.isShown && stop.isShown) || rounds++ < 5) && rounds < 1000)
+        val stop = activity.findViewById<View>(R.id.similar_stop)
+        idleUntil("the search over") { progress.visibility != View.VISIBLE && !(bar.visibility == View.VISIBLE && stop.visibility == View.VISIBLE) }
+    }
+
+    /** Holds reads of [bytes] until the test opens [FakeRemoteFs.slow], however long that takes; [tearDown] opens it. */
+    private fun holdReads(bytes: LongRange) {
+        fake.slowReads = bytes
+        fake.slowCapMs = Long.MAX_VALUE
+        fake.slow = java.util.concurrent.CountDownLatch(1)
     }
 
     private fun launch(): Pair<CleanupActivity, RecyclerView> {
@@ -186,17 +192,12 @@ class CleanupSharesTest {
         File(dir, "fifth/Large.cbz").apply { parentFile!!.mkdirs() }.writeBytes(big)
         File(dir, "sixth/Large.cbz").apply { parentFile!!.mkdirs() }.writeBytes(big)
         // The full hash's piece covering the second MB waits while the connection turns metered.
-        fake.slowReads = (1L shl 20)..(1L shl 20)
-        fake.slow = java.util.concurrent.CountDownLatch(1)
+        holdReads((1L shl 20)..(1L shl 20))
         val intent = Intent(context, CleanupActivity::class.java)
             .putExtra(CleanupActivity.EXTRA_MODE, CleanupActivity.MODE_DUPES)
             .putExtra(CleanupActivity.EXTRA_ROOT, Remotes.rootOf("s1"))
         val activity = Robolectric.buildActivity(CleanupActivity::class.java, intent).setup().get()
-        var rounds = 0
-        while (fake.held.get() == 0 && rounds++ < 500) {
-            shadowOf(Looper.getMainLooper()).idle()
-            Thread.sleep(10)
-        }
+        idleUntil("a read held") { fake.held.get() != 0 }
         assertEquals(1, fake.held.get())
         Metered.probe = { Metered.Link(connected = true, notMetered = false, activeMetered = true) }
         Metered.forget()
@@ -224,8 +225,7 @@ class CleanupSharesTest {
             .putExtra(CleanupActivity.EXTRA_MODE, CleanupActivity.MODE_DUPES)
             .putExtra(CleanupActivity.EXTRA_ROOT, Remotes.rootOf("s1"))
         val activity = Robolectric.buildActivity(CleanupActivity::class.java, intent).setup().get()
-        shadowOf(Looper.getMainLooper()).idle()
-        Thread.sleep(100)
+        // Closed as it was made, before any search could start.
         shadowOf(Looper.getMainLooper()).idle()
         assertTrue(activity.isFinishing)
         assertEquals(0, fake.lists)
@@ -235,17 +235,12 @@ class CleanupSharesTest {
     @Test
     fun theExactCopyCheckShowsProgressAndStops() {
         // Reads of the files' first bytes wait: the check is under way.
-        fake.slowReads = 0L..0L
-        fake.slow = java.util.concurrent.CountDownLatch(1)
+        holdReads(0L..0L)
         val intent = Intent(context, CleanupActivity::class.java)
             .putExtra(CleanupActivity.EXTRA_MODE, CleanupActivity.MODE_DUPES)
             .putExtra(CleanupActivity.EXTRA_ROOT, Remotes.rootOf("s1"))
         val activity = Robolectric.buildActivity(CleanupActivity::class.java, intent).setup().get()
-        var rounds = 0
-        while (fake.held.get() == 0 && rounds++ < 500) {
-            shadowOf(Looper.getMainLooper()).idle()
-            Thread.sleep(10)
-        }
+        idleUntil("a read held") { fake.held.get() != 0 }
         shadowOf(Looper.getMainLooper()).idle()
         val text = activity.findViewById<TextView>(R.id.similar_text)
         val stop = activity.findViewById<View>(R.id.similar_stop)

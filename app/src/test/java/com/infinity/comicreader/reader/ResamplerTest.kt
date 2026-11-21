@@ -7,6 +7,7 @@ import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.concurrent.CancellationException
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.PI
 import kotlin.math.abs
@@ -541,14 +542,17 @@ class ResamplerTest {
     @Test
     fun aFailingBandStopsEveryWorkerAndThrows() {
         val done = AtomicInteger()
+        val stop = AtomicBoolean()
         assertThrows(IllegalStateException::class.java) {
-            Resampler.inBands(1000, 4, { false }) { _, _, _ ->
-                check(done.incrementAndGet() != 3) { "band failed" }
-                Thread.sleep(1)
+            Resampler.inBands(1000, 4, { false }, stopped = stop) { _, _, _ ->
+                val n = done.incrementAndGet()
+                check(n != 3) { "band failed" }
+                // Bands after the failing one are held until it stopped the workers.
+                if (n > 3) awaitUntil("the failed band to stop the workers") { stop.get() }
                 true
             }
         }
-        // Each other worker ends its band and at most one it had begun: not all 16.
+        // Each other worker then ends the one band it holds and takes no more: at most 6.
         assertTrue("${done.get()}", done.get() <= 9)
     }
 

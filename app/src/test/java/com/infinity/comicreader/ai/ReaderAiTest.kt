@@ -9,6 +9,9 @@ import com.infinity.comicreader.data.BookId
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.reader.PageSource
 import com.infinity.comicreader.reader.Target
+import com.infinity.comicreader.testing.awaitJob
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -385,10 +388,8 @@ class ReaderAiTest {
         }
     }
 
-    private fun until(done: () -> Boolean) {
-        val deadline = System.currentTimeMillis() + 10_000
-        while (!done() && System.currentTimeMillis() < deadline) Thread.sleep(5)
-    }
+    /** Waits for the work queued so far on [ai]'s worker, as closing its models. */
+    private fun drain(what: String) = awaitJob(what, CoroutineScope(ai.worker).launch {})
 
     @Test
     fun closingClosesTheModelsAndOpensNoneAfter() {
@@ -397,7 +398,7 @@ class ReaderAiTest {
         assertTrue(ai.enhance(b, 0, target, 40, 60) { false } is AiOutcome.Done)
         val model = runtime.opened.last() as FakeModel
         ai.close()
-        until { model.closed }
+        drain("the close")
         assertTrue(model.closed)
         val opens = runtime.opened.size
         // A page asked for after closing, as one already queued: no model opens again.
@@ -414,7 +415,7 @@ class ReaderAiTest {
         val opens = runtime.opened.size
         ai.closeModels(keep = setOf(upscale.id))
         ai.closeModels(keep = setOf("another"))
-        until { first.closed }
+        drain("the models' closes")
         assertTrue(first.closed)
         assertTrue(ai.enhance(b, 1, target, 40, 60) { false } is AiOutcome.Done)
         assertTrue("opened again", runtime.opened.size > opens)

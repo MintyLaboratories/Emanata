@@ -102,6 +102,26 @@ class SettingsTitleWrapTest {
     }
 
     @Test
+    fun rowsInSectionsCollapsedAtOpenWrapOnceExpanded() {
+        val sections = all(open().preferenceScreen).filterIsInstance<CollapsibleCategory>().map { it.key }
+        assertTrue(sections.size > 3)
+        Prefs(context).collapsedSettings = sections.toSet()
+        val fragment = open()
+        val categories = all(fragment.preferenceScreen).filterIsInstance<CollapsibleCategory>()
+        assertTrue(categories.all { it.collapsed })
+        categories.forEach { it.performClick() }
+        shadowOf(Looper.getMainLooper()).idle()
+        val rows = rows(fragment, phoneWidth)
+        assertTrue(rows.size > sections.size * 2)
+        for ((pref, row) in rows) {
+            val title = row.findViewById<TextView>(android.R.id.title) ?: continue
+            title.text = long
+            layOut(row, phoneWidth)
+            assertTrue("${pref.key} title takes ${title.lineCount} line", title.lineCount > 1)
+        }
+    }
+
+    @Test
     fun theMirrorZonesTitleShowsInFullOnANarrowPhone() {
         val fragment = open()
         val (_, row) = rows(fragment, phoneWidth).first { it.first.key == "pref_tap_zones_mirror" }

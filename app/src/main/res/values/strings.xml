@@ -1027,6 +1027,11 @@
     <string name="advanced_tag">Advanced</string>
     <string name="section_collapsed">Collapsed</string>
     <string name="section_expanded">Expanded</string>
+    <string name="settings_search">Search settings</string>
+    <string name="settings_search_hint">Search settings…</string>
+    <string name="settings_search_none">No settings match</string>
+    <string name="settings_collapse_all">Collapse all</string>
+    <string name="settings_expand_all">Expand all</string>
     <string name="pref_cat_appearance">Appearance</string>
     <string name="pref_cat_reader">Reader</string>
     <string name="pref_cat_gestures">Gestures &amp; controls</string>

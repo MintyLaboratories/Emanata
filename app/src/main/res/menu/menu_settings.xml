@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Settings' toolbar: search, and one button that collapses or expands every section. -->
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <item
+        android:id="@+id/settings_search"
+        android:icon="@drawable/ic_search"
+        android:title="@string/settings_search"
+        app:actionViewClass="androidx.appcompat.widget.SearchView"
+        app:showAsAction="always|collapseActionView" />
+    <item
+        android:id="@+id/settings_fold_all"
+        android:icon="@drawable/ic_unfold_less"
+        android:title="@string/settings_collapse_all"
+        app:showAsAction="always" />
+</menu>

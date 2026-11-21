@@ -1,11 +1,20 @@
 package com.infinity.comicreader.ui
 
 import android.os.Bundle
+import android.view.LayoutInflater
+import android.view.Menu
+import android.view.MenuInflater
+import android.view.MenuItem
+import android.view.View
+import android.view.ViewGroup
+import android.widget.FrameLayout
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import android.widget.CheckBox
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.appcompat.widget.SearchView
+import androidx.core.view.MenuProvider
 import android.text.TextUtils
 import android.text.format.Formatter
 import androidx.lifecycle.Lifecycle
@@ -16,6 +25,8 @@ import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
 import androidx.preference.PreferenceGroup
 import androidx.preference.SeekBarPreference
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.color.MaterialColors
 import com.infinity.comicreader.R
 import com.infinity.comicreader.ai.AiChain
@@ -66,6 +77,23 @@ class SettingsFragment : PreferenceFragmentCompat() {
     /** False when the backup being exported leaves share passwords out. */
     private var exportPasswords = true
 
+    /** The search's text while the search is open, else null. */
+    private var query: String? = null
+
+    /** Tints the setting a search result opened ([reveal]). */
+    private val flash by lazy {
+        SettingFlash(MaterialColors.getColor(requireContext(), androidx.appcompat.R.attr.colorPrimary, 0) and 0xFFFFFF or (FLASH_ALPHA shl 24))
+    }
+
+    private val results = SettingResults { key ->
+        searchItem?.collapseActionView()
+        reveal(key)
+    }
+
+    private var searchItem: MenuItem? = null
+    private var resultsView: View? = null
+    private var resultsEmpty: View? = null
+
     private val exportLauncher =
         registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
             if (uri == null) return@registerForActivityResult
@@ -87,12 +115,153 @@ class SettingsFragment : PreferenceFragmentCompat() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         exportPasswords = savedInstanceState?.getBoolean(STATE_PASSWORDS, true) ?: true
+        query = savedInstanceState?.getString(STATE_QUERY)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putBoolean(STATE_PASSWORDS, exportPasswords)
+        outState.putString(STATE_QUERY, query)
     }
+
+    /** The settings list, with search results over it ([showResults]). */
+    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
+        val list = super.onCreateView(inflater, container, savedInstanceState)
+        return FrameLayout(inflater.context).apply {
+            addView(list)
+            addView(inflater.inflate(R.layout.settings_results, this, false))
+        }
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        listView.addItemDecoration(flash)
+        resultsView = view.findViewById(R.id.settings_results)
+        resultsEmpty = view.findViewById(R.id.settings_results_empty)
+        view.findViewById<RecyclerView>(R.id.settings_results_list).apply {
+            layoutManager = LinearLayoutManager(context)
+            adapter = results
+        }
+        requireActivity().addMenuProvider(menu, viewLifecycleOwner, Lifecycle.State.RESUMED)
+    }
+
+    override fun onDestroyView() {
+        flash.stop()
+        searchItem = null
+        resultsView = null
+        resultsEmpty = null
+        super.onDestroyView()
+    }
+
+    /** Search, and the button that collapses every section while any is expanded, else expands every one. */
+    private val menu = object : MenuProvider {
+        override fun onCreateMenu(menu: Menu, inflater: MenuInflater) {
+            inflater.inflate(R.menu.menu_settings, menu)
+            val item = menu.findItem(R.id.settings_search)
+            searchItem = item
+            val search = item.actionView as SearchView
+            search.queryHint = getString(R.string.settings_search_hint)
+            search.maxWidth = Int.MAX_VALUE
+            val open = query
+            item.setOnActionExpandListener(object : MenuItem.OnActionExpandListener {
+                override fun onMenuItemActionExpand(item: MenuItem): Boolean {
+                    if (query == null) query = ""
+                    menu.findItem(R.id.settings_fold_all)?.isVisible = false
+                    return true
+                }
+
+                override fun onMenuItemActionCollapse(item: MenuItem): Boolean {
+                    query = null
+                    showResults()
+                    activity?.invalidateMenu()
+                    return true
+                }
+            })
+            search.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
+                override fun onQueryTextSubmit(text: String?): Boolean {
+                    search.clearFocus()
+                    return true
+                }
+
+                override fun onQueryTextChange(text: String?): Boolean {
+                    if (query == null) return true
+                    query = text.orEmpty()
+                    showResults()
+                    return true
+                }
+            })
+            // The search open before the screen was made again.
+            if (open != null) {
+                item.expandActionView()
+                search.setQuery(open, false)
+            }
+        }
+
+        override fun onPrepareMenu(menu: Menu) {
+            val expanded = SettingsFolds.anyExpanded(preferenceScreen)
+            menu.findItem(R.id.settings_fold_all)?.apply {
+                isVisible = query == null
+                setTitle(if (expanded) R.string.settings_collapse_all else R.string.settings_expand_all)
+                setIcon(if (expanded) R.drawable.ic_unfold_less else R.drawable.ic_unfold_more)
+            }
+        }
+
+        override fun onMenuItemSelected(item: MenuItem): Boolean {
+            if (item.itemId != R.id.settings_fold_all) return false
+            foldAll(SettingsFolds.anyExpanded(preferenceScreen))
+            return true
+        }
+    }
+
+    /** Lists the settings matching the search ([SettingsSearch]) over the settings, or nothing while it has no text. */
+    private fun showResults() {
+        val text = query.orEmpty()
+        val found = if (text.isBlank()) emptyList() else SettingsSearch.find(SettingsSearch.index(preferenceScreen), text)
+        results.entries = found
+        resultsView?.visibility = if (text.isBlank()) View.GONE else View.VISIBLE
+        resultsEmpty?.visibility = if (text.isNotBlank() && found.isEmpty()) View.VISIBLE else View.GONE
+    }
+
+    /** The search results listed now. */
+    internal fun shownResults(): List<SettingEntry> = if (resultsView?.visibility == View.VISIBLE) results.entries else emptyList()
+
+    /** Collapses every section when [collapse], else expands every one, and keeps that. */
+    internal fun foldAll(collapse: Boolean) {
+        val prefs = Prefs(requireContext())
+        prefs.collapsedSettings = SettingsFolds.setAll(preferenceScreen, collapse)
+        AdvancedSettings.apply(preferenceScreen, prefs.keepSimple)
+        activity?.invalidateMenu()
+    }
+
+    /**
+     * Shows the setting [key]: expands its section, shows it even while Keep it simple hides it
+     * (until the sections are shown again; nothing is turned on), scrolls to it and tints it briefly.
+     */
+    internal fun reveal(key: String) {
+        val pref = findPreference<Preference>(key) ?: return
+        val prefs = Prefs(requireContext())
+        val section = pref.parent as? CollapsibleCategory
+        if (section != null && section.collapsed) {
+            section.collapsed = false
+            prefs.collapsedSettings = prefs.collapsedSettings - section.key
+            AdvancedSettings.apply(preferenceScreen, prefs.keepSimple)
+        }
+        pref.isVisible = true
+        activity?.invalidateMenu()
+        val list = listView
+        // The list takes the shown settings on its next pass.
+        list.post {
+            if (!isAdded) return@post
+            val position = (list.adapter as? PreferenceGroup.PreferencePositionCallback)?.getPreferenceAdapterPosition(key) ?: RecyclerView.NO_POSITION
+            val layout = list.layoutManager as? LinearLayoutManager
+            if (position != RecyclerView.NO_POSITION && layout != null) layout.scrollToPositionWithOffset(position, list.height / 4)
+            else scrollToPreference(key)
+        }
+        flash.flash(list, key)
+    }
+
+    /** The key of the setting tinted now ([reveal]), if any. */
+    internal val flashing: String? get() = flash.key
 
     /**
      * Exports a backup; when a share has a saved password, first offers "Without passwords"
@@ -432,6 +601,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 section.onToggle = { s ->
                     prefs.collapsedSettings = if (s.collapsed) prefs.collapsedSettings + s.key else prefs.collapsedSettings - s.key
                     AdvancedSettings.apply(screen, prefs.keepSimple)
+                    activity?.invalidateMenu()
                 }
             }
             for (j in 0 until section.preferenceCount) {
@@ -697,5 +867,9 @@ class SettingsFragment : PreferenceFragmentCompat() {
     private companion object {
         const val BACKUP_NAME = "emanata-backup.json"
         const val STATE_PASSWORDS = "export_passwords"
+        const val STATE_QUERY = "search_query"
+
+        /** The tint's opacity over a setting a search result opened. */
+        const val FLASH_ALPHA = 0x3D
     }
 }

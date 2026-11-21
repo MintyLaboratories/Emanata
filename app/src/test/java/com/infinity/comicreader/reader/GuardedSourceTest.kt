@@ -52,7 +52,7 @@ class GuardedSourceTest {
         var size: IntArray? = null
         val reader = Thread { size = guarded.pageSize(0) }
         reader.start()
-        assertTrue(inner.started.await(5, TimeUnit.SECONDS))
+        inner.started.pass("the read to start")
 
         guarded.close()
         assertEquals(0, inner.closes.get())
@@ -110,7 +110,7 @@ class GuardedSourceTest {
             message = runCatching { detail.render(Region(0.0, 0.0, 1.0, 1.0), 1, 1, false) }.exceptionOrNull()?.message
         }
         renderer.start()
-        assertTrue(inner.started.await(5, TimeUnit.SECONDS))
+        inner.started.pass("the render to start")
 
         guarded.close()
         assertEquals(0, inner.closes.get())

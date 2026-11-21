@@ -10,11 +10,10 @@
 # ///
 """Converts PaddleOCR's PP-OCRv5 mobile text detector to ncnn files the app can run.
 
-Run from the repository root:
+Run on Linux from the repository root (on Windows, paddle2onnx 2.1.0 does not load with
+PaddlePaddle 3.3.1):
 
     uv run tools/text-detector/convert.py [--work <dir>]
-
-On Linux: on Windows, paddle2onnx 2.1.0 does not load with PaddlePaddle 3.3.1.
 
 Downloads the official model (Apache-2.0) from Hugging Face at a pinned revision and checks
 its SHA-256, exports it to ONNX with paddle2onnx, converts that to ncnn with pnnx (fp16

@@ -351,6 +351,11 @@ object ModelCatalog {
         ),
     )
 
+    /** The covers' text detector's project, its authors and its license. */
+    const val DETECTOR_SOURCE = "https://github.com/PaddlePaddle/PaddleOCR"
+    const val DETECTOR_AUTHOR = "the PaddlePaddle authors"
+    const val DETECTOR_LICENSE = "Apache License 2.0"
+
     /** The repository the covers' text detector comes from, and the revision it is fetched at. */
     const val DETECTOR_REPOSITORY = "https://huggingface.co/qefro/pp-OCRv5-6-ncnn"
     const val DETECTOR_REVISION = "aa770c1e01b22010522bfaebe3f9bc4d239984fc"

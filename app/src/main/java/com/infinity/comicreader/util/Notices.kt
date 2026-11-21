@@ -193,7 +193,7 @@ object Notices {
         ),
         Notice("MBassador", MIT, "https://github.com/bennidi/mbassador", listOf("mbassador.txt"), listOf("net.engio:mbassador")),
         Notice(
-            "PaddleOCR text detector", APACHE_2, "https://github.com/PaddlePaddle/PaddleOCR", APACHE,
+            "PaddleOCR text detector", ModelCatalog.DETECTOR_LICENSE, ModelCatalog.DETECTOR_SOURCE, APACHE,
             note = "PP-OCRv5 mobile text detection model by the PaddlePaddle authors, not bundled: downloaded, " +
                 "unchanged, the first time a cover needs it (telling a wraparound cover's front or reading " +
                 "direction), as a third party's ncnn conversion with fp16 weights from a pinned " +

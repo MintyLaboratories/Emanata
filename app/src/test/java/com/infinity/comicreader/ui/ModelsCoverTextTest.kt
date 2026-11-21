@@ -79,6 +79,27 @@ class ModelsCoverTextTest {
     }
 
     @Test
+    fun ppOcrsRowLeavesItsLicenseToATapWhichShowsSizeLicenseAndSource() {
+        placeDetector()
+        val row = opened().findViewById<View>(R.id.cover_text_card).findViewById<ViewGroup>(R.id.card_rows).getChildAt(0)
+        val details = row.findViewById<TextView>(R.id.subtitle).text.toString()
+        assertFalse(details, details.contains("Apache"))
+        val info = row.findViewById<View>(R.id.model_info)
+        assertEquals(View.GONE, info.visibility)
+        row.performClick()
+        assertEquals(View.VISIBLE, info.visibility)
+        val text = row.findViewById<TextView>(R.id.model_info_text).text.toString()
+        assertEquals(ModelText.coverTextInfo(context), text)
+        for (part in listOf(
+            ModelText.size(context, ModelCatalog.TEXT_DETECTOR.bytes), ModelCatalog.DETECTOR_LICENSE, ModelCatalog.DETECTOR_AUTHOR,
+            ModelCatalog.DETECTOR_SOURCE, ModelCatalog.DETECTOR_REPOSITORY
+        )) assertTrue(part, text.contains(part))
+        assertEquals(View.VISIBLE, row.findViewById<View>(R.id.model_info_link).visibility)
+        row.performClick()
+        assertEquals(View.GONE, info.visibility)
+    }
+
+    @Test
     fun ppOcrWithoutItsModelSaysWraparoundsShowWholeAndOffersItsDownload() {
         val card = opened().findViewById<View>(R.id.cover_text_card)
         val texts = texts(card)

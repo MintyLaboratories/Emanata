@@ -1132,7 +1132,9 @@
     <string name="ai_models_title">AI models</string>
     <string name="cover_text_section">Cover text</string>
     <string name="cover_text_ppocr">PP-OCRv5 mobile text detector</string>
-    <string name="cover_text_details_ppocr">Finds where text is on covers to tell a wraparound cover\'s front and reading direction · runs on this device · Apache-2.0</string>
+    <string name="cover_text_details_ppocr">Finds where text is on covers to tell a wraparound cover\'s front and reading direction · runs on this device</string>
+    <string name="cover_text_info_details">%1$s · %2$s</string>
+    <string name="cover_text_conversion_ppocr">A third party\'s ncnn conversion with fp16 weights; its weights file is from the PaddleOCR-ncnn-CPP v0.3.0 release archive (MIT License).</string>
     <string name="cover_text_in_use">In use</string>
     <string name="cover_text_ppocr_missing">Not downloaded yet (%1$s): it downloads the first time a wraparound cover needs it to tell its front or reading direction. Until then, a wraparound cover without a barcode shows whole, and no wraparound cover tells a book\'s reading direction</string>
     <string name="cover_text_ppocr_downloading">Downloading, %1$d%%. Until it is done, a wraparound cover without a barcode shows whole, and no wraparound cover tells a book\'s reading direction</string>

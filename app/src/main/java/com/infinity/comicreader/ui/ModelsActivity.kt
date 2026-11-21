@@ -199,6 +199,16 @@ object ModelText {
      */
     data class CoverTextRow(val title: String, val details: String, val status: String, val progress: Int? = null, val download: Boolean = false)
 
+    /** What is known of the cover text detector, shown on tap: its size and license, who made it, where it is from and where it downloads from. */
+    fun coverTextInfo(context: Context): String {
+        val details = context.getString(R.string.cover_text_info_details, size(context, ModelCatalog.TEXT_DETECTOR.bytes), ModelCatalog.DETECTOR_LICENSE)
+        val info = context.getString(
+            R.string.ai_model_info, details, ModelCatalog.DETECTOR_AUTHOR, ModelCatalog.DETECTOR_LICENSE,
+            ModelCatalog.DETECTOR_SOURCE, ModelCatalog.DETECTOR_REPOSITORY
+        )
+        return info + "\n\n" + context.getString(R.string.cover_text_conversion_ppocr)
+    }
+
     /** PP-OCR's model: [installed], else its download's [state] (null: none asked for yet). */
     data class DetectorFiles(val installed: Boolean, val state: DownloadState? = null)
 
@@ -406,9 +416,9 @@ class ModelsActivity : AppCompatActivity() {
                 row.isVisible = m is UserModel || !m.slow
                 row.setOnClickListener {
                     if (!opened.remove(m.id)) opened += m.id
-                    bindInfo(row, m)
+                    bindInfo(row, m.id, m.name)
                 }
-                bindInfo(row, m)
+                bindInfo(row, m.id, m.name)
                 rowsBox.addView(row)
                 rows[m.id] = row
             }
@@ -417,7 +427,7 @@ class ModelsActivity : AppCompatActivity() {
         addCoverText(list)
     }
 
-    /** A card with the cover text detector in use: not an AI model, but one the app runs on covers. */
+    /** A card with the cover text detector in use: not an AI model, but one the app runs on covers; tapped, what is known of it. */
     private fun addCoverText(list: LinearLayout) {
         val title = layoutInflater.inflate(R.layout.item_section_title, list, false) as TextView
         title.setText(R.string.cover_text_section)
@@ -431,7 +441,14 @@ class ModelsActivity : AppCompatActivity() {
             setText(R.string.ai_download)
             setOnClickListener { DetectorModel.shared(this@ModelsActivity).fetch() }
         }
-        row.isClickable = false
+        row.findViewById<TextView>(R.id.model_info_text).text = ModelText.coverTextInfo(this)
+        row.findViewById<MaterialButton>(R.id.model_info_link).setOnClickListener { open(ModelCatalog.DETECTOR_SOURCE) }
+        val detector = ModelCatalog.TEXT_DETECTOR
+        row.setOnClickListener {
+            if (!opened.remove(detector.id)) opened += detector.id
+            bindInfo(row, detector.id, detector.name)
+        }
+        bindInfo(row, detector.id, detector.name)
         rowsBox.addView(row)
         list.addView(card)
         coverTextRow = row
@@ -667,11 +684,11 @@ class ModelsActivity : AppCompatActivity() {
         return dialog
     }
 
-    /** Shows what is known of [m] under its [row] while it is opened; a screen reader hears what a tap does. */
-    private fun bindInfo(row: View, m: AiModel) {
-        val shown = m.id in opened
+    /** Shows what is known of the model [id] ([name]) under its [row] while it is opened; a screen reader hears what a tap does. */
+    private fun bindInfo(row: View, id: String, name: String) {
+        val shown = id in opened
         row.findViewById<View>(R.id.model_info).isVisible = shown
-        val label = getString(if (shown) R.string.ai_model_less_info else R.string.ai_model_more_info, m.name)
+        val label = getString(if (shown) R.string.ai_model_less_info else R.string.ai_model_more_info, name)
         ViewCompat.replaceAccessibilityAction(row, AccessibilityNodeInfoCompat.AccessibilityActionCompat.ACTION_CLICK, label, null)
     }
 

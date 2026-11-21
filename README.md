@@ -96,7 +96,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   hold back. Until it is there, a wraparound cover without a barcode shows
   whole and is made again once it arrives. Settings → AI processing →
   **Models** shows whether its model is there or downloading (with a Download
-  button while it is not).
+  button while it is not), and its size, license and source once its row is
+  tapped.
 - **Bookmarks** show the book's cover with the bookmarked page in front, at 80%
   of the tile, in the bottom right corner.
 - **Wraparound covers** (front and back side by side, about twice as wide as

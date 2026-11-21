@@ -205,11 +205,14 @@ class SessionsTest {
     fun anOpenWaitingForAPageCanBeCanceled() {
         val held = CountDownLatch(1)
         val release = CountDownLatch(1)
-        val holder = thread { TileEngine.exclusive({ false }) { held.countDown(); release.await(5, TimeUnit.SECONDS) } }
-        assertTrue(held.await(5, TimeUnit.SECONDS))
+        val holder = thread { TileEngine.exclusive({ false }) { held.countDown(); release.await() } }
         val runtime = FakeRuntime()
-        assertThrows(CancellationException::class.java) { Sessions.open(runtime, fakeFiles(tmp.root), threads = 4, canceled = { true }) }
-        release.countDown()
+        try {
+            assertTrue(held.await(5, TimeUnit.SECONDS))
+            assertThrows(CancellationException::class.java) { Sessions.open(runtime, fakeFiles(tmp.root), threads = 4, canceled = { true }) }
+        } finally {
+            release.countDown()
+        }
         holder.join()
         assertTrue(runtime.asked.isEmpty())
     }

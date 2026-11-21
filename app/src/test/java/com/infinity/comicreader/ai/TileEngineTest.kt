@@ -277,17 +277,20 @@ class TileEngineTest {
         val started = CountDownLatch(1)
         val release = CountDownLatch(1)
         var armed = false
-        val blocking = FakeModel(onRun = { if (armed) { started.countDown(); release.await(5, TimeUnit.SECONDS) } })
+        val blocking = FakeModel(onRun = { if (armed) { started.countDown(); release.await() } })
         val s = session(blocking)
         armed = true
         val first = thread { TileEngine.run(s, page(60, 60)) }
-        assertTrue(started.await(5, TimeUnit.SECONDS))
-        val other = FakeModel()
-        val o = session(other)
-        val before = other.runs.get()
-        assertThrows(CancellationException::class.java) { TileEngine.run(o, page(60, 60), canceled = { true }) }
-        assertEquals(before, other.runs.get())
-        release.countDown()
+        try {
+            assertTrue(started.await(5, TimeUnit.SECONDS))
+            val other = FakeModel()
+            val o = session(other)
+            val before = other.runs.get()
+            assertThrows(CancellationException::class.java) { TileEngine.run(o, page(60, 60), canceled = { true }) }
+            assertEquals(before, other.runs.get())
+        } finally {
+            release.countDown()
+        }
         first.join()
     }
 }

@@ -1,5 +1,6 @@
 package com.infinity.comicreader.data
 
+import com.infinity.comicreader.testing.Waits
 import com.infinity.comicreader.testing.awaitUntil
 import com.infinity.comicreader.util.PageHash
 import com.infinity.comicreader.util.SimilarBooks
@@ -10,6 +11,9 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
 import java.util.Collections
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.FutureTask
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 class SimilarFinderTest {
@@ -86,19 +90,32 @@ class SimilarFinderTest {
         assertEquals(listOf("b.cbr"), reads.toList())
     }
 
+    /** Reading threads waiting for a turn in [com.infinity.comicreader.util.LimitGate.pass]. */
+    private fun heldAtTheLimit() = Thread.getAllStackTraces().count { (t, st) ->
+        t.name == "similar-books" && st.firstOrNull()?.let { it.className == "java.lang.Object" && it.methodName.startsWith("wait") } == true &&
+            st.first { it.className != "java.lang.Object" }.let { it.className == "com.infinity.comicreader.util.LimitGate" && it.methodName == "pass" }
+    }
+
     @Test
     fun readsNoMoreAtOnceThanTheLimitAllows() {
         val store = SimilarStore(File(tmp.root, "store.txt"))
         val inside = AtomicInteger()
         val most = AtomicInteger()
+        val go = CountDownLatch(1)
         val finder = SimilarFinder(store, { f -> BookId(f.name.hashCode().toLong()) }, { f, _, _ ->
             most.accumulateAndGet(inside.incrementAndGet(), ::maxOf)
-            // Each read holds until two have been under way at once.
-            awaitUntil("a second read beside the first") { most.get() >= 2 }
+            // Each read holds until the test lets reads go.
+            if (!go.await(Waits.LIVENESS_MS, TimeUnit.MILLISECONDS)) throw AssertionError("Gave up waiting for the test to let reads go")
             inside.decrementAndGet()
             SimilarFinder.Read(entry(30, shift = f.name.length * 1000))
         }, workers = 4, limit = { 2 })
-        finder.find((1..12).map { File(tmp.root, "b" + "x".repeat(it) + ".cbz") })
+        val task = FutureTask { finder.find((1..12).map { File(tmp.root, "b" + "x".repeat(it) + ".cbz") }) }.also { Thread(it).start() }
+        // The other two workers wait in the gate, not in a read.
+        awaitUntil("two reads in and two workers held at the limit") { inside.get() == 2 && heldAtTheLimit() == 2 }
+        assertEquals(2, inside.get())
+        go.countDown()
+        awaitUntil("the find") { task.isDone }
+        task.get()
         assertEquals(2, most.get())
     }
 

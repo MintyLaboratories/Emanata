@@ -20,6 +20,7 @@ import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ResumeMode
 import com.infinity.comicreader.reader.Fixtures
 import com.infinity.comicreader.testing.idleUntil
+import com.infinity.comicreader.testing.muteSettingsFeed
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -278,5 +279,21 @@ class ViewerActivityLiveSettingsTest {
         assertEquals(View.GONE, dot.visibility)
         c.away { prefs.aiDot = true }
         assertEquals(View.INVISIBLE, dot.visibility)
+    }
+
+    // ---------------------------------------------------------------- settings the feed missed
+
+    @Test
+    fun aChangeTheSettingsFeedMissedShowsOnReturn() {
+        val c = launch()
+        val adapter = c.get().pageAdapter!!
+        muteSettingsFeed(context)
+        c.away {
+            prefs.fit = "width"
+            prefs.doubleTapZoom = false
+        }
+        assertSame(adapter, c.get().pageAdapter)
+        assertEquals(ZoomImageView.FitMode.WIDTH, adapter.fitMode)
+        assertFalse(c.get().pages().any { it.doubleTapEnabled })
     }
 }

@@ -17,6 +17,7 @@ import com.infinity.comicreader.data.CoverShape
 import com.infinity.comicreader.data.ListDensity
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.TitleDisplay
+import com.infinity.comicreader.testing.muteSettingsFeed
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -197,6 +198,24 @@ class ListActivityLiveSettingsTest {
         list.start().resume()
         idle()
         assertEquals(CoverShape.CELL, adapter.options.shape)
+    }
+
+    @Test
+    fun aChangeTheSettingsFeedMissedShowsOnReturn() {
+        val list = launch()
+        val fab = list.get().findViewById<FloatingActionButton>(R.id.fab)
+        val crumbs = list.get().findViewById<android.view.View>(R.id.pathbar)
+        assertEquals(android.view.View.VISIBLE, fab.visibility)
+        assertEquals(android.view.View.VISIBLE, crumbs.visibility)
+        muteSettingsFeed(ApplicationProvider.getApplicationContext())
+        list.pause().stop()
+        // Settings the library applies only from what changed, never by checking the screen.
+        prefs.listQuickFab = false
+        prefs.listPathView = false
+        list.start().resume()
+        idle()
+        assertEquals(android.view.View.GONE, fab.visibility)
+        assertEquals(android.view.View.GONE, crumbs.visibility)
     }
 
     @Test

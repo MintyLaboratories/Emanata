@@ -320,7 +320,8 @@ class SettingsAiTest {
         assertEquals(context.getString(R.string.ai_model_missing, m.name), ModelText.choice(context, m, false, null))
         // Shown through a summary provider: a ListPreference would read "40%" as a format.
         val pref = settings().findPreference<ListPreference>(Prefs.aiKey(AiStep.UPSCALE))!!
-        idle()
+        // Set once the installed models are read off the main thread.
+        idleUntil("the picker's summary provider") { pref.summaryProvider != null }
         assertNotNull(pref.summaryProvider)
         pref.summaryProvider = Preference.SummaryProvider<ListPreference> { "${m.name} · downloading 40%" }
         assertEquals("${m.name} · downloading 40%", pref.summary.toString())

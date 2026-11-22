@@ -21,6 +21,7 @@ import com.infinity.comicreader.R
 import com.infinity.comicreader.testing.idleUntil
 import com.infinity.comicreader.compact.OutputMarks
 import com.infinity.comicreader.data.BookIds
+import com.infinity.comicreader.data.FabAction
 import com.infinity.comicreader.data.Bookmark
 import com.infinity.comicreader.data.HistoryItem
 import com.infinity.comicreader.data.MoreAction
@@ -615,6 +616,36 @@ class ListActivityFileOpsTest {
         settle { library.isRead(bookId(two)) }
         assertTrue(library.isRead(bookId(book)))
         assertFalse(activity.selection.active)
+    }
+
+    /** What the floating button does now. */
+    private fun ListActivity.fabShows(): SelectionActions.Fab? =
+        ListActivity::class.java.getDeclaredField("fabShows").apply { isAccessible = true }.get(this) as SelectionActions.Fab?
+
+    /** Asserts [fab] does [shows] and looks it: its icon and name. */
+    private fun ListActivity.assertFab(fab: FloatingActionButton, shows: SelectionActions.Fab) {
+        val look = FabLook.of(shows, grid = false, unfavorite = false)
+        assertEquals(shows, fabShows())
+        assertEquals(look.icon, shadowOf(fab.drawable).createdFromResId)
+        assertEquals(context.getString(look.label), fab.contentDescription)
+    }
+
+    @Test
+    fun theButtonFollowsItsActionsChangedWhileItemsAreSelected() {
+        val prefs = Prefs(context)
+        val activity = launch()
+        val fab = activity.findViewById<FloatingActionButton>(R.id.fab)
+        activity.select(book.absolutePath)
+        activity.assertFab(fab, SelectionActions.Fab.OPEN)
+        prefs.fabOne = FabAction.COPY
+        idle()
+        activity.assertFab(fab, SelectionActions.Fab.COPY)
+        activity.select(other.absolutePath)
+        activity.assertFab(fab, SelectionActions.Fab.MOVE)
+        prefs.fabMany = FabAction.COPY
+        idle()
+        activity.assertFab(fab, SelectionActions.Fab.COPY)
+        assertTrue(activity.selection.active)
     }
 
     @Test

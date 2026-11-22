@@ -3,8 +3,10 @@ package com.infinity.comicreader.ui
 import android.Manifest
 import android.app.Application
 import android.os.Looper
+import android.view.Gravity
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
+import androidx.coordinatorlayout.widget.CoordinatorLayout
 import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -204,18 +206,15 @@ class ListActivityLiveSettingsTest {
     fun aChangeTheSettingsFeedMissedShowsOnReturn() {
         val list = launch()
         val fab = list.get().findViewById<FloatingActionButton>(R.id.fab)
-        val crumbs = list.get().findViewById<android.view.View>(R.id.pathbar)
-        assertEquals(android.view.View.VISIBLE, fab.visibility)
-        assertEquals(android.view.View.VISIBLE, crumbs.visibility)
+        fun side() = (fab.layoutParams as CoordinatorLayout.LayoutParams).gravity and Gravity.RELATIVE_HORIZONTAL_GRAVITY_MASK
+        assertEquals(Gravity.END, side())
         muteSettingsFeed(ApplicationProvider.getApplicationContext())
         list.pause().stop()
-        // Settings the library applies only from what changed, never by checking the screen.
-        prefs.listQuickFab = false
-        prefs.listPathView = false
+        // Applied only from what changed, never by checking the screen.
+        prefs.leftHanded = true
         list.start().resume()
         idle()
-        assertEquals(android.view.View.GONE, fab.visibility)
-        assertEquals(android.view.View.GONE, crumbs.visibility)
+        assertEquals(Gravity.START, side())
     }
 
     @Test

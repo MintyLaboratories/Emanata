@@ -765,13 +765,11 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
      * Opens the current chapter again: at the current page, or while it is still
      * opening, at the page it was asked for.
      */
-    private fun reopen(save: Boolean = true) {
+    private fun reopen() {
         if (source != null) intent.putExtra(EXTRA_PAGE, currentIndex)
         stopAutoScroll()
-        if (save) {
-            flushStats()
-            saveHistory()
-        }
+        flushStats()
+        saveHistory()
         openJob?.cancel()
         closeSource()
         endDismissed = false
@@ -845,10 +843,10 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         updateShareWait()
         started = true
         // The library was restored or cleared meanwhile (Settings): the book opens again at the
-        // page shown, with its own settings as stored now, and nothing from before is written over them.
+        // page shown, with its own settings as stored now.
         if (Library.generation != libraryGeneration) {
             libraryGeneration = Library.generation
-            if (source != null || openJob?.isActive == true) reopen(save = false)
+            if (source != null || openJob?.isActive == true) reopen()
         }
         // Favorites cleared meanwhile (Settings): the menu shows them as stored now.
         if (source != null) {

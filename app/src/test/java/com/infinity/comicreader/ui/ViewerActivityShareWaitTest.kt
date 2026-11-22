@@ -186,6 +186,32 @@ class ViewerActivityShareWaitTest {
     }
 
     @Test
+    fun skipChoicesLettingGoOfSlowSharesStartTheScansOnTheOpenBook() {
+        // JPEG pages, read for their sides alone: the seam scan reads them from the share ahead of the reader.
+        val pages = (0 until 31).map { i -> Fixtures.entry("Tale 002-%03d.jpg".format(i), noise(160, 240, i, jpeg = true)) }
+        val book = Fixtures.zip(File(tmp.root, "share/Tale 002.cbz"), *pages.toTypedArray())
+        Remotes.serve(listOf(FakeRemoteFs.share().copy(speed = ShareSpeed.SLOW))) { fake }
+        // Reads of the later pages wait until the test ends.
+        fake.slowReads = book.length() * 3 / 5 until book.length() - 256 * 1024
+        fake.slow = CountDownLatch(1)
+        val prefs = Prefs(ApplicationProvider.getApplicationContext())
+        prefs.slowSkip = prefs.slowSkip + NetSkip.ANY
+        val viewer = launch("/net/s1/Tale 002.cbz")
+        // Scans would start once the first page is drawn: a frame's time passes each round.
+        idleUntil("the scans let go and all the open started done", step = { idleFor(16) }) { viewer.scansReleased() && viewer.openSettled() }
+        assertTrue("a size scan reads a share skipped for everything", viewer.sizesJob()?.isActive != true)
+        assertTrue("a seam scan reads a share skipped for everything", viewer.seamsJob()?.isActive != true)
+        prefs.slowSkip = prefs.slowSkip - NetSkip.ANY
+        shadowOf(Looper.getMainLooper()).idle()
+        idleUntil("a size scan reading the share", step = { idleFor(16) }) { viewer.sizesJob()?.isActive == true }
+        idleUntil("a seam scan reading the share", step = { idleFor(16) }) { viewer.seamsJob()?.isActive == true }
+    }
+
+    /** The open book's page size scan, if any. */
+    private fun ViewerActivity.sizesJob(): Job? =
+        ViewerActivity::class.java.getDeclaredField("sizesJob").apply { isAccessible = true }.get(this) as Job?
+
+    @Test
     fun aBookOpeningSlowlySaysSoAfterTwoSecondsUntilItOpens() {
         val held = CountDownLatch(1)
         fake.slow = held

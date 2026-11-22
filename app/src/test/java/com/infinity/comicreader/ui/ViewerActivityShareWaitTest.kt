@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Intent
 import android.graphics.Bitmap
 import android.os.Looper
+import android.os.PowerManager
 import android.os.SystemClock
 import android.view.View
 import androidx.preference.PreferenceManager
@@ -14,6 +15,7 @@ import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ResumeMode
 import com.infinity.comicreader.data.TwoPage
 import com.infinity.comicreader.net.FakeRemoteFs
+import com.infinity.comicreader.net.RemoteChannel
 import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.net.ShareSpeed
 import com.infinity.comicreader.reader.Fixtures
@@ -75,6 +77,7 @@ class ViewerActivityShareWaitTest {
         fake.slow?.countDown()
         Remotes.serve(emptyList()) { throw AssertionError("no shares") }
         Remotes.clock = { System.nanoTime() / 1_000_000 }
+        RemoteChannel.thrifty = false
     }
 
     private fun noise(w: Int, h: Int, seed: Int): ByteArray {
@@ -91,7 +94,15 @@ class ViewerActivityShareWaitTest {
         return Robolectric.buildActivity(ViewerActivity::class.java, intent).setup().get()
     }
 
-    /** Makes the share slow to read the book's later pages, past what opening it and its first pages read. */
+    /**
+     * Battery saver on: nothing is fetched ahead from the share and no page sizes or seams
+     * are scanned there, so the share reads only what the reader shows ([holdLaterPages]).
+     */
+    private fun saveBattery() {
+        shadowOf(ApplicationProvider.getApplicationContext<Application>().getSystemService(PowerManager::class.java)).setIsPowerSaveMode(true)
+    }
+
+    /** Makes the share slow to read the book's later pages; once [settled], only what the test asks for next reads them. */
     private fun holdLaterPages(): CountDownLatch {
         val size = File(tmp.root, "share/Tale 001.cbz").length()
         fake.slowReads = size * 3 / 5 until size - 256 * 1024
@@ -101,9 +112,18 @@ class ViewerActivityShareWaitTest {
     /** Waits until the share holds a request, as one waking its disk. */
     private fun awaitHeld() = idleUntil("the share holding a request") { fake.held.get() > 0 }
 
-    /** Waits until the book is open, its first page shows and no page decodes: the share answered all the reader asked so far. */
-    private fun ViewerActivity.awaitFirstPage() = idleUntil("the first page shown, no page decoding") {
-        progress().visibility != View.VISIBLE && pageAdapter?.let { !it.blankAt(pages().currentItem) && !it.decoding } == true
+    /** True once the first page showed and the scans it holds back were let go ([ViewerActivity.openSettled] counts them only then). */
+    private fun ViewerActivity.scansReleased() =
+        ViewerActivity::class.java.getDeclaredField("scansReleased").apply { isAccessible = true }.getBoolean(this)
+
+    /**
+     * Waits until the book is open, its first page shows, its scans were let go, and
+     * nothing the open started still runs: no decode, no auto-crop measure, no job.
+     * The reader then asks the share for nothing more on its own.
+     */
+    private fun ViewerActivity.settled() = idleUntil("the first page shown, its scans let go, all the open started done") {
+        progress().visibility != View.VISIBLE && scansReleased() && openSettled() &&
+            pageAdapter?.let { !it.blankAt(pages().currentItem) && it.measures == 0 } == true
     }
 
     private fun ViewerActivity.note() = findViewById<View>(R.id.viewer_share_wait)
@@ -149,9 +169,10 @@ class ViewerActivityShareWaitTest {
 
     @Test
     fun aPageLoadingSlowlySaysSoUntilItShows() {
-        val held = holdLaterPages()
+        saveBattery()
         val viewer = launch()
-        viewer.awaitFirstPage()
+        viewer.settled()
+        val held = holdLaterPages()
         viewer.pages().setCurrentItem(PAGES - 2, false)
         awaitHeld()
         idleFor(1_500)
@@ -168,9 +189,10 @@ class ViewerActivityShareWaitTest {
     @Test
     fun otherWorkOnTheShareAnsweringNeverHidesTheWait() {
         File(tmp.root, "share/notes.txt").writeText("cover scan")
-        val held = holdLaterPages()
+        saveBattery()
         val viewer = launch()
-        viewer.awaitFirstPage()
+        viewer.settled()
+        val held = holdLaterPages()
         viewer.pages().setCurrentItem(PAGES - 2, false)
         awaitHeld()
         idleFor(1_500)
@@ -188,7 +210,7 @@ class ViewerActivityShareWaitTest {
     @Test
     fun aPageThatShowsAtOnceSaysNothing() {
         val viewer = launch()
-        viewer.awaitFirstPage()
+        viewer.settled()
         idleFor(3_000)
         assertEquals(View.GONE, viewer.note().visibility)
     }
@@ -198,9 +220,10 @@ class ViewerActivityShareWaitTest {
         val prefs = Prefs(ApplicationProvider.getApplicationContext())
         prefs.twoPage = TwoPage.ON
         prefs.autoCrop = true
-        val held = holdLaterPages()
+        saveBattery()
         val viewer = launch()
-        viewer.awaitFirstPage()
+        viewer.settled()
+        val held = holdLaterPages()
         // A pair far ahead: its shared crop measures both pages from the share first.
         val pages = viewer.pages()
         pages.setCurrentItem(pages.adapter!!.itemCount - 2, false)

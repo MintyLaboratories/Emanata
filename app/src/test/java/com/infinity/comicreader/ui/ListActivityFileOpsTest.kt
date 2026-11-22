@@ -438,9 +438,12 @@ class ListActivityFileOpsTest {
         val item = activity.moreItem(MoreAction.PACK)
         assertFalse(item.isEnabled)
         assertEquals(activity.getString(R.string.pack_why_other_files), item.findViewById<android.widget.TextView>(R.id.more_action_reason).text.toString())
+        val menu = activity.moreMenu
         item.performClick()
         idleWithoutFileWork(activity)
-        // A disabled item plans nothing.
+        // A disabled item does nothing: no dialog asks, the menu stays open, nothing is planned or queued.
+        assertTrue(ShadowDialog.getShownDialogs().none { it.isShowing })
+        assertSame("the menu stays open", menu, activity.moreMenu)
         assertTrue(activity.fileActions.launched.isEmpty())
         assertTrue(FileWork.operations.value.isEmpty())
         assertTrue(activity.selection.active)

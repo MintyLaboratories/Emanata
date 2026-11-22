@@ -9,6 +9,7 @@ import androidx.core.content.ContextCompat
 import com.infinity.comicreader.ai.AiPicks
 import com.infinity.comicreader.ai.ChainKind
 import com.infinity.comicreader.net.NetPolicy
+import com.infinity.comicreader.net.NetRules
 import com.infinity.comicreader.net.RemoteChannel
 import com.infinity.comicreader.reader.Adjustments
 import com.infinity.comicreader.reader.Scaling
@@ -117,7 +118,9 @@ data class ReaderSettings(
     /** The AI models chosen in Settings, by default chain, while AI processing is on; null while off. */
     val ai: Map<ChainKind, AiPicks>? = null,
     /** The reader's AI indicator shows ([Prefs.aiDot]). */
-    val aiDot: Boolean = false
+    val aiDot: Boolean = false,
+    /** What optional network work is skipped on metered connections and slow shares: read-ahead and scans of share books. */
+    val netRules: NetRules = NetRules()
 ) {
     companion object {
         fun from(p: Prefs, saving: Boolean = false) = ReaderSettings(
@@ -157,7 +160,8 @@ data class ReaderSettings(
             thumbScaling = p.thumbScaling,
             thrift = Thrift.of(saving, p),
             ai = if (p.aiEnabled) ChainKind.entries.associateWith { AiPicks.of(p, it) } else null,
-            aiDot = p.aiDot
+            aiDot = p.aiDot,
+            netRules = p.netRules
         )
     }
 }
@@ -192,14 +196,15 @@ class SettingsRepository internal constructor(private val app: Context) {
     fun readerNow(): ReaderSettings = ReaderSettings.from(prefs, saving)
 
     private fun publish() {
+        // First: screens applying the new settings ask the network policy what may run.
+        holdBackShares()
         _list.value = ListSettings.from(prefs, saving)
         _reader.value = ReaderSettings.from(prefs, saving)
-        holdBackShares()
     }
 
     /** Share reads fetch nothing ahead while battery saver holds back read-ahead; optional network work follows the skip choices. */
     private fun holdBackShares() {
-        RemoteChannel.thrifty = thrift.lessReadAhead
+        RemoteChannel.thrifty = Thrift.of(saving, prefs).lessReadAhead
         NetPolicy.rules = prefs.netRules
     }
 

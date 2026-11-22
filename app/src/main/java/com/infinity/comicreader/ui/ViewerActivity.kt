@@ -193,6 +193,9 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
     /** The global settings last applied; changes are diffed against it. */
     private lateinit var applied: ReaderSettings
 
+    /** Pages the adapter decodes ahead ([pagesAhead] as it was built). */
+    private var shownAhead = 0
+
     private lateinit var pager: ViewPager2
     private lateinit var vertical: RecyclerView
     private lateinit var toolbar: Toolbar
@@ -1093,7 +1096,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         applyGestures()
         // Built into the page adapter.
         if (s.linearLight != old.linearLight || s.pageScaling != old.pageScaling || s.zoomScaling != old.zoomScaling ||
-            s.thrift.readAhead(s.preload, pagesPerScreen()) != old.thrift.readAhead(old.preload, pagesPerScreen())
+            pagesAhead() != shownAhead || s.thrift.lessReadAhead != old.thrift.lessReadAhead
         ) {
             rebuild = true
         }
@@ -1101,8 +1104,8 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         if (s.aiDot != old.aiDot) aiDot.enabled = s.aiDot
         // Pages put off for battery saver go on at once once it lets them.
         if (old.thrift.pausedAi && !s.thrift.pausedAi) adapter?.aiWake()
-        if (s.thrift.pausedScans != old.thrift.pausedScans) {
-            // Paused, the scans under way stop; resumed, they go on from the page on screen.
+        if (s.thrift.pausedScans != old.thrift.pausedScans || s.netRules != old.netRules) {
+            // Paused, the scans under way stop; resumed, or no longer skipped on a share, they go on from the page on screen.
             if (s.thrift.pausedScans) {
                 sizesJob?.cancel()
                 seamsJob?.cancel()
@@ -2570,6 +2573,8 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         spread = useSpread()
         shownCrop = cropOn()
         layout = laid ?: buildLayout()
+        val ahead = pagesAhead()
+        shownAhead = ahead
         val a = PageAdapter(
             source = src,
             mode = adapterMode(),
@@ -2583,8 +2588,8 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
             linear = prefs.linearLight,
             pageScaling = prefs.pageScaling,
             zoomScaling = prefs.zoomScaling,
-            preload = pagesAhead(),
-            behind = PageAdapter.screenBehind && pagesAhead() > 0 && !applied.thrift.lessReadAhead,
+            preload = ahead,
+            behind = PageAdapter.screenBehind && ahead > 0 && !applied.thrift.lessReadAhead,
             fling = prefs.fling,
             onLongPress = { page -> showPageActions(if (page >= 0) page else currentIndex) },
             pageLayout = layout,

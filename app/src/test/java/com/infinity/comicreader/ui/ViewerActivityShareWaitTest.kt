@@ -146,6 +146,20 @@ class ViewerActivityShareWaitTest {
     }
 
     @Test
+    fun readAheadNoLongerSkippedOnSlowSharesReachesTheOpenBook() {
+        Remotes.serve(listOf(FakeRemoteFs.share().copy(speed = ShareSpeed.SLOW))) { fake }
+        val viewer = launch()
+        idleUntil("the book open and all its open started done") { viewer.progress().visibility != View.VISIBLE && viewer.openSettled() }
+        fun ahead() = PageAdapter::class.java.getDeclaredField("preload").apply { isAccessible = true }.getInt(viewer.pages().adapter as PageAdapter)
+        assertEquals(0, ahead())
+        Prefs(ApplicationProvider.getApplicationContext()).slowSkip = emptySet()
+        shadowOf(Looper.getMainLooper()).idle()
+        assertTrue(ahead() > 0)
+        // The pages now read ahead are in before the share goes.
+        idleUntil("the pages read ahead") { !viewer.busy }
+    }
+
+    @Test
     fun aBookOpeningSlowlySaysSoAfterTwoSecondsUntilItOpens() {
         val held = CountDownLatch(1)
         fake.slow = held

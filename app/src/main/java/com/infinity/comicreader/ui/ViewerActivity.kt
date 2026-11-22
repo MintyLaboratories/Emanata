@@ -2921,7 +2921,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
             toast(R.string.finished_last_chapter)
             return
         }
-        if (!prefs.autoNext) {
+        if (!autoAdvance()) {
             showEndCard()
             return
         }
@@ -3044,7 +3044,8 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         val src = source ?: return
         // "Auto next chapter" replaces the prompt entirely: the reader simply
         // rolls into the next chapter when the user moves past the last page.
-        if (autoAdvance()) {
+        // A one-page book never shows it: its first page is already its last.
+        if (autoAdvance() || onePage()) {
             hideEndCard()
             return
         }
@@ -3062,7 +3063,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
 
     private fun showEndCard() {
         val f = file ?: return
-        if (autoAdvance()) return
+        if (autoAdvance() || onePage()) return
         endCard.visibility = View.VISIBLE
         endSubtitle.text = getString(R.string.chapter_end_msg, chapterLabel(f))
         endNext.visibility = if (nextChapter() != null) View.VISIBLE else View.GONE
@@ -4436,8 +4437,14 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         updateEndCard()
     }
 
-    /** True while the reader should skip the end card and roll into the next chapter. */
-    private fun autoAdvance() = prefs.autoNext && nextChapter() != null
+    /**
+     * True while the reader should skip the end card and roll into the next chapter:
+     * with "Auto next chapter" on, or always in a one-page book ([onePage]).
+     */
+    private fun autoAdvance() = (prefs.autoNext || onePage()) && nextChapter() != null
+
+    /** True when the open book has one page, as a loose image does: one picture of its folder, not a chapter. */
+    private fun onePage() = source?.pageCount == 1
 
     /**
      * Watches for a swipe aimed past the end of the chapter. Paged reading clamps

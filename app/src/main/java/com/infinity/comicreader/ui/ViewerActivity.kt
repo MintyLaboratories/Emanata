@@ -131,8 +131,10 @@ import com.infinity.comicreader.reader.Fit
 import com.infinity.comicreader.reader.Half
 import com.infinity.comicreader.reader.HiddenPages
 import com.infinity.comicreader.reader.HidingSource
+import com.infinity.comicreader.reader.NameCharset
 import com.infinity.comicreader.reader.NestedArchives
 import com.infinity.comicreader.reader.PageFormat
+import com.infinity.comicreader.reader.PageMoves
 import com.infinity.comicreader.reader.PageSeams
 import com.infinity.comicreader.reader.PageSource
 import com.infinity.comicreader.reader.PageSizes
@@ -487,6 +489,15 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
 
     private var openJob: Job? = null
 
+    /** The file name charset the open book was read in ([NameCharset.forBook]); null before it opens. */
+    private var openedCharset: String? = null
+
+    /** Book page [page] of [path], read in [charset], for the next open of [path] to land on ([reopen]). */
+    private class Carry(val path: String, val page: Int, val charset: String?)
+
+    /** Where [reopen] asked the book to open again, until an open of it lands there. */
+    private var carry: Carry? = null
+
     /** Gathers Book info's facts; a tap while it runs is ignored. */
     private var bookInfoJob: Job? = null
 
@@ -762,14 +773,18 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
     }
 
     /**
-     * Opens the current chapter again: at the current page, or while it is still
-     * opening, at the page it was asked for.
+     * Opens the current chapter again: at the book page on screen, wherever the hidden pages
+     * and name charset stored now put it ([carriedPage]), or while it is still opening, at
+     * the page it was asked for. Its history is written once it opens, in the new numbering ([setup]).
      */
     private fun reopen() {
-        if (source != null) intent.putExtra(EXTRA_PAGE, currentIndex)
+        val src = source
+        val path = file?.absolutePath
+        if (src != null && path != null) {
+            carry = Carry(path, HiddenPages.bookIndex(src, currentIndex.coerceIn(0, src.pageCount - 1)), openedCharset)
+        }
         stopAutoScroll()
         flushStats()
-        saveHistory()
         openJob?.cancel()
         closeSource()
         endDismissed = false
@@ -1372,10 +1387,16 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
 
         lateDetectionJob?.cancel()
         slicesJob?.cancel()
+        // A page carried for another book never lands on this one.
+        val carried = carry?.takeIf { it.path == path }
+        carry = carried
         openJob = lifecycleScope.launch {
             val folderDecides = folderDirection()
             val perFolder = layoutFolder() != null
             val slice = maySlice()
+            val charset = prefs.charset
+            var readIn: String? = null
+            var landing: Int? = null
             var known: KnownPages? = null
             var sliceSizes: List<IntArray?> = emptyList()
             var sliced: DirectionDetection.Detected? = null
@@ -1388,10 +1409,13 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
                 // The ID first: on a share, the reads of the book's ends start opening it too.
                 // A share sending files only whole has it from the copy fetched to open the book.
                 found = Traces.section("open: book id") { BookIds.find(target) }
+                // As PageSources.open picks it.
+                readIn = NameCharset.forBook(target, charset)
                 val s = runCatching {
-                    val raw = PageSources.open(target, prefs.charset, cacheDir, canceled = { !job.isActive }, fetch = fetch)
+                    val raw = PageSources.open(target, charset, cacheDir, canceled = { !job.isActive }, fetch = fetch)
                     hiding((found ?: BookIds.known(target)).also { found = it }, raw)
                 }
+                landing = carried?.let { c -> s.getOrNull()?.let { src -> carriedPage(c, target, readIn, src) } }
                 // Before opening keeps anything for it.
                 fresh = found?.let { !library.hasData(it) } == true
                 val id = found
@@ -1405,7 +1429,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
                         Traces.section("open: direction") { runCatching { detectBeforeOpen(target, src, siblings) }.getOrNull() }
                     }
                     known = s.getOrNull()?.let { src ->
-                        knownSizes(target, src, opening = startOf(src.pageCount, id).page)
+                        knownSizes(target, src, opening = startOf(src.pageCount, id, landing ?: intent.getIntExtra(EXTRA_PAGE, -1)).page)
                     }
                     // Slices found before, or whose shape alone tells, read as one column from the first page; seams wait.
                     s.getOrNull()?.takeIf { slice }?.let { src ->
@@ -1425,6 +1449,11 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
                 }
             }
             opening = false
+            openedCharset = readIn
+            if (carried != null) {
+                carry = null
+                landing?.let { intent.putExtra(EXTRA_PAGE, it) }
+            }
             if (progressHolds == 0) progress.visibility = View.GONE
             fetched.visibility = View.GONE
             if (found != bookId) {
@@ -1931,10 +1960,24 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         if (start.ask) askStartPage(saved, src.pageCount)
     }
 
-    /** Where book [id] of [count] pages opens ([ResumeMode.start]): the page asked for, else as its history says. */
-    private fun startOf(count: Int, id: BookId?): ResumeMode.Start {
+    /** Where book [id] of [count] pages opens ([ResumeMode.start]): page [requested] when asked for (not -1), else as its history says. */
+    private fun startOf(count: Int, id: BookId?, requested: Int = intent.getIntExtra(EXTRA_PAGE, -1)): ResumeMode.Start {
         val saved = id?.let { library.pageFor(it) } ?: 0
-        return prefs.resumeMode.start(intent.getIntExtra(EXTRA_PAGE, -1), saved, count, finished = id != null && library.isRead(id))
+        return prefs.resumeMode.start(requested, saved, count, finished = id != null && library.isRead(id))
+    }
+
+    /**
+     * The index in [src], [target] opened with names read in [charset], of the book page
+     * [c] carries: moved with its entry when the names read in another charset reorder
+     * the pages ([PageMoves]), then counted without the pages hidden now. Blocking.
+     */
+    private fun carriedPage(c: Carry, target: File, charset: String?, src: PageSource): Int {
+        val page = if (c.charset == null || charset == null || c.charset == charset) c.page else runCatching {
+            val before = PageSources.pageKeys(target, c.charset, cacheDir)
+            val after = PageSources.pageKeys(target, charset, cacheDir)
+            if (before == null || after == null) null else PageMoves.of(before, after).getOrNull(c.page)?.takeIf { it >= 0 }
+        }.getOrNull() ?: c.page
+        return HiddenPages.shownIndex(src, page).coerceIn(0, src.pageCount - 1)
     }
 
     /**

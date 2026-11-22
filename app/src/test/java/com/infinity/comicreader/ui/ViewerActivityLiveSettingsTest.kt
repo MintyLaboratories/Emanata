@@ -10,6 +10,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.ViewGroup
+import android.widget.SeekBar
 import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
@@ -19,7 +20,10 @@ import com.infinity.comicreader.ai.OfflineDownloads
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ResumeMode
+import com.infinity.comicreader.reader.ArchiveSource
 import com.infinity.comicreader.reader.Fixtures
+import com.infinity.comicreader.reader.NameCharset
+import com.infinity.comicreader.reader.ZipReader
 import com.infinity.comicreader.testing.idleUntil
 import com.infinity.comicreader.testing.muteSettingsFeed
 import com.infinity.comicreader.testing.ref
@@ -42,7 +46,10 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.nio.charset.Charset
 import java.time.Duration
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
 /**
  * Settings changed while the reader is open apply to it without recreating it: changed
@@ -75,6 +82,7 @@ class ViewerActivityLiveSettingsTest {
     @After
     fun tearDown() {
         controller?.pause()?.stop()?.destroy()
+        NameCharset.overrides = emptyMap()
     }
 
     private fun idle() = shadowOf(Looper.getMainLooper()).idle()
@@ -91,8 +99,10 @@ class ViewerActivityLiveSettingsTest {
         return Fixtures.zip(File(tmp.newFolder("shelf"), "Book A.cbz"), *pages.toTypedArray())
     }
 
-    private fun launch(book: File = book()): ActivityController<ViewerActivity> {
+    /** The reader on [book], at shown page [page] when given. */
+    private fun launch(book: File = book(), page: Int? = null): ActivityController<ViewerActivity> {
         val intent = Intent(context, ViewerActivity::class.java).putExtra(ViewerActivity.EXTRA_PATH, book.absolutePath)
+        page?.let { intent.putExtra(ViewerActivity.EXTRA_PAGE, it) }
         val c = Robolectric.buildActivity(ViewerActivity::class.java, intent).setup()
         controller = c
         val viewer = c.get()
@@ -301,15 +311,22 @@ class ViewerActivityLiveSettingsTest {
 
     // ---------------------------------------------------------------- the library replaced
 
+    /** The page shown, as the seek bar has it: one page a step in these books. */
+    private fun ViewerActivity.page(): Int = findViewById<SeekBar>(R.id.viewer_seek).progress
+
     @Test
     fun aLibraryClearedInSettingsDropsTheOpenBooksOwnSettingsOnReturn() {
         val book = book()
         Library(context).setHiddenPages(ref(book), setOf(1), 3)
-        val c = launch(book)
+        // Shown page 1 is book page 2.
+        val c = launch(book, page = 1)
         assertEquals(2, c.get().pageAdapter!!.itemCount)
+        assertEquals(1, c.get().page())
         c.away { Library(context).clearLibraryData() }
         idleUntil("the book open again") { c.get().openSettled() }
         assertEquals(3, c.get().pageAdapter!!.itemCount)
+        // Still book page 2, now with no page hidden.
+        assertEquals(2, c.get().page())
         // The book's own settings stay cleared.
         assertTrue(Library(context).hiddenPages(ref(book).id).isEmpty())
     }
@@ -318,13 +335,66 @@ class ViewerActivityLiveSettingsTest {
     fun aLibraryRestoredInSettingsGivesTheOpenBookItsRestoredSettingsOnReturn() {
         val book = book()
         val library = Library(context)
-        library.setHiddenPages(ref(book), setOf(1), 3)
+        library.setHiddenPages(ref(book), setOf(0), 3)
         val backup = library.exportAll()
         library.setHiddenPages(ref(book), emptySet(), 3)
-        val c = launch(book)
+        val c = launch(book, page = 1)
         assertEquals(3, c.get().pageAdapter!!.itemCount)
+        assertEquals(1, c.get().page())
         c.away { Library(context).importAll(backup) }
         idleUntil("the book open again") { c.get().openSettled() }
         assertEquals(2, c.get().pageAdapter!!.itemCount)
+        // Still book page 1: shown page 0 with page 0 hidden.
+        assertEquals(0, c.get().page())
+    }
+
+    /** Japanese page names, stored in Shift_JIS; each page's one byte is its place here. */
+    private val japanese = listOf("表紙.jpg", "目次.jpg", "第一話.jpg", "第二話.jpg", "あとがき.jpg", "奥付.jpg", "裏表紙.jpg", "001.jpg")
+
+    private fun japaneseBook(): File {
+        val out = ByteArrayOutputStream()
+        ZipOutputStream(out, Charset.forName("Shift_JIS")).use { zip ->
+            for ((i, n) in japanese.withIndex()) {
+                zip.putNextEntry(ZipEntry(n))
+                zip.write(i)
+                zip.closeEntry()
+            }
+        }
+        return File(tmp.newFolder("shelf"), "Book J.cbz").apply { writeBytes(out.toByteArray()) }
+    }
+
+    /** The place in [japanese] of each page of [file] with names read in [charsetName], in page order. */
+    private fun order(file: File, charsetName: String): List<Int> =
+        ArchiveSource(ZipReader(file, charsetName)).use { src -> (0 until src.pageCount).map { i -> src.readPage(i) { it.read() } } }
+
+    @Test
+    fun aLibraryRestoredWithTheBooksOwnNameCharsetReopensItAtItsPage() {
+        val book = japaneseBook()
+        val before = order(book, NameCharset.AUTO)
+        val after = order(book, "windows-1251")
+        // A page the other charset moves.
+        val page = before.indices.first { before[it] != after[it] }
+        val library = Library(context)
+        library.setNameCharset(ref(book), "windows-1251")
+        val backup = library.exportAll()
+        library.setNameCharset(ref(book), null)
+        val c = launch(book, page = page)
+        assertEquals(page, c.get().page())
+        c.away { Library(context).importAll(backup) }
+        idleUntil("the book open again") { c.get().openSettled() }
+        assertEquals(after.indexOf(before[page]), c.get().page())
+    }
+
+    @Test
+    fun aNameCharsetChangedInSettingsKeepsThePageShown() {
+        val book = japaneseBook()
+        val before = order(book, NameCharset.AUTO)
+        val after = order(book, "windows-1251")
+        val page = before.indices.first { before[it] != after[it] }
+        val c = launch(book, page = page)
+        assertEquals(page, c.get().page())
+        c.away { prefs.charset = "windows-1251" }
+        idleUntil("the book open again") { c.get().openSettled() }
+        assertEquals(after.indexOf(before[page]), c.get().page())
     }
 }

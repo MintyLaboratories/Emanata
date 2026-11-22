@@ -35,11 +35,11 @@ private fun Activity.working(): Boolean = when (this) {
             lifecycleScope.coroutineContext[Job]!!.children.any { !it.isCompleted }
         } else {
             // Its scope also holds collectors that run as long as it lives, so only its work counts,
-            // a job told to stop included until it has. Its facts job waits, not works, while the
-            // screen is out of sight.
+            // a job told to stop included until it has. Its facts job waits, not works, while held
+            // at its started gate with the screen out of sight.
             val started = lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
             listOf(listJob, classifyJob, presenceJob, moreLook, markJob, factsLoad).any { it?.isCompleted == false } ||
-                (started && factsJob?.isCompleted == false) ||
+                (factsJob?.isCompleted == false && (started || !factsAwaitingStart)) ||
                 (lifecycle.currentState.isAtLeast(Lifecycle.State.CREATED) && fileActions.busy)
         }
         busy || (findViewById<RecyclerView>(R.id.recycler)?.adapter as? BookAdapter)?.coversBusy == true

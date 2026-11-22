@@ -169,6 +169,7 @@ class PageAdapter(
             val changed = mode == Mode.PAGED && fitMode != ZoomImageView.FitMode.WIDTH && recycler != null
             field = value
             if (changed) resize()
+            landOnceTall()
         }
 
     /**
@@ -285,6 +286,22 @@ class PageAdapter(
 
     /** A page of [tallPages] that shows from its bottom, as one turned back to; -1 for none. */
     private var fromBottom = NO_PAGE
+
+    /**
+     * The page [landTall] last asked to show from its bottom, whether or not it was in
+     * [tallPages] then: one whose size is learned only as it loads lands at its bottom once
+     * found tall ([landOnceTall]). -1 for none, and once the pager turns or a swipe starts.
+     */
+    private var bottomOnceTall = NO_PAGE
+
+    /** Lands [bottomOnceTall] at its bottom, now that it is one of [tallPages]. */
+    private fun landOnceTall() {
+        val page = bottomOnceTall
+        if (page == NO_PAGE || page !in tallPages) return
+        bottomOnceTall = NO_PAGE
+        fromBottom = page
+        land(layout.itemOf(page) - layout.itemOf(strip.base), atBottom = true)
+    }
 
     /**
      * Pages of [tallPages] to land on ([landTall]) from their bottom (true) or top once their
@@ -709,11 +726,13 @@ class PageAdapter(
 
     /**
      * Shows the page of [tallPages] item [position] shows alone from its top, or from its
-     * bottom when [atBottom] (turned back to), now if it is bound, else once it is.
+     * bottom when [atBottom] (turned back to), now if it is bound, else once it is. A page
+     * not yet known tall lands at its bottom once it is ([bottomOnceTall]).
      */
     fun landTall(position: Int, atBottom: Boolean) {
         if (mode != Mode.PAGED) return
         val part = strip.parts(position).filterNotNull().singleOrNull()
+        bottomOnceTall = if (atBottom) part?.page ?: NO_PAGE else NO_PAGE
         fromBottom = if (atBottom && part != null && part.page in tallPages) part.page else NO_PAGE
         land(position, atBottom)
     }
@@ -725,6 +744,7 @@ class PageAdapter(
      */
     fun swipingFrom(position: Int) {
         if (mode != Mode.PAGED) return
+        bottomOnceTall = NO_PAGE
         land(position + 1, atBottom = false)
         land(position - 1, atBottom = true)
     }
@@ -735,6 +755,7 @@ class PageAdapter(
      */
     fun turnedTo(position: Int, back: Boolean) {
         if (mode != Mode.PAGED) return
+        bottomOnceTall = NO_PAGE
         val part = strip.parts(position).filterNotNull().singleOrNull()
         fromBottom = if (back && part != null && part.page in tallPages) part.page else NO_PAGE
     }

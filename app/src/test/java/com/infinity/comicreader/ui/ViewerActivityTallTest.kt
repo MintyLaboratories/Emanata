@@ -268,6 +268,22 @@ class ViewerActivityTallTest {
         assertEquals(bottom, top, 1f)
     }
 
+    @Test
+    fun aTallLastPageFoundTallOnlyAsItLoadsStillShowsFromItsBottom() {
+        // A solid RAR: page sizes are not read ahead, only learned as each page loads.
+        val solid = File(dir, "Mixed 07.cbr").apply {
+            writeBytes(Fixtures.rar4Bytes(*listOf(140, 140, 1000).mapIndexed { i, h -> Fixtures.entry("p%02d.png".format(i), TestImages.png(100, h)) }.toTypedArray(), solid = true))
+        }
+        val viewer = launch(solid, page = Int.MAX_VALUE)
+        val pager = viewer.findViewById<ViewPager2>(R.id.viewer_pager)
+        // Found tall once its size is learned, it shows at fit width (the offer to repack may show meanwhile).
+        idleUntil("the last page shown at fit width", step = { shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(50)) }) {
+            pager.currentItem == 2 && viewer.shownImage().let { it.drawable != null && it.fitMode == ZoomImageView.FitMode.WIDTH }
+        }
+        val (top, bottom) = viewer.shownTop()
+        assertEquals(bottom, top, 1f)
+    }
+
     // File decodes run on API 27, where the host decodes them (through BitmapFactory).
     @Test
     @Config(sdk = [27])

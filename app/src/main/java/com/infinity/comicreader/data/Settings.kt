@@ -39,6 +39,9 @@ data class ListSettings(
     val statusBar: Boolean,
     val quickFab: Boolean,
     val fabTap: RingOption,
+    /** What the floating button does with one item selected, and with several. */
+    val fabOne: FabAction,
+    val fabMany: FabAction,
     val leftHanded: Boolean,
     val groupFavorites: Boolean,
     val linearLight: Boolean,
@@ -66,6 +69,8 @@ data class ListSettings(
             statusBar = p.listStatusBar,
             quickFab = p.listQuickFab,
             fabTap = p.fabTap,
+            fabOne = p.fabOne,
+            fabMany = p.fabMany,
             leftHanded = p.leftHanded,
             groupFavorites = p.groupFavorites,
             linearLight = p.linearLight,

@@ -680,7 +680,8 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
         }
         if (s.statusBar != old.statusBar) applyStatusBarSetting()
         if (s.toolbarButtons != old.toolbarButtons) invalidateOptionsMenu()
-        if (s.quickFab != old.quickFab || s.fabTap != old.fabTap) updateFab()
+        // Through the selection: with items selected the button shows what the bar allows.
+        if (s.quickFab != old.quickFab || s.fabTap != old.fabTap || s.fabOne != old.fabOne || s.fabMany != old.fabMany) updateSelection()
         if (s.leftHanded != old.leftHanded) stack.setLeftHanded(s.leftHanded)
     }
 

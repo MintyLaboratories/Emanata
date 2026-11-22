@@ -13,8 +13,10 @@ import com.infinity.comicreader.R
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.slider.Slider
+import com.infinity.comicreader.data.CoverShape
 import com.infinity.comicreader.data.ListDensity
 import com.infinity.comicreader.data.Prefs
+import com.infinity.comicreader.data.TitleDisplay
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -173,6 +175,44 @@ class ListActivityLiveSettingsTest {
         prefs.coverSpacing = 16
         idle()
         assertEquals(16, (list.recycler().adapter as BookAdapter).options.spacing)
+    }
+
+    @Test
+    fun coverShapeAndTitlesApplyWhileVisible() {
+        val list = launch()
+        val adapter = list.recycler().adapter as BookAdapter
+        prefs.coverShape = CoverShape.WIDE
+        prefs.titleDisplay = TitleDisplay.HIDDEN
+        idle()
+        assertEquals(CoverShape.WIDE, adapter.options.shape)
+        assertEquals(TitleDisplay.HIDDEN, adapter.options.title)
+    }
+
+    @Test
+    fun coverShapeChangedInSettingsAppliesOnReturn() {
+        val list = launch()
+        val adapter = list.recycler().adapter as BookAdapter
+        list.pause().stop()
+        prefs.coverShape = CoverShape.CELL
+        list.start().resume()
+        idle()
+        assertEquals(CoverShape.CELL, adapter.options.shape)
+    }
+
+    @Test
+    fun theButtonAndCrumbsFollowTheirSettingsOnReturn() {
+        val list = launch()
+        val fab = list.get().findViewById<FloatingActionButton>(R.id.fab)
+        val crumbs = list.get().findViewById<android.view.View>(R.id.pathbar)
+        assertEquals(android.view.View.VISIBLE, fab.visibility)
+        assertEquals(android.view.View.VISIBLE, crumbs.visibility)
+        list.pause().stop()
+        prefs.listQuickFab = false
+        prefs.listPathView = false
+        list.start().resume()
+        idle()
+        assertEquals(android.view.View.GONE, fab.visibility)
+        assertEquals(android.view.View.GONE, crumbs.visibility)
     }
 
     @Test

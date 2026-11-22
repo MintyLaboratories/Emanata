@@ -492,10 +492,10 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
     /** The file name charset the open book was read in ([NameCharset.forBook]); null before it opens. */
     private var openedCharset: String? = null
 
-    /** Book page [page] of [path], read in [charset], for the next open of [path] to land on ([reopen]). */
+    /** Book page [page] of [path], read in [charset], for the next open of [path] to land on ([reopen], [onCreate]). */
     private class Carry(val path: String, val page: Int, val charset: String?)
 
-    /** Where [reopen] asked the book to open again, until an open of it lands there. */
+    /** Where [reopen] or a recreated reader asked the book to open again, until an open of it lands there. */
     private var carry: Carry? = null
 
     /** Gathers Book info's facts; a tap while it runs is ignored. */
@@ -630,11 +630,13 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         bindViews()
         applied = settings.readerNow()
         loadPrefs()
-        // A recreated reader (theme or language change) continues where it was, turned as it was.
+        // A recreated reader (theme or language change, process death) continues at the book
+        // page it showed, wherever the hidden pages and name charset stored now put it, turned as it was.
         spreadRotation.restore(savedInstanceState?.getIntArray(STATE_ROTATION))
         imageTurn.restore(savedInstanceState?.getIntArray(STATE_IMAGE_TURN))
         savedInstanceState?.getString(STATE_PATH)?.let {
-            intent.putExtra(EXTRA_PATH, it).putExtra(EXTRA_PAGE, savedInstanceState.getInt(STATE_PAGE))
+            intent.putExtra(EXTRA_PATH, it)
+            carry = Carry(it, savedInstanceState.getInt(STATE_BOOK_PAGE), savedInstanceState.getString(STATE_CHARSET))
         }
 
         setSupportActionBar(toolbar)
@@ -844,10 +846,17 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         super.onSaveInstanceState(outState)
         outState.putIntArray(STATE_ROTATION, spreadRotation.save())
         outState.putIntArray(STATE_IMAGE_TURN, imageTurn.save())
-        val f = file ?: return
-        if (source == null) return
-        outState.putString(STATE_PATH, f.absolutePath)
-        outState.putInt(STATE_PAGE, currentIndex)
+        val path = file?.absolutePath ?: return
+        val src = source
+        // The book page shown, or while the book opens again, the one it was asked to land on.
+        val c = if (src != null) {
+            Carry(path, HiddenPages.bookIndex(src, currentIndex.coerceIn(0, src.pageCount - 1)), openedCharset)
+        } else {
+            carry?.takeIf { it.path == path } ?: return
+        }
+        outState.putString(STATE_PATH, path)
+        outState.putInt(STATE_BOOK_PAGE, c.page)
+        outState.putString(STATE_CHARSET, c.charset)
     }
 
     override fun onStart() {
@@ -5170,7 +5179,8 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         const val EXTRA_PAGE = "extra_page"
 
         private const val STATE_PATH = "state_path"
-        private const val STATE_PAGE = "state_page"
+        private const val STATE_BOOK_PAGE = "state_book_page"
+        private const val STATE_CHARSET = "state_charset"
         private const val STATE_ROTATION = "state_rotation"
         private const val STATE_IMAGE_TURN = "state_image_turn"
 

@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.os.Bundle
 import android.os.Looper
 import android.os.SystemClock
 import android.view.MotionEvent
@@ -99,11 +100,12 @@ class ViewerActivityLiveSettingsTest {
         return Fixtures.zip(File(tmp.newFolder("shelf"), "Book A.cbz"), *pages.toTypedArray())
     }
 
-    /** The reader on [book], at shown page [page] when given. */
-    private fun launch(book: File = book(), page: Int? = null): ActivityController<ViewerActivity> {
+    /** The reader on [book], at shown page [page] when given; recreated from [state] when given. */
+    private fun launch(book: File = book(), page: Int? = null, state: Bundle? = null): ActivityController<ViewerActivity> {
         val intent = Intent(context, ViewerActivity::class.java).putExtra(ViewerActivity.EXTRA_PATH, book.absolutePath)
         page?.let { intent.putExtra(ViewerActivity.EXTRA_PAGE, it) }
-        val c = Robolectric.buildActivity(ViewerActivity::class.java, intent).setup()
+        val built = Robolectric.buildActivity(ViewerActivity::class.java, intent)
+        val c = if (state == null) built.setup() else built.setup(state)
         controller = c
         val viewer = c.get()
         val progress = viewer.findViewById<View>(R.id.viewer_progress)
@@ -348,6 +350,45 @@ class ViewerActivityLiveSettingsTest {
         assertEquals(0, c.get().page())
     }
 
+    /** The reader gone with its state kept, as on a language change or process death under Settings. */
+    private fun ActivityController<ViewerActivity>.gone(): Bundle {
+        val state = Bundle()
+        pause().stop().saveInstanceState(state).destroy()
+        controller = null
+        return state
+    }
+
+    @Test
+    fun aReaderRecreatedAfterALibraryClearOpensAtTheBookPageItShowed() {
+        val book = book()
+        Library(context).setHiddenPages(ref(book), setOf(1), 3)
+        // Shown page 1 is book page 2.
+        val first = launch(book, page = 1)
+        assertEquals(1, first.get().page())
+        val state = first.gone()
+        Library(context).clearLibraryData()
+        val c = launch(book, page = 1, state = state)
+        assertEquals(3, c.get().pageAdapter!!.itemCount)
+        assertEquals(2, c.get().page())
+    }
+
+    @Test
+    fun aReaderRecreatedWhileOpeningAgainLandsWhereItWasAsked() {
+        val book = book()
+        Library(context).setHiddenPages(ref(book), setOf(1), 3)
+        val first = launch(book, page = 1)
+        assertEquals(1, first.get().page())
+        first.pause().stop()
+        Library(context).clearLibraryData()
+        // Back from Settings: the book starts opening again at book page 2, and the reader goes before it lands.
+        first.start()
+        assertFalse("the book still opening", first.get().openSettled())
+        val state = first.gone()
+        val c = launch(book, page = 1, state = state)
+        assertEquals(3, c.get().pageAdapter!!.itemCount)
+        assertEquals(2, c.get().page())
+    }
+
     /** Japanese page names, stored in Shift_JIS; each page's one byte is its place here. */
     private val japanese = listOf("表紙.jpg", "目次.jpg", "第一話.jpg", "第二話.jpg", "あとがき.jpg", "奥付.jpg", "裏表紙.jpg", "001.jpg")
 
@@ -382,6 +423,24 @@ class ViewerActivityLiveSettingsTest {
         assertEquals(page, c.get().page())
         c.away { Library(context).importAll(backup) }
         idleUntil("the book open again") { c.get().openSettled() }
+        assertEquals(after.indexOf(before[page]), c.get().page())
+    }
+
+    @Test
+    fun aReaderRecreatedAfterARestoreWithTheBooksOwnNameCharsetOpensAtItsPage() {
+        val book = japaneseBook()
+        val before = order(book, NameCharset.AUTO)
+        val after = order(book, "windows-1251")
+        val page = before.indices.first { before[it] != after[it] }
+        val library = Library(context)
+        library.setNameCharset(ref(book), "windows-1251")
+        val backup = library.exportAll()
+        library.setNameCharset(ref(book), null)
+        val first = launch(book, page = page)
+        assertEquals(page, first.get().page())
+        val state = first.gone()
+        Library(context).importAll(backup)
+        val c = launch(book, page = page, state = state)
         assertEquals(after.indexOf(before[page]), c.get().page())
     }
 

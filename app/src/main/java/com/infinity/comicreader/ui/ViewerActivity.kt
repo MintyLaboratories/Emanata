@@ -1088,9 +1088,10 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
             shown = true
         }
 
+        // Gestures change on the pages shown, in place.
+        applyGestures()
         // Built into the page adapter.
-        if (s.doubleTapZoom != old.doubleTapZoom || s.brightnessGesture != old.brightnessGesture || s.fling != old.fling ||
-            s.linearLight != old.linearLight || s.pageScaling != old.pageScaling || s.zoomScaling != old.zoomScaling ||
+        if (s.linearLight != old.linearLight || s.pageScaling != old.pageScaling || s.zoomScaling != old.zoomScaling ||
             s.thrift.readAhead(s.preload, pagesPerScreen()) != old.thrift.readAhead(old.preload, pagesPerScreen())
         ) {
             rebuild = true
@@ -2843,6 +2844,14 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
 
     /** Brightness by vertical drag, in pages swiped sideways: swiping up turns the page top to bottom. */
     private fun brightnessGestureEnabled() = prefs.brightnessGesture && mode == MODE_PAGED && !topToBottom()
+
+    /** Sets double-tap zoom, momentum scrolling and the brightness drag on the pages shown, as Settings has them now. */
+    private fun applyGestures() {
+        val a = adapter ?: return
+        a.doubleTapZoom = prefs.doubleTapZoom
+        a.fling = prefs.fling
+        a.verticalDrag = if (brightnessGestureEnabled()) brightnessDrag else null
+    }
 
     private fun spacingPx(): Int =
         (spacingDp * resources.displayMetrics.density).toInt()

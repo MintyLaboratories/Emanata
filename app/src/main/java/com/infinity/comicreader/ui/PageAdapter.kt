@@ -121,12 +121,12 @@ class PageAdapter(
     source: PageSource,
     private val mode: Mode,
     private val onTap: (Float, Float) -> Unit,
-    private val doubleTapZoom: Boolean,
+    doubleTapZoom: Boolean,
     /** Where, as fractions of the list's area, a tap acts at once despite [doubleTapZoom] ([ZoomImageView.tapsAtOnce]). */
     private val tapsAtOnce: ((Float, Float) -> Boolean)? = null,
     private val twoPage: Boolean = false,
     private val rtl: Boolean = false,
-    private val verticalDrag: ZoomImageView.VerticalDrag? = null,
+    verticalDrag: ZoomImageView.VerticalDrag? = null,
     val autoCrop: Boolean = false,
     private val linear: Boolean = false,
     private val pageScaling: Scaling = Scaling.PLAIN,
@@ -134,7 +134,7 @@ class PageAdapter(
     private val preload: Int = 2,
     /** In paged reading, also decode the screen before the one shown, after those ahead, so a back turn is ready. */
     private val behind: Boolean = false,
-    private val fling: Boolean = false,
+    fling: Boolean = false,
     private val onLongPress: ((Int) -> Unit)? = null,
     pageLayout: PageLayout? = null,
     private val bounds: PageBounds = PageBounds(),
@@ -344,6 +344,27 @@ class PageAdapter(
 
     /** Every image this adapter made that is still alive, shown or waiting in the recycler's caches. */
     private val images: MutableSet<ZoomImageView> = Collections.newSetFromMap(WeakHashMap())
+
+    /** Double-tap zooms; set on every image at once ([ZoomImageView.doubleTapEnabled]). */
+    var doubleTapZoom: Boolean = doubleTapZoom
+        set(value) {
+            field = value
+            images.forEach { it.doubleTapEnabled = value }
+        }
+
+    /** A flung pan glides on; set on every image at once ([ZoomImageView.flingEnabled]). */
+    var fling: Boolean = fling
+        set(value) {
+            field = value
+            images.forEach { it.flingEnabled = value }
+        }
+
+    /** Receives vertical drags (brightness); null for none. Set on every image at once ([ZoomImageView.verticalDrag]). */
+    var verticalDrag: ZoomImageView.VerticalDrag? = verticalDrag
+        set(value) {
+            field = value
+            images.forEach { it.verticalDrag = value }
+        }
 
     /** Shows the current [filter] and [adjustments] on every image at once, without binding again. */
     private fun applyLook() {

@@ -1125,7 +1125,8 @@
     <string name="ai_load_light">light</string>
     <string name="ai_load_moderate">moderate</string>
     <string name="ai_load_heavy">heavy</string>
-    <string name="ai_chain_slow">Together these are slow: each page takes longer and more battery, and on a warm or slower device some may show without AI processing</string>
+    <string name="ai_chain_slow">Heat or battery saver may pause AI processing</string>
+    <string name="ai_chain_slow_heat">Heat may pause AI processing</string>
     <string name="ai_model_short_of_memory">%1$s couldn\'t open: not enough memory is free, so its pages show without it. Close other apps, then leave and reopen the reader to try it again</string>
     <string name="ai_model_does_not_open">%1$s doesn\'t run on this device, so pages show without it</string>
     <string name="ai_models_summary">%1$d downloaded, %2$s</string>

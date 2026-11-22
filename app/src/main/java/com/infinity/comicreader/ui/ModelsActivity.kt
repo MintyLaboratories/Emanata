@@ -167,20 +167,30 @@ object ModelText {
 
     /**
      * AI processing's description, then the models each default chain of [chains] runs, in
-     * order, and a warning when together one's models would run past a page's time
-     * ([AiChain.slow]) by its [loads] (its load bar's page time; else its catalog times).
+     * order, and [slowNote] when one is heavy ([AiChain.slow]) by its [loads] (its load bar's
+     * page time; else its catalog times), with battery saver named when it [saverPausesAi].
      */
     fun chains(
         context: Context,
         chains: Map<ChainKind, List<AiModel>>,
-        loads: Map<ChainKind, Long> = chains.mapValues { AiLoad.pageMs(it.value) }
+        loads: Map<ChainKind, Long> = chains.mapValues { AiLoad.pageMs(it.value) },
+        saverPausesAi: Boolean = true
     ): String {
         val lines = listOf(context.getString(R.string.pref_ai_desc)) + chains.map { (kind, chain) ->
             val names = if (chain.isEmpty()) context.getString(R.string.ai_none) else chain.joinToString(" → ") { it.name }
             context.getString(R.string.ai_chain_of, kind(context, kind), names)
         }
-        return (if (loads.values.any(AiChain::slow)) lines + context.getString(R.string.ai_chain_slow) else lines).joinToString("\n")
+        return (if (loads.values.any(AiChain::slow)) lines + slowNote(context, saverPausesAi) else lines).joinToString("\n")
     }
+
+    /**
+     * The note of a heavy chain ([AiChain.slow]): heat may pause its AI processing (the heat
+     * pause, and pages a warmer, slower device would finish past their time are skipped), and so
+     * may battery saver while the Battery settings let it pause AI ([saverPausesAi], as
+     * [com.infinity.comicreader.data.Prefs.saverAi]).
+     */
+    fun slowNote(context: Context, saverPausesAi: Boolean): String =
+        context.getString(if (saverPausesAi) R.string.ai_chain_slow else R.string.ai_chain_slow_heat)
 
     /** Who made [m], from [source], its license, where it is from and where it downloads from; then, for a conversion made for the app, what it is. */
     fun attribution(context: Context, m: AiModel, source: ModelSource): String {

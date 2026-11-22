@@ -4062,10 +4062,10 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
     private fun aiShown(): AiPicks = aiOwn() ?: AiPicks.of(prefs, aiKind())
 
     /**
-     * Shows the AI picks this book runs, each model's download state, whose picks they are and
-     * whether they run slow; following a default chain, which one and whether the book or its
-     * folder picked it. With Keep it simple on, the advanced steps show only when a model is
-     * picked there, as in Settings' summary.
+     * Shows the AI picks this book runs, each model's download state, whose picks they are, their
+     * load estimate under them and a heavy chain's note ([ModelText.slowNote]); following a
+     * default chain, which one and whether the book or its folder picked it. With Keep it simple
+     * on, the advanced steps show only when a model is picked there, as in Settings' summary.
      */
     private fun syncAi(view: View) {
         val own = aiOwn()
@@ -4103,7 +4103,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         val notes = listOfNotNull(
             hint,
             getString(R.string.ai_kind_auto_hint).takeIf { auto },
-            getString(R.string.ai_chain_slow).takeIf { running && AiChain.slow(load) }
+            ModelText.slowNote(this, prefs.saverAi).takeIf { running && AiChain.slow(load) }
         ) + if (running) refused(picks.models) else emptyList()
         view.findViewById<TextView>(R.id.sheet_ai_hint).text = notes.joinToString("\n")
     }

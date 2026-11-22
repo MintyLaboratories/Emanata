@@ -874,8 +874,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   page on the reference tablet are marked slow with their time, and are
   offered only with Keep it simple off (or once chosen), in Settings, the
   reader's sheet and Models alike. Artifact removal and descreen are advanced settings;
-  the switch's summary shows both chains, hidden steps included, and warns
-  when one's models together may run past a page's time. A chosen model
+  the switch's summary shows both chains, hidden steps included, and, when
+  one's load estimate is red, notes that heat or battery saver may pause AI
+  processing (heat alone while **Pause AI processing** is off). A chosen model
   downloads at once (a slider's level as the picker closes; a level passed
   over on the way stops what the pages shown fetched for it, deleted as the
   picker closes unless it was there or on its way before), and one cut
@@ -908,7 +909,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   the book alone; both kept with the library's data. Each book can also run
   its own models (**This book**), kept with its other data; **Default**
   follows Settings, and a change there changes that default chain. The sheet
-  shows the load estimate of the chain the book runs. Processed pages are
+  shows the load estimate of the chain the book runs under its pickers, with
+  the same note when it is red. Processed pages are
   kept on disk (up to 1 GB and a tenth of the free space, cleared by Clear
   cache).
 - **Models by page size** (Settings → AI processing, advanced): one slider

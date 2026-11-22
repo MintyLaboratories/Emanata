@@ -12,6 +12,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.google.android.material.button.MaterialButtonToggleGroup
 import com.google.android.material.materialswitch.MaterialSwitch
 import com.infinity.comicreader.R
+import com.infinity.comicreader.ai.AiLoad
 import com.infinity.comicreader.ai.AiStep
 import com.infinity.comicreader.ai.ChainKind
 import com.infinity.comicreader.ai.DownloadState
@@ -370,6 +371,35 @@ class ViewerActivityAiChoicesTest {
         val column = row.parent as ViewGroup
         assertTrue("in one column", picker.parent === column)
         assertEquals(column.indexOfChild(picker) + 1, column.indexOfChild(row))
+    }
+
+    @Test
+    fun aHeavyChainNamesHeatAndBatterySaverOnlyWhileTheBatterySettingPausesAi() {
+        val times = PageTimes.of(context)
+        times.clear()
+        try {
+            val upscale = ModelCatalog.byId(ModelCatalog.DEFAULT_UPSCALE)!!
+            prefs.aiEnabled = true
+            val sheet = ReaderSheet(open())
+            val both = context.getString(R.string.ai_chain_slow)
+            val heat = context.getString(R.string.ai_chain_slow_heat)
+            fun notes() = sheet.view<TextView>(R.id.sheet_ai_hint).text.lines()
+            assertFalse("light: no note", notes().any { it == both || it == heat })
+            // Heavy as learned on this device; each tap shows the chain again.
+            times.keep(upscale, AiLoad.HEAVY_MS + 1)
+            sheet.tap(R.id.btn_ai_manga)
+            assertTrue(notes().contains(both))
+            prefs.saverAi = false
+            sheet.tap(R.id.btn_ai_other)
+            assertTrue(notes().contains(heat))
+            assertFalse(notes().contains(both))
+            // With AI processing off the default chain does not run: no note.
+            prefs.aiEnabled = false
+            sheet.tap(R.id.btn_ai_manga)
+            assertFalse(notes().any { it == both || it == heat })
+        } finally {
+            times.clear()
+        }
     }
 
     @Test

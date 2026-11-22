@@ -438,7 +438,7 @@ class SettingsAiTest {
     }
 
     @Test
-    fun theSlowWarningFollowsTheTimesLearnedHereAsTheLoadBarDoes() {
+    fun theHeavyChainNoteFollowsTheTimesLearnedHereAndTheBatterySetting() {
         val times = PageTimes.of(context)
         times.clear()
         try {
@@ -452,10 +452,19 @@ class SettingsAiTest {
             times.keep(upscale, learned)
             val fragment = settings()
             awaitLoad(fragment.findPreference("ai_load_other")!!, learned)
-            val ai = fragment.findPreference<Preference>(Prefs.KEY_AI)!!
+            var ai = fragment.findPreference<Preference>(Prefs.KEY_AI)!!
             awaitSummary(ai, ModelText.chains(context, chains, ChainKind.entries.associateWith { learned }))
             assertTrue(ai.summary.toString().endsWith(slow))
             assertEquals(AiLoad.Level.HEAVY, AiLoad.level(learned))
+            // With battery saver set not to pause AI, only heat is named, at once and when Settings open again.
+            fragment.findPreference<TwoStatePreference>("pref_saver_ai")!!.performClick()
+            assertFalse(Prefs(context).saverAi)
+            val heat = context.getString(R.string.ai_chain_slow_heat)
+            awaitSummary(ai, ModelText.chains(context, chains, ChainKind.entries.associateWith { learned }, saverPausesAi = false))
+            ai = settings().findPreference<Preference>(Prefs.KEY_AI)!!
+            awaitSummary(ai, ModelText.chains(context, chains, ChainKind.entries.associateWith { learned }, saverPausesAi = false))
+            assertTrue(ai.summary.toString().endsWith(heat))
+            assertFalse(ai.summary.toString().contains(slow))
         } finally {
             times.clear()
         }

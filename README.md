@@ -574,7 +574,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   spinning up does not count) and counts it slow below 2 MB/s or over 1 s to
   the first byte; the share's form shows what it measured. **On slow shares,
   skip** works like the metered choices (by default: background hashing,
-  read-ahead beyond the page shown, and covers of books not on screen).
+  read-ahead beyond the page shown, and covers of books not on screen). A
+  change to either reaches an open book's read-ahead and scans at once.
 - Folder rows show "N items · M read"; a folder whose items are all read gets the
   read badge. **Continue reading** jumps to the next unfinished book in a folder,
   and a whole folder can be marked read or unread.
@@ -813,6 +814,11 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   tagged Advanced, and the one opened shows without turning anything on.
 - **Collapse all** folds every section while any is expanded; otherwise the
   same button reads **Expand all**.
+- **Changes apply at once**, also to a reader or library open under Settings:
+  each screen checks the stored settings when it shows again. Gestures change
+  on the pages shown, without building them again. Settings about opening a
+  book (resume, repack offer, large-book warning) apply to the next book
+  opened; startup settings to the next start.
 - Theme: system / light / dark.
 - Per-app language: system or English (Simplified, en-US).
 - Archive filename charset (UTF-8, CP949, Shift_JIS, GBK, Windows-1251).

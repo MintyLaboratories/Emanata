@@ -819,11 +819,13 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   on the pages shown, without building them again. Settings about opening a
   book (resume, repack offer, large-book warning) apply to the next book
   opened; startup settings to the next start. After a restore or Clear library
-  data, a book open under Settings opens again at its page with its own
+  data, a book open under Settings opens again at the page it showed, wherever
+  its hidden pages and filename charset as stored now put it, with its own
   settings as stored now; cleared favorites show cleared in its menu.
 - Theme: system / light / dark.
 - Per-app language: system or English (Simplified, en-US).
-- Archive filename charset (UTF-8, CP949, Shift_JIS, GBK, Windows-1251).
+- Archive filename charset (UTF-8, CP949, Shift_JIS, GBK, Windows-1251). An
+  open book stays on its page when the new names reorder its pages.
 - Default reading direction, layout, fit, filter, page gap.
 - Default adjustments (brightness, contrast, saturation) for every book.
 - **Linear-light scaling** (off by default): pages and covers are shrunk in

@@ -1474,6 +1474,8 @@ page is reported across its valid rounds with their spread. Unplug the cable, us
 over Wi-Fi and keep the screen on: under `dumpsys battery unplug` a charger still
 supplies power.
 
+`ArchiveCheckService` (debug and bench builds, shell only) times reading archives by the app's reader for the format (junrar for RAR) against libarchive, which CMake builds from its pinned release into `libarchivejni.so` (RAR 4 and 5, 7z and ZIP; not used by the reader yet): opening and listing, the first page, pages in a fixed pseudo-random order, every entry in order, CPU time, peak native and Java heap, and energy per page on battery (`sustain`). It also checks that both return the same bytes, and reads a ZIP and a 7z it makes through libarchive. See its KDoc.
+
 `AiCheckService` (debug and bench builds, shell only) runs an ncnn model end to end
 on synthetic pages: how it opens (measuring, checks, tile size, precision), seams
 against one tile covering a whole page on the CPU in fp32, GPU against CPU, time per

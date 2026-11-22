@@ -818,7 +818,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   each screen checks the stored settings when it shows again. Gestures change
   on the pages shown, without building them again. Settings about opening a
   book (resume, repack offer, large-book warning) apply to the next book
-  opened; startup settings to the next start.
+  opened; startup settings to the next start. After a restore or Clear library
+  data, a book open under Settings opens again at its page with its own
+  settings as stored now; cleared favorites show cleared in its menu.
 - Theme: system / light / dark.
 - Per-app language: system or English (Simplified, en-US).
 - Archive filename charset (UTF-8, CP949, Shift_JIS, GBK, Windows-1251).

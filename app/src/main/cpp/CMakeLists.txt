@@ -6,7 +6,8 @@
 # arm64) or the GPU (OpenGL ES 3.1 compute) (resample*.c), then optionally sharpened by
 # RCAS (rcas*.c); AI page processing: ncnn
 # with Vulkan, built from its pinned release, in a library of its own loaded only when
-# used (ai_ncnn.cpp), and mpv-style hook shaders on OpenGL ES 3 (shader_gles.c).
+# used (ai_ncnn.cpp), and mpv-style hook shaders on OpenGL ES 3 (shader_gles.c); archive
+# reading: libarchive, in a library of its own (archive_jni.c, Libarchive.cmake).
 cmake_minimum_required(VERSION 3.22)
 
 # Optimized native code in every app build type: an unoptimized AV1 decoder takes
@@ -18,6 +19,7 @@ project(avifjni C CXX ASM)
 include(FetchContent)
 include(Dav1d.cmake)
 include(Ncnn.cmake)
+include(Libarchive.cmake)
 
 FetchContent_Declare(
     libavif

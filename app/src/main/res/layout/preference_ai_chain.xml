@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- A default AI chain's header: its name, what it is for, and its load estimate bar. -->
+<!-- A default AI chain's header: its name and what it is for. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
@@ -22,6 +22,4 @@
         android:layout_height="wrap_content"
         android:textAppearance="?attr/textAppearanceBodyMedium"
         android:textColor="?android:attr/textColorSecondary" />
-
-    <include layout="@layout/view_ai_load" />
 </LinearLayout>

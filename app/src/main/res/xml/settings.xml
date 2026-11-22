@@ -357,7 +357,7 @@
             app:summary="@string/pref_ai_desc"
             app:title="@string/pref_ai" />
         <!--
-          Two default chains, each a header with its load estimate and a picker per step: a book runs one (ChainKind)
+          Two default chains, each a header, a picker per step, then its load estimate: a book runs one (ChainKind)
           unless it has its own.
           Entries come from the model catalog; only choices are stored, no defaults (SettingsFragment).
         -->
@@ -386,6 +386,9 @@
             app:dependency="pref_ai"
             app:key="pref_ai_manga_upscale"
             app:title="@string/pref_ai_upscale" />
+        <com.infinity.comicreader.ui.AiLoadPreference
+            app:dependency="pref_ai"
+            app:key="ai_load_manga" />
         <com.infinity.comicreader.ui.AiChainPreference
             app:dependency="pref_ai"
             app:key="ai_chain_other"
@@ -411,6 +414,9 @@
             app:dependency="pref_ai"
             app:key="pref_ai_upscale"
             app:title="@string/pref_ai_upscale" />
+        <com.infinity.comicreader.ui.AiLoadPreference
+            app:dependency="pref_ai"
+            app:key="ai_load_other" />
         <!-- Stores Prefs.aiThresholds itself, under two keys. -->
         <com.infinity.comicreader.ui.AiSizePreference
             app:dependency="pref_ai"

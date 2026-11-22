@@ -734,8 +734,8 @@ class SettingsFragment : PreferenceFragmentCompat() {
     /** A default chain's picker of one step, in Settings. */
     private data class AiPicker(val kind: ChainKind, val step: AiStep, val pref: ListPreference)
 
-    /** The key of [kind]'s header ([AiChainPreference]). */
-    private fun chainKey(kind: ChainKind) = "ai_chain_${kind.key}"
+    /** The key of [kind]'s load estimate under its pickers ([AiLoadPreference]). */
+    private fun loadKey(kind: ChainKind) = "ai_load_${kind.key}"
 
     /**
      * Fills each default chain's AI step choices (none, then the catalog's models with their
@@ -807,7 +807,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 ChainKind.entries.associateWith { AiLoad.pageMs(AiPicks.of(prefs, it).models, times::estimate) }
             }
             if (!isAdded) return
-            for ((kind, ms) in loads) findPreference<AiChainPreference>(chainKey(kind))?.pageMs = ms
+            for ((kind, ms) in loads) findPreference<AiLoadPreference>(loadKey(kind))?.pageMs = ms
             // Keep it simple hides the size slider: sizes set away from the defaults show here instead.
             val sizes = if (prefs.keepSimple) AiSizeText.changed(context, prefs.aiThresholds) else null
             val chains = ChainKind.entries.associateWith { AiChain.chosen(prefs, it) }

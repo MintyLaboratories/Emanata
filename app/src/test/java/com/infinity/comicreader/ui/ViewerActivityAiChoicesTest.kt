@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Intent
 import android.os.Looper
 import android.view.View
+import android.view.ViewGroup
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.preference.PreferenceManager
@@ -359,6 +360,16 @@ class ViewerActivityAiChoicesTest {
         sheet.tap(R.id.btn_ai_book)
         assertEquals(0L, bar.pageMs)
         assertTrue("the book's own runs", bar.isEnabled)
+    }
+
+    @Test
+    fun theLoadBarSitsUnderTheModelPickers() {
+        val sheet = ReaderSheet(open())
+        val row = sheet.view<AiLoadBar>(R.id.ai_load_bar).parent as View
+        val picker = sheet.view<View>(R.id.sheet_ai_upscale)
+        val column = row.parent as ViewGroup
+        assertTrue("in one column", picker.parent === column)
+        assertEquals(column.indexOfChild(picker) + 1, column.indexOfChild(row))
     }
 
     @Test

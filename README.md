@@ -844,7 +844,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   and black-and-white without dots), each a model per step, or none, for
   artifact removal, then descreening, then upscaling (waifu2x UpConv7 2× by
   default in both; only a choice is stored, so a step never chosen follows a
-  later default). Under each chain's name a load estimate bar sums its
+  later default). Under each chain's pickers a load estimate bar sums its
   models' page times (this device's as the reader measured them, each page
   moving a model's time a quarter of the way; a model not run yet takes the
   reference tablet's time scaled by how the measured ones of its engine,

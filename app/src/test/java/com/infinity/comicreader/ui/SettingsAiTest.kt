@@ -405,7 +405,7 @@ class SettingsAiTest {
     }
 
     /** Waits for [pref]'s bar to show [expected]: it is set once the store is read off the main thread. */
-    private fun awaitLoad(pref: AiChainPreference, expected: Long) {
+    private fun awaitLoad(pref: AiLoadPreference, expected: Long) {
         idleUntil("the bar at $expected ms a page") { pref.pageMs == expected }
         assertEquals(expected, pref.pageMs)
     }
@@ -417,8 +417,8 @@ class SettingsAiTest {
         try {
             val upscale = ModelCatalog.byId(ModelCatalog.DEFAULT_UPSCALE)!!
             val fragment = settings()
-            val manga = fragment.findPreference<AiChainPreference>("ai_chain_manga")!!
-            val other = fragment.findPreference<AiChainPreference>("ai_chain_other")!!
+            val manga = fragment.findPreference<AiLoadPreference>("ai_load_manga")!!
+            val other = fragment.findPreference<AiLoadPreference>("ai_load_other")!!
             awaitLoad(manga, upscale.pageMs)
             awaitLoad(other, upscale.pageMs)
             // A model picked for manga weighs on manga's bar alone.
@@ -430,8 +430,8 @@ class SettingsAiTest {
             // A time learned here replaces the catalog's, and scales the times of models not learned yet alike.
             times.keep(upscale, 1_234)
             val again = settings()
-            awaitLoad(again.findPreference("ai_chain_other")!!, 1_234)
-            awaitLoad(again.findPreference("ai_chain_manga")!!, Math.round(descreen.pageMs * 1_234.0 / upscale.pageMs) + 1_234)
+            awaitLoad(again.findPreference("ai_load_other")!!, 1_234)
+            awaitLoad(again.findPreference("ai_load_manga")!!, Math.round(descreen.pageMs * 1_234.0 / upscale.pageMs) + 1_234)
         } finally {
             times.clear()
         }
@@ -451,7 +451,7 @@ class SettingsAiTest {
             val learned = AiLoad.HEAVY_MS + 1
             times.keep(upscale, learned)
             val fragment = settings()
-            awaitLoad(fragment.findPreference("ai_chain_other")!!, learned)
+            awaitLoad(fragment.findPreference("ai_load_other")!!, learned)
             val ai = fragment.findPreference<Preference>(Prefs.KEY_AI)!!
             awaitSummary(ai, ModelText.chains(context, chains, ChainKind.entries.associateWith { learned }))
             assertTrue(ai.summary.toString().endsWith(slow))
@@ -483,9 +483,9 @@ class SettingsAiTest {
             val g = fragment.preferenceScreen.getPreference(i) as? androidx.preference.PreferenceGroup ?: return@flatMap emptyList()
             (0 until g.preferenceCount).map { g.getPreference(it).key }
         }
-        // Manga first, then everything else, each header above its steps.
-        val order = listOf("ai_chain_manga") + AiStep.entries.map { Prefs.aiKey(it, ChainKind.MANGA) } +
-            "ai_chain_other" + AiStep.entries.map { Prefs.aiKey(it, ChainKind.OTHER) }
+        // Manga first, then everything else, each header above its steps and its load estimate under them, as in the reader's sheet.
+        val order = listOf("ai_chain_manga") + AiStep.entries.map { Prefs.aiKey(it, ChainKind.MANGA) } + "ai_load_manga" +
+            "ai_chain_other" + AiStep.entries.map { Prefs.aiKey(it, ChainKind.OTHER) } + "ai_load_other"
         assertEquals(order, keys.filter { it in order })
         assertEquals(context.getString(R.string.ai_chain_manga), fragment.findPreference<Preference>("ai_chain_manga")!!.title.toString())
         assertEquals(context.getString(R.string.ai_chain_other), fragment.findPreference<Preference>("ai_chain_other")!!.title.toString())

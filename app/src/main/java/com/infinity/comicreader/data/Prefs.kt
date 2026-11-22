@@ -642,9 +642,17 @@ class Prefs(context: Context) {
             else -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
         }
 
-    /** The caller must hold [listener] strongly: SharedPreferences keeps only a weak reference. */
-    fun registerListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) =
+    /**
+     * Listeners given to [registerListener], held here while this Prefs lives: SharedPreferences
+     * keeps only weak references, and R8 removes a caller's field read only where it registers.
+     */
+    private val listeners = mutableSetOf<SharedPreferences.OnSharedPreferenceChangeListener>()
+
+    /** Calls [listener] on each change of the main preferences while this Prefs lives. */
+    fun registerListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) {
+        listeners += listener
         sp.registerOnSharedPreferenceChangeListener(listener)
+    }
 
     fun reset() {
         val e = sp.edit()

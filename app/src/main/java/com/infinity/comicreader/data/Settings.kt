@@ -4,7 +4,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.content.SharedPreferences
 import android.os.PowerManager
 import androidx.core.content.ContextCompat
 import com.infinity.comicreader.ai.AiPicks
@@ -198,9 +197,6 @@ class SettingsRepository internal constructor(private val app: Context) {
         NetPolicy.rules = prefs.netRules
     }
 
-    // Held in a field: SharedPreferences references its listeners only weakly.
-    private val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> publish() }
-
     private val saverReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             val now = Thrift.saving(app)
@@ -212,7 +208,7 @@ class SettingsRepository internal constructor(private val app: Context) {
 
     init {
         holdBackShares()
-        prefs.registerListener(listener)
+        prefs.registerListener { _, _ -> publish() }
         // A protected broadcast: only the system sends it.
         ContextCompat.registerReceiver(
             app, saverReceiver, IntentFilter(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED), ContextCompat.RECEIVER_EXPORTED

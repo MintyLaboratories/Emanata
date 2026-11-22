@@ -778,6 +778,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   going back on a chapter's first page (swipe, tap zone, volume key) shows
   *Swipe back again for the previous chapter*; the last one within 1.5 s of
   the one before opens the previous chapter at its last page or spread.
+- **One-page files** (a loose image, or a one-page archive) read as pictures of their folder, whatever the two settings above: no end-of-chapter card, one turn forward opens the next file, one back opens the previous file.
 - Bookmarks per page (toolbar ribbon button, filled on a bookmarked page), plus a
   bookmark list to jump between them.
 - **Favorites ▸** adds the open comic, or the folder it is in, to the favorites,

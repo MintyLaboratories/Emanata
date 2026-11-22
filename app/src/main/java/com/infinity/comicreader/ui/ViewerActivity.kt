@@ -1955,6 +1955,8 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         handler.removeCallbacks(releaseScans)
         handler.postDelayed(releaseScans, SCAN_HOLD_MS)
         attach()
+        // Come back to from the next chapter, a tall last page shows from its bottom, as one turned back to.
+        if (requested == LAST_PAGE) adapter?.landTall(currentItem, atBottom = true)
         prepareStripAhead()
         judgeTall()
 

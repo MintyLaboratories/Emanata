@@ -254,6 +254,47 @@ class ViewerActivityTallTest {
         assertEquals(bottom, top, 1f)
     }
 
+    private fun ViewerActivity.back() {
+        onKeyDown(KeyEvent.KEYCODE_VOLUME_DOWN, KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_VOLUME_DOWN))
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(400))
+    }
+
+    @Test
+    fun aBookComeBackToFromTheNextOneShowsItsTallLastPageFromItsBottom() {
+        val viewer = launch(book("Mixed 06.cbz", listOf(140, 140, 1000)), page = Int.MAX_VALUE)
+        val pager = viewer.findViewById<ViewPager2>(R.id.viewer_pager)
+        idleUntil("the last page shown, no question") { asked() == null && pager.currentItem == 2 && viewer.shownImage().drawable != null }
+        val (top, bottom) = viewer.shownTop()
+        assertEquals(bottom, top, 1f)
+    }
+
+    // File decodes run on API 27, where the host decodes them (through BitmapFactory).
+    @Test
+    @Config(sdk = [27])
+    fun aTallLooseImageComeBackToShowsItsBottomAndGoesBackFurtherOnlyFromItsTop() {
+        prefs.volumeKeys = true
+        // Mostly short images: the folder is not asked about.
+        val images = listOf(140, 1000, 140).mapIndexed { i, h -> File(dir, "img${i + 1}.png").apply { writeBytes(TestImages.png(100, h)) } }
+        val viewer = launch(images[1], page = Int.MAX_VALUE)
+        idleUntil("the image shown, no question") { asked() == null && viewer.shownImage().drawable != null }
+        val (top, bottom) = viewer.shownTop()
+        assertEquals(bottom, top, 1f)
+        // Back scrolls it up a screen at a time; only a back made at its top opens the image before it.
+        var presses = 0
+        var topBefore = top
+        var opened: Intent? = null
+        while (opened == null && presses < 50) {
+            topBefore = viewer.shownTop().first
+            viewer.back()
+            presses++
+            opened = shadowOf(viewer).nextStartedActivity
+        }
+        assertEquals(images[0].absolutePath, opened?.getStringExtra(ViewerActivity.EXTRA_PATH))
+        assertEquals(Int.MAX_VALUE, opened?.getIntExtra(ViewerActivity.EXTRA_PAGE, -1))
+        assertEquals(0f, topBefore, 0.5f)
+        assertTrue("$presses presses", presses > 3)
+    }
+
     @Test
     fun aTallPageKeptAsideLandsAtItsBottomSwipedBackAndItsTopSwipedOn() {
         // Opened on the tall page, which stays bound off screen while the next one shows.

@@ -133,4 +133,24 @@ class ViewerActivityFavoritesTest {
         viewer.click(R.id.menu_favorite_folder)
         assertFalse(library.isFavoriteFolder(book.parent!!))
     }
+
+    @Test
+    fun favoritesClearedInSettingsShowClearedOnReturn() {
+        library.toggleFavorite(book)
+        library.toggleFavoriteFolder(book.parent!!)
+        val intent = Intent(context, ViewerActivity::class.java).putExtra(ViewerActivity.EXTRA_PATH, book.absolutePath)
+        val c = Robolectric.buildActivity(ViewerActivity::class.java, intent).setup()
+        val progress = c.get().findViewById<View>(R.id.viewer_progress)
+        idleUntil("the book open") { progress.visibility != View.VISIBLE }
+        assertTrue(c.get().checked(R.id.menu_favorite))
+        assertTrue(c.get().checked(R.id.menu_favorite_folder))
+        // Settings on top of the reader.
+        c.pause().stop()
+        library.clearFavorites()
+        c.start().resume()
+        idle()
+        assertFalse(c.get().checked(R.id.menu_favorite))
+        assertFalse(c.get().checked(R.id.menu_favorite_folder))
+        c.pause().stop().destroy()
+    }
 }

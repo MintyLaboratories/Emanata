@@ -850,6 +850,12 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
             libraryGeneration = Library.generation
             if (source != null || openJob?.isActive == true) reopen(save = false)
         }
+        // Favorites cleared meanwhile (Settings): the menu shows them as stored now.
+        if (source != null) {
+            val favorites = favoriteBook to favoriteFolder
+            refreshFavorites()
+            if ((favoriteBook to favoriteFolder) != favorites) invalidateOptionsMenu()
+        }
         watchUpright()
         // Thresholds moved in Settings: the pages shown go through the models their sizes call for now.
         if (readerAi.thresholdsMoved()) adapter?.aiChanged()

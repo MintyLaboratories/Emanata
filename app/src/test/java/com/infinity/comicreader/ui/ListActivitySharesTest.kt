@@ -6,13 +6,16 @@ import android.Manifest
 import android.app.Application
 import android.os.Environment
 import android.view.View
+import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
+import androidx.coordinatorlayout.widget.CoordinatorLayout
 import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
 import com.google.android.material.button.MaterialButtonToggleGroup
+import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.textfield.TextInputLayout
 import com.infinity.comicreader.R
 import com.infinity.comicreader.testing.idleUntil
@@ -120,6 +123,21 @@ class ListActivitySharesTest {
         }
     }
 
+    /** Counts the notes [activity] puts up from now on, in the layout its notes go to. */
+    private fun notesPutUp(activity: ListActivity): () -> Int {
+        var parent: View = activity.findViewById(R.id.recycler)
+        while (parent !is CoordinatorLayout && parent.id != android.R.id.content) parent = parent.parent as View
+        var added = 0
+        (parent as ViewGroup).setOnHierarchyChangeListener(object : ViewGroup.OnHierarchyChangeListener {
+            override fun onChildViewAdded(parent: View, child: View) {
+                if (child is Snackbar.SnackbarLayout) added++
+            }
+
+            override fun onChildViewRemoved(parent: View, child: View) = Unit
+        })
+        return { added }
+    }
+
     private fun sheetList(): LinearLayout = ShadowDialog.getLatestDialog().findViewById(R.id.locations_list)
 
     private fun openSheet(activity: ListActivity) {
@@ -182,6 +200,7 @@ class ListActivitySharesTest {
         Metered.probe = { Metered.Link(connected = true, notMetered = false, activeMetered = true) }
         Metered.forget()
         val activity = launch()
+        val notes = notesPutUp(activity)
         openSheet(activity)
         row("Share A").performClick()
         idle()
@@ -191,6 +210,8 @@ class ListActivitySharesTest {
         assertEquals(0L, fake.bytesRead)
         val note = activity.findViewById<TextView>(com.google.android.material.R.id.snackbar_text)
         assertEquals(activity.getString(R.string.facts_metered), note?.text?.toString())
+        // Said once, though the folder was listed again once its subfolders were counted.
+        assertEquals(1, notes())
 
         // Unmetered, the next listing reads them.
         Metered.probe = { Metered.Link(connected = true, notMetered = true, activeMetered = false) }

@@ -281,11 +281,11 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
     private var keptNote: Snackbar? = null
 
     /**
-     * The last note on share books held back from the facts ([showFactsNote]). Held here:
+     * The last note on share books held back from the facts ([showFactsNote]), with why. Held here:
      * Material keeps a note waiting behind another only weakly, so one nothing holds can be
      * collected before it shows.
      */
-    private var factsNote: Snackbar? = null
+    private var factsNote: Pair<NetPolicy.Why, Snackbar>? = null
 
     private var currentDir: File? = null
 
@@ -1820,13 +1820,6 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
         }
     }
 
-    /** Says share books were held back from [scheduleFacts] for [why], holding the note as [factsNote]. */
-    private fun showFactsNote(why: NetPolicy.Why) {
-        val note = Snackbar.make(recycler, if (why == NetPolicy.Why.METERED) R.string.facts_metered else R.string.facts_slow, Snackbar.LENGTH_LONG)
-        factsNote = note
-        note.show()
-    }
-
     /**
      * Waits for the screen to be started, marking the calling job as [factsGated] meanwhile.
      * Started, it returns at once on the main thread, so the mark shows only while it waits.
@@ -1839,6 +1832,17 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
         } finally {
             if (factsGated === job) factsGated = null
         }
+    }
+
+    /**
+     * Says share books were held back from [scheduleFacts] for [why], unless that note already
+     * shows or waits to: a share folder listed again, as once its subfolders are counted, ends in it again.
+     */
+    private fun showFactsNote(why: NetPolicy.Why) {
+        factsNote?.let { (said, note) -> if (said == why && note.isShownOrQueued) return }
+        val note = Snackbar.make(recycler, if (why == NetPolicy.Why.METERED) R.string.facts_metered else R.string.facts_slow, Snackbar.LENGTH_LONG)
+        factsNote = why to note
+        note.show()
     }
 
     /** Waits while battery saver pauses background scans ([com.infinity.comicreader.data.Thrift.pausedScans]). */

@@ -71,7 +71,7 @@ class ListActivityStackTest {
 
     /** True once the screen waits on nothing but the test: listed, favorites classified, facts read, presence asked, its menu looked into. */
     private fun ListActivity.quiet() =
-        listJob?.isCompleted == true && listOf(classifyJob, factsJob, presenceJob, moreLook).none { it?.isActive == true }
+        listJob?.isCompleted == true && listOf(classifyJob, factsJob, presenceJob, moreLook).none { it?.isCompleted == false }
 
     /** Runs the main looper until the screen is quiet. */
     private fun ListActivity.settle() = idleUntil("the library screen quiet") { quiet() }

@@ -93,8 +93,8 @@ class ListActivitySharesTest {
 
     /** True once the screen waits on nothing but the test: listed, favorites classified, facts read, presence asked, its menu looked into, free space told, covers settled. */
     private fun ListActivity.quiet() =
-        listJob?.isCompleted == true && listOf(classifyJob, factsJob, presenceJob, moreLook).none { it?.isActive == true } &&
-            locations?.spaceJobs?.none { it.isActive } != false &&
+        listJob?.isCompleted == true && listOf(classifyJob, factsJob, presenceJob, moreLook).none { it?.isCompleted == false } &&
+            locations?.spaceJobs?.none { !it.isCompleted } != false &&
             (findViewById<RecyclerView>(R.id.recycler).adapter as? BookAdapter)?.coversBusy != true
 
     /** The screen [launch] started. */

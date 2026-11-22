@@ -401,6 +401,8 @@ class ArchiveCheckService : Service() {
         val comment = "Emanata archive check"
         val zip = File(dir, "check.zip").also { ArchiveRuns.writeZip(it, entries, comment) }
         val sevenZ = File(dir, "check.7z").also { ArchiveRuns.write7z(it, entries) }
+        // Whether libarchive read the commented ZIP whole by every route.
+        var zipRead = true
         for (archive in listOf(zip, sevenZ)) {
             for (via in Via.entries) {
                 val line = JSONObject().put("selftest", archive.extension).put("via", via.key)
@@ -420,12 +422,13 @@ class ArchiveCheckService : Service() {
                 } catch (t: Throwable) {
                     line.put("ok", false).put("error", "${t.javaClass.simpleName}: ${t.message}")
                 }
+                if (archive == zip && !line.optBoolean("ok")) zipRead = false
                 log(line)
             }
         }
         val javaComment = runCatching { ZipFile(zip).use { it.comment } }.getOrNull()
         log(
-            JSONObject().put("zipComment", JSONObject().put("written", javaComment == comment).put("libarchiveReadsArchive", true)
+            JSONObject().put("zipComment", JSONObject().put("written", javaComment == comment).put("libarchiveReadsArchive", zipRead)
                 .put("libarchiveApi", false).put("note", "libarchive has no call that returns or writes a ZIP archive comment"))
         )
     }

@@ -6,6 +6,7 @@ import android.graphics.Color
 import android.net.Uri
 import android.os.Looper
 import android.os.SystemClock
+import android.util.Size
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.ImageView
@@ -101,8 +102,13 @@ class ModelImportPreviewTest {
     private fun preview(): AlertDialog? =
         (ShadowDialog.getLatestDialog() as? AlertDialog)?.takeIf { it.isShowing && it.findViewById<LinearLayout>(R.id.import_preview_list) != null }
 
-    /** The model manager open, with a model checked: its before and after shown. */
-    private fun previewed(): Pair<ImportState.Fit, AlertDialog> {
+    /** The model manager open, with a model of [scale] checked: its before and after shown. */
+    private fun previewed(scale: Int = 2): Pair<ImportState.Fit, AlertDialog> {
+        if (scale != 2) {
+            val now = AtomicLong()
+            ModelImports.clock = now::get
+            ModelImports.runtime = FakeRuntime(gpu = null, make = { onGpu, _ -> FakeModel(scale = scale, onGpu = onGpu, onRun = { now.addAndGet(100) }) })
+        }
         manager = Robolectric.buildActivity(ModelsActivity::class.java).setup()
         ModelImports.start(context, pair("Sharp lines"))
         idleUntil("the checked model's before and after") { (ModelImports.state.value as? ImportState.Fit)?.previewing == true && preview() != null }
@@ -133,6 +139,56 @@ class ModelImportPreviewTest {
         }
         assertEquals(context.getString(R.string.ai_import_preview_next), dialog.getButton(AlertDialog.BUTTON_POSITIVE).text.toString())
         assertEquals(context.getString(R.string.ai_import_discard), dialog.getButton(AlertDialog.BUTTON_NEGATIVE).text.toString())
+    }
+
+    /** The sizes of the before and after of each of [dialog]'s test pictures, laid out. */
+    private fun shownSides(dialog: AlertDialog): List<Pair<Size, Size>> {
+        val list = dialog.findViewById<LinearLayout>(R.id.import_preview_list)!!
+        return (1 until list.childCount).map { i ->
+            val row = list.getChildAt(i)
+            fun size(id: Int) = row.findViewById<ImageView>(id).let { Size(it.width, it.height) }
+            size(R.id.import_preview_before) to size(R.id.import_preview_after)
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "w924dp-h1480dp-xhdpi")
+    fun onATabletA4xModelsAfterShowsAtItsOwnSizeAndTheBeforeMatchesIt() {
+        val (fit, dialog) = previewed(scale = 4)
+        assertEquals(4, fit.scale)
+        idle()
+        for ((p, sides) in fit.previews.zip(shownSides(dialog))) {
+            val own = Size(p.after.width, p.after.height)
+            assertEquals("4x the before", p.before.width * 4, own.width)
+            assertEquals("the after never shrunk", own, sides.second)
+            assertEquals("the before at the same size", own, sides.first)
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "w280dp-h1480dp-xhdpi")
+    fun inA280dpWindowTheStackedBeforeAndAfterShowAtTheSameSize() {
+        val (fit, dialog) = previewed(scale = 4)
+        idle()
+        val sides = shownSides(dialog)
+        assertEquals(fit.previews.size, sides.size)
+        for ((before, after) in sides) {
+            assertEquals(before, after)
+            assertEquals(before.width, before.height)
+            assertTrue("fitted to the window: ${before.width}", before.width in 1 until fit.previews[0].after.width)
+        }
+    }
+
+    @Test
+    fun beforeAndAfterShowAtTheSameSizeAtEveryWidth() {
+        for (width in 100..1100 step 7) {
+            val pair = measuredPair(512, width)
+            val before = pair.findViewById<ImageView>(R.id.import_preview_before)
+            val after = pair.findViewById<ImageView>(R.id.import_preview_after)
+            assertEquals("width $width", before.width, after.width)
+            assertEquals("width $width", before.height, after.height)
+            assertEquals("width $width", minOf(512, width), after.width)
+        }
     }
 
     @Test
@@ -237,7 +293,7 @@ class ModelImportPreviewTest {
         assertEquals(LinearLayout.VERTICAL, narrow.orientation)
         for (id in listOf(R.id.import_preview_before, R.id.import_preview_after)) {
             val image = narrow.findViewById<ImageView>(id)
-            assertTrue("${image.width}", image.width in 200 - gap..200)
+            assertEquals(200, image.width)
             assertEquals(image.width, image.height)
         }
         // Laid out again wider, the same row goes side by side.

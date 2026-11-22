@@ -50,6 +50,8 @@ class HiddenPagesTest {
         assertArrayEquals(intArrayOf(4, 1), src.pageSize(2))
         assertNull(src.pageName(3))
         assertEquals(4, HiddenPages.bookIndex(src, 2))
+        // Book pages 1 2 4 shown as 0 1 2; a hidden one reads as the next page shown.
+        assertEquals(listOf(0, 0, 1, 2, 2), (0 until 5).map { HiddenPages.shownIndex(src, it) })
         assertEquals(5, HiddenPages.bookCount(src))
         src.close()
         assertTrue(inner.closed)
@@ -64,6 +66,7 @@ class HiddenPagesTest {
         // Hiding every page would leave none: all of them show.
         assertSame(inner, HiddenPages.wrap(inner, setOf(0, 1, 2)))
         assertEquals(2, HiddenPages.bookIndex(inner, 2))
+        assertEquals(2, HiddenPages.shownIndex(inner, 2))
     }
 
     @Test

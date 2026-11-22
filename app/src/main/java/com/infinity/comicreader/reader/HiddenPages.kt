@@ -41,6 +41,9 @@ object HiddenPages {
     /** The book index of [source]'s page [index]: through a [HidingSource], else [index] itself. */
     fun bookIndex(source: PageSource?, index: Int): Int = (source as? HidingSource)?.bookIndex(index) ?: index
 
+    /** [source]'s index of book page [page]: through a [HidingSource], the next shown page's when it is hidden; else [page] itself. */
+    fun shownIndex(source: PageSource?, page: Int): Int = (source as? HidingSource)?.shownIndex(page) ?: page
+
     /**
      * What the seams across hidden pages of book [bookId] are kept by ([StoredPages]):
      * [bookId] itself unless pages are hidden, so stored values never land on other pages.
@@ -60,6 +63,9 @@ class HidingSource(val inner: PageSource, private val shown: IntArray) : PageSou
 
     /** The book index of page [index]. */
     fun bookIndex(index: Int): Int = shown[index]
+
+    /** The index of book page [page], or of the next page shown when it is hidden. */
+    fun shownIndex(page: Int): Int = shown.count { it < page }
 
     /** The book indices shown, as text. */
     val shownKey: String get() = shown.joinToString(",")

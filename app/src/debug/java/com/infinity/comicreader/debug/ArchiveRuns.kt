@@ -68,16 +68,20 @@ internal object ArchiveRuns {
         val same: Boolean get() = onlyA == 0 && onlyB == 0 && sizeDiffers == 0 && sameOrder
     }
 
+    /** [path] with `/` as the only separator: junrar keeps RAR's `\`, libarchive turns it into `/`. */
+    fun key(path: String): String = path.replace('\\', '/')
+
+    /** Compares by [key], so the same file under either separator counts as one. */
     fun compare(a: List<ArchiveEntry>, b: List<ArchiveEntry>): ListingDiff {
-        val bySizeA = a.associate { it.path to it.size }
-        val bySizeB = b.associate { it.path to it.size }
-        val shared = a.map { it.path }.filter { it in bySizeB }
+        val bySizeA = a.associate { key(it.path) to it.size }
+        val bySizeB = b.associate { key(it.path) to it.size }
+        val shared = a.map { key(it.path) }.filter { it in bySizeB }
         val sizeDiffers = shared.count { bySizeA[it] != bySizeB[it] }
         return ListingDiff(
-            onlyA = a.count { it.path !in bySizeB },
-            onlyB = b.count { it.path !in bySizeA },
+            onlyA = a.count { key(it.path) !in bySizeB },
+            onlyB = b.count { key(it.path) !in bySizeA },
             sizeDiffers = sizeDiffers,
-            sameOrder = shared == b.map { it.path }.filter { it in bySizeA }
+            sameOrder = shared == b.map { key(it.path) }.filter { it in bySizeA }
         )
     }
 

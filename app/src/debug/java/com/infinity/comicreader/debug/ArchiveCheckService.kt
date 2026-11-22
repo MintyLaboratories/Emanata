@@ -318,12 +318,12 @@ class ArchiveCheckService : Service() {
                         "listing", JSONObject().put("same", diff.same).put("onlyCurrent", diff.onlyA).put("onlyLibarchive", diff.onlyB)
                             .put("sizeDiffers", diff.sizeDiffers).put("sameOrder", diff.sameOrder)
                     )
-                    val byPath = b.entries.associateBy { it.path }
+                    val byPath = b.entries.associateBy { ArchiveRuns.key(it.path) }
                     var same = 0
                     var failed = 0
                     val differs = ArrayList<Int>()
                     for (entry in a.entries.sortedBy { it.index }) {
-                        val other = byPath[entry.path] ?: continue
+                        val other = byPath[ArchiveRuns.key(entry.path)] ?: continue
                         val x = runCatching { bytes(a, entry) }.getOrNull()
                         val y = runCatching { bytes(b, other) }.getOrNull()
                         when {

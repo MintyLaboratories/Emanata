@@ -59,6 +59,14 @@ class ArchiveRunsTest {
     }
 
     @Test
+    fun listingsMatchAcrossPathSeparators() {
+        val junrar = listOf(entry("book\\1.jpg", 5), entry("book\\2.jpg", 6))
+        val libarchive = listOf(entry("book/1.jpg", 5), entry("book/2.jpg", 6))
+        assertEquals(ListingDiff(0, 0, 0, true), ArchiveRuns.compare(junrar, libarchive))
+        assertEquals(ListingDiff(1, 1, 0, true), ArchiveRuns.compare(junrar, listOf(entry("other/1.jpg", 5), entry("book/2.jpg", 6))))
+    }
+
+    @Test
     fun enginesAndViasReadByKey() {
         assertEquals(Engine.CURRENT, Engine.of("junrar"))
         assertEquals(Engine.CURRENT, Engine.of(" Current "))

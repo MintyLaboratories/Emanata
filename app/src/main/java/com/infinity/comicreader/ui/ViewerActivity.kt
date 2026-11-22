@@ -105,6 +105,7 @@ import com.infinity.comicreader.data.SpreadOverrides
 import com.infinity.comicreader.data.StorageRoot
 import com.infinity.comicreader.data.StorageRoots
 import com.infinity.comicreader.net.NetPolicy
+import com.infinity.comicreader.net.NetRules
 import com.infinity.comicreader.net.NetWork
 import com.infinity.comicreader.net.RemoteCache
 import com.infinity.comicreader.net.RemoteException
@@ -1104,15 +1105,18 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         if (s.aiDot != old.aiDot) aiDot.enabled = s.aiDot
         // Pages put off for battery saver go on at once once it lets them.
         if (old.thrift.pausedAi && !s.thrift.pausedAi) adapter?.aiWake()
-        if (s.thrift.pausedScans != old.thrift.pausedScans || s.netRules != old.netRules) {
-            // Paused, the scans under way stop; resumed, or no longer skipped on a share, they go on from the page on screen.
-            if (s.thrift.pausedScans) {
+        // Whether the skip choices hold back the open book's share scans, before and now.
+        val book = file
+        val wasHeld = book != null && sharedHeld(book, old.netRules)
+        val held = book != null && sharedHeld(book, s.netRules)
+        if (s.thrift.pausedScans != old.thrift.pausedScans || held != wasHeld) {
+            // Paused or held back, the scans under way stop; resumed or let go, they go on from the page on screen.
+            if (s.thrift.pausedScans || held) {
                 sizesJob?.cancel()
                 seamsJob?.cancel()
                 seamsJob = null
             } else {
                 val src = source
-                val book = file
                 if (src != null && book != null) scanSizes(book, src)
             }
             checkSeams()
@@ -2016,7 +2020,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
      * True for [book] on a share while background reads of it are held back, on a metered connection
      * or a slow share ([NetPolicy], [NetWork.OTHER]): they wait.
      */
-    private fun sharedHeld(book: File): Boolean = book is RemoteFile && !NetPolicy.mayAt(NetWork.OTHER, book.path)
+    private fun sharedHeld(book: File, rules: NetRules = NetPolicy.rules): Boolean = book is RemoteFile && !NetPolicy.mayAt(NetWork.OTHER, book.path, rules)
 
     /**
      * Reads the sizes [book]'s pages lack from their headers, in the background and from

@@ -129,16 +129,16 @@ object NetPolicy {
         }
     }
 
-    /** Why [work] on share [shareId] (none: not on a share) is held back now; null when it may run. */
-    fun whyNot(work: NetWork, shareId: String? = null): Why? =
+    /** Why [work] on share [shareId] (none: not on a share) is held back now, under [rules]; null when it may run. */
+    fun whyNot(work: NetWork, shareId: String? = null, rules: NetRules = this.rules): Why? =
         why(work, Metered.now() == Metered.Verdict.METERED, shareId != null && ShareSpeeds.slow(shareId), rules)
 
     /** True when [work] on share [shareId] may run now ([whyNot]). */
     fun may(work: NetWork, shareId: String? = null): Boolean = whyNot(work, shareId) == null
 
-    /** Why [work] on the file at [path] is held back now; null when it may run, always for one on the device. */
-    fun whyNotAt(work: NetWork, path: String): Why? = Remotes.idOf(path)?.let { whyNot(work, it) }
+    /** Why [work] on the file at [path] is held back now, under [rules]; null when it may run, always for one on the device. */
+    fun whyNotAt(work: NetWork, path: String, rules: NetRules = this.rules): Why? = Remotes.idOf(path)?.let { whyNot(work, it, rules) }
 
-    /** True when [work] on the file at [path] may run now ([whyNotAt]). */
-    fun mayAt(work: NetWork, path: String): Boolean = whyNotAt(work, path) == null
+    /** True when [work] on the file at [path] may run now under [rules] ([whyNotAt]). */
+    fun mayAt(work: NetWork, path: String, rules: NetRules = this.rules): Boolean = whyNotAt(work, path, rules) == null
 }

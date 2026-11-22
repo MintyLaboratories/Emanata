@@ -15,12 +15,14 @@ import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ResumeMode
 import com.infinity.comicreader.data.TwoPage
 import com.infinity.comicreader.net.FakeRemoteFs
+import com.infinity.comicreader.net.NetSkip
 import com.infinity.comicreader.net.RemoteChannel
 import com.infinity.comicreader.net.Remotes
 import com.infinity.comicreader.net.ShareSpeed
 import com.infinity.comicreader.reader.Fixtures
 import com.infinity.comicreader.testing.Waits
 import com.infinity.comicreader.testing.idleUntil
+import kotlinx.coroutines.Job
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -80,17 +82,18 @@ class ViewerActivityShareWaitTest {
         RemoteChannel.thrifty = false
     }
 
-    private fun noise(w: Int, h: Int, seed: Int): ByteArray {
+    private fun noise(w: Int, h: Int, seed: Int, jpeg: Boolean = false): ByteArray {
         val random = Random(seed)
         val bitmap = Bitmap.createBitmap(IntArray(w * h) { (0xFF shl 24) or random.nextInt(0x1000000) }, w, h, Bitmap.Config.ARGB_8888)
-        return ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
+        val format = if (jpeg) Bitmap.CompressFormat.JPEG else Bitmap.CompressFormat.PNG
+        return ByteArrayOutputStream().also { bitmap.compress(format, 100, it) }.toByteArray()
     }
 
     private fun idleFor(ms: Long) = shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(ms))
 
-    private fun launch(): ViewerActivity {
+    private fun launch(path: String = "/net/s1/Tale 001.cbz"): ViewerActivity {
         val intent = Intent(ApplicationProvider.getApplicationContext(), ViewerActivity::class.java)
-            .putExtra(ViewerActivity.EXTRA_PATH, "/net/s1/Tale 001.cbz")
+            .putExtra(ViewerActivity.EXTRA_PATH, path)
         return Robolectric.buildActivity(ViewerActivity::class.java, intent).setup().get()
     }
 
@@ -157,6 +160,29 @@ class ViewerActivityShareWaitTest {
         assertTrue(ahead() > 0)
         // The pages now read ahead are in before the share goes.
         idleUntil("the pages read ahead") { !viewer.busy }
+    }
+
+    /** The open book's seam scan, if any. */
+    private fun ViewerActivity.seamsJob(): Job? =
+        ViewerActivity::class.java.getDeclaredField("seamsJob").apply { isAccessible = true }.get(this) as Job?
+
+    @Test
+    fun skippingEverythingOnSlowSharesStopsTheSeamScanUnderWay() {
+        // JPEG pages, read for their sides alone: the seam scan reads them from the share ahead of the reader.
+        val pages = (0 until 31).map { i -> Fixtures.entry("Tale 002-%03d.jpg".format(i), noise(160, 240, i, jpeg = true)) }
+        val book = Fixtures.zip(File(tmp.root, "share/Tale 002.cbz"), *pages.toTypedArray())
+        Remotes.serve(listOf(FakeRemoteFs.share().copy(speed = ShareSpeed.SLOW))) { fake }
+        // Reads of the later pages wait until the test ends.
+        fake.slowReads = book.length() * 3 / 5 until book.length() - 256 * 1024
+        fake.slow = CountDownLatch(1)
+        val viewer = launch("/net/s1/Tale 002.cbz")
+        // Scans start once the first page is drawn: a frame's time passes each round.
+        idleUntil("a seam scan waiting on the share", step = { idleFor(16) }) { viewer.seamsJob()?.isActive == true && fake.held.get() > 0 }
+        val scan = viewer.seamsJob()!!
+        val prefs = Prefs(ApplicationProvider.getApplicationContext())
+        prefs.slowSkip = prefs.slowSkip + NetSkip.ANY
+        shadowOf(Looper.getMainLooper()).idle()
+        assertTrue("the seam scan still reads the share", scan.isCancelled)
     }
 
     @Test

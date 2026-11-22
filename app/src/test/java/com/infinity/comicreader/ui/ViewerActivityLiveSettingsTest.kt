@@ -3,8 +3,12 @@ package com.infinity.comicreader.ui
 import android.app.Application
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.os.Looper
+import android.os.SystemClock
+import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.ViewGroup
 import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.RecyclerView
@@ -32,7 +36,10 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.android.controller.ActivityController
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.time.Duration
 
 /**
  * Settings changed while the reader is open apply to it without recreating it: changed
@@ -69,9 +76,19 @@ class ViewerActivityLiveSettingsTest {
 
     private fun idle() = shadowOf(Looper.getMainLooper()).idle()
 
-    private fun launch(): ActivityController<ViewerActivity> {
-        val pages = (0 until 3).map { Fixtures.entry("p%02d.png".format(it), byteArrayOf(0)) }
-        val book = Fixtures.zip(File(tmp.newFolder("shelf"), "Book A.cbz"), *pages.toTypedArray())
+    /** A book of three pages; [real] ones decode (with native graphics), others are a byte each. */
+    private fun book(real: Boolean = false): File {
+        val pages = (0 until 3).map { i ->
+            val bytes = if (!real) byteArrayOf(0) else {
+                val bitmap = Bitmap.createBitmap(IntArray(300 * 450) { (0xFF shl 24) or (i * 40 shl 8) or (it % 300) }, 300, 450, Bitmap.Config.ARGB_8888)
+                ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
+            }
+            Fixtures.entry("p%02d.png".format(i), bytes)
+        }
+        return Fixtures.zip(File(tmp.newFolder("shelf"), "Book A.cbz"), *pages.toTypedArray())
+    }
+
+    private fun launch(book: File = book()): ActivityController<ViewerActivity> {
         val intent = Intent(context, ViewerActivity::class.java).putExtra(ViewerActivity.EXTRA_PATH, book.absolutePath)
         val c = Robolectric.buildActivity(ViewerActivity::class.java, intent).setup()
         controller = c
@@ -115,10 +132,54 @@ class ViewerActivityLiveSettingsTest {
     @Test
     fun doubleTapChangedInSettingsAppliesOnReturnEachWay() {
         val c = launch()
+        val adapter = c.get().pageAdapter
         c.away { prefs.doubleTapZoom = false }
+        assertSame(adapter, c.get().pageAdapter)
         assertFalse(c.get().pages().any { it.doubleTapEnabled })
         c.away { prefs.doubleTapZoom = true }
+        assertSame(adapter, c.get().pageAdapter)
         assertTrue(c.get().pages().all { it.doubleTapEnabled })
+    }
+
+    /** The page image of the page shown. */
+    private fun ViewerActivity.shownPage(): ZoomImageView {
+        val pager = findViewById<ViewPager2>(R.id.viewer_pager)
+        val holder = (pager.getChildAt(0) as RecyclerView).findViewHolderForAdapterPosition(pager.currentItem)
+        assertNotNull("the page shown has a view", holder)
+        return descendants(holder!!.itemView).filterIsInstance<ZoomImageView>().first()
+    }
+
+    /** Two quick taps in the middle of [page], then past the wait for a third: all the pair does is done. */
+    private fun doubleTap(page: ZoomImageView) {
+        val x = page.width / 2f
+        val y = page.height / 2f
+        fun tap() {
+            val t = SystemClock.uptimeMillis()
+            page.dispatchTouchEvent(MotionEvent.obtain(t, t, MotionEvent.ACTION_DOWN, x, y, 0))
+            page.dispatchTouchEvent(MotionEvent.obtain(t, t + 60, MotionEvent.ACTION_UP, x, y, 0))
+        }
+        tap()
+        // The second down 90 ms after the first lift: a double tap (40 ms at least).
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(150))
+        tap()
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(ViewConfiguration.getDoubleTapTimeout() + 100L))
+    }
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun doubleTapTurnedOffInSettingsNoLongerZoomsAndOnAgainDoes() {
+        val c = launch(book(real = true))
+        val adapter = c.get().pageAdapter
+        idleUntil("the page shown decoded") { c.get().shownPage().let { it.drawable != null && it.width > 0 } }
+        c.away { prefs.doubleTapZoom = false }
+        val page = c.get().shownPage()
+        doubleTap(page)
+        assertFalse("double-tap zoomed while turned off", page.isZoomed)
+        c.away { prefs.doubleTapZoom = true }
+        assertSame(page, c.get().shownPage())
+        doubleTap(page)
+        assertTrue("double-tap did not zoom once turned on again", page.isZoomed)
+        assertSame(adapter, c.get().pageAdapter)
     }
 
     @Test

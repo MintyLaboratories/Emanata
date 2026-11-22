@@ -4,10 +4,13 @@ import android.app.Application
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
+import android.graphics.Insets
+import android.graphics.Rect
 import android.os.Looper
 import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.View
+import android.view.WindowInsets
 import android.widget.TextView
 import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.RecyclerView
@@ -227,6 +230,62 @@ class ViewerActivityWideImageTest {
         val (x, y) = dotAt(viewer)
         assertTrue("right, $x", x > root.width / 2)
         assertTrue("top, below the toolbar: $y", y < root.height / 2 && y >= toolbar.bottom)
+    }
+
+    /** [view]'s left, top, right and bottom in its window, as drawn (its translation included). */
+    private fun inWindow(view: View): Rect {
+        val at = IntArray(2).also(view::getLocationInWindow)
+        return Rect(at[0], at[1], at[0] + view.width, at[1] + view.height)
+    }
+
+    @Test
+    fun onATurnedPageTheAiDotKeepsClearOfTheStatusBarAndTheReadersBars() {
+        val status = 60
+        val navigation = 48
+        for (left in listOf(false, true)) {
+            prefs.aiDot = true
+            prefs.leftHanded = left
+            val viewer = launch()
+            val root = viewer.findViewById<View>(R.id.viewer_root)
+            val toolbar = viewer.findViewById<View>(R.id.viewer_toolbar)
+            val bar = viewer.findViewById<View>(R.id.viewer_bottom)
+            val dot = viewer.findViewById<View>(R.id.ai_dot)
+            val margin = viewer.resources.getDimensionPixelSize(R.dimen.ai_dot_margin)
+            // The system bars show: the window fits them, so the reader starts below the status bar.
+            val insets = WindowInsets.Builder()
+                .setInsets(WindowInsets.Type.statusBars(), Insets.of(0, status, 0, 0))
+                .setInsets(WindowInsets.Type.navigationBars(), Insets.of(0, 0, 0, navigation))
+                .build()
+            viewer.window.decorView.dispatchApplyWindowInsets(insets)
+            viewer.window.decorView.requestLayout()
+            idle()
+            assertEquals(status, inWindow(root).top)
+            repeat(2) { viewer.next() }
+            assertEquals(if (left) -1 else 1, viewer.turnOf())
+            val window = root.rootView
+            for (barsShown in listOf(true, false)) {
+                val case = "left-handed $left, bars shown $barsShown"
+                if (!barsShown) {
+                    // A tap in the middle hides the reader's bars.
+                    viewer.tap(0.5f, 0.5f)
+                    idleUntil("the bars hidden") { toolbar.visibility == View.GONE && bar.visibility == View.GONE }
+                }
+                assertEquals(case, status, inWindow(root).top)
+                val at = inWindow(dot)
+                val toolbarBottom = inWindow(toolbar).bottom
+                if (left) {
+                    // The window's top right: below the toolbar while it shows, else below the status bar.
+                    assertEquals(case, if (barsShown) toolbarBottom + margin else status + margin, at.top)
+                    assertEquals(case, window.width - margin, at.right)
+                    assertTrue("$case: ${at.top} not below the toolbar's bottom $toolbarBottom", !barsShown || at.top >= toolbarBottom)
+                } else {
+                    // The window's bottom left: above the bottom bar while it shows, else above the navigation bar.
+                    assertEquals(case, if (barsShown) inWindow(bar).top - margin else window.height - navigation - margin, at.bottom)
+                    assertEquals(case, margin, at.left)
+                    assertTrue("$case: ${at.top} not below the toolbar's bottom $toolbarBottom", at.top > toolbarBottom)
+                }
+            }
+        }
     }
 
     @Test

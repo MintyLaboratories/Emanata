@@ -278,6 +278,13 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
     /** Says a share's kept listing shows because the share failed, with Retry; gone with the next listing. */
     private var keptNote: Snackbar? = null
 
+    /**
+     * The last note on share books held back from the facts ([showFactsNote]). Held here:
+     * Material keeps a note waiting behind another only weakly, so one nothing holds can be
+     * collected before it shows.
+     */
+    private var factsNote: Snackbar? = null
+
     private var currentDir: File? = null
 
     /** The deepest folder of the branch browsed, shown as forward crumbs past [currentDir]. */
@@ -1801,8 +1808,15 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
                 folderSizes[f.path] = withContext(AppDispatchers.io) { FolderSize.total(f.file) { isActive } }
             }
             if (folders.isNotEmpty()) applyFilterAndSort()
-            held?.let { Snackbar.make(recycler, if (it == NetPolicy.Why.METERED) R.string.facts_metered else R.string.facts_slow, Snackbar.LENGTH_LONG).show() }
+            held?.let { showFactsNote(it) }
         }
+    }
+
+    /** Says share books were held back from [scheduleFacts] for [why], holding the note as [factsNote]. */
+    private fun showFactsNote(why: NetPolicy.Why) {
+        val note = Snackbar.make(recycler, if (why == NetPolicy.Why.METERED) R.string.facts_metered else R.string.facts_slow, Snackbar.LENGTH_LONG)
+        factsNote = note
+        note.show()
     }
 
     /** Waits while battery saver pauses background scans ([com.infinity.comicreader.data.Thrift.pausedScans]). */

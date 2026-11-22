@@ -136,9 +136,11 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.sync.Semaphore
@@ -357,6 +359,12 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
 
     /** What [factsJob] covers while it runs. */
     private var factsWork: FactsWork? = null
+
+    /** The facts job waiting at [awaitStartedForFacts], if any. */
+    private var factsGated: Job? = null
+
+    /** True while [factsJob] waits for the screen to be started; tests wait for it. */
+    internal val factsAwaitingStart get() = factsGated?.isActive == true
 
     /** Counts listings shown, so background work knows which one it serves. */
     private var listing = 0
@@ -1775,7 +1783,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
             // Why share books were held back: metered wins over slow.
             var held: NetPolicy.Why? = null
             for ((i, e) in books.withIndex()) {
-                withStarted {}
+                awaitStartedForFacts()
                 awaitScans()
                 val why = if (Remotes.isRemote(e.path)) withContext(AppDispatchers.io) { NetPolicy.whyNotAt(NetWork.OTHER, e.path) } else null
                 if (why != null) {
@@ -1798,7 +1806,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
             // Facts read before the books skipped last show too.
             if (held != null) applyFilterAndSort(resort = false)
             for (f in folders) {
-                withStarted {}
+                awaitStartedForFacts()
                 awaitScans()
                 val why = if (Remotes.isRemote(f.path)) withContext(AppDispatchers.io) { NetPolicy.whyNotAt(NetWork.OTHER, f.path) } else null
                 if (why != null) {
@@ -1817,6 +1825,20 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
         val note = Snackbar.make(recycler, if (why == NetPolicy.Why.METERED) R.string.facts_metered else R.string.facts_slow, Snackbar.LENGTH_LONG)
         factsNote = note
         note.show()
+    }
+
+    /**
+     * Waits for the screen to be started, marking the calling job as [factsGated] meanwhile.
+     * Started, it returns at once on the main thread, so the mark shows only while it waits.
+     */
+    private suspend fun awaitStartedForFacts() {
+        val job = currentCoroutineContext().job
+        factsGated = job
+        try {
+            withStarted {}
+        } finally {
+            if (factsGated === job) factsGated = null
+        }
     }
 
     /** Waits while battery saver pauses background scans ([com.infinity.comicreader.data.Thrift.pausedScans]). */

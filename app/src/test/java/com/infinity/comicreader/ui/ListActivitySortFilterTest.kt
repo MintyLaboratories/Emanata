@@ -134,15 +134,15 @@ class ListActivitySortFilterTest {
         prefs.setSort(Prefs.TAB_BROWSE, TabSort(SortLevel(SortKey.LENGTH)))
         // Created but not yet in sight, as under a book opened over it.
         val controller = Robolectric.buildActivity(ListActivity::class.java).create()
-        // Facts are read only once the library is started: nothing can be read before.
-        // With no I/O step of its own running, the facts job can only be held at the started gate.
+        // Facts are read only once the library is started. The facts job reads no book
+        // before its first started gate, and waits there, suspended, until started.
         val a = controller.get()
-        idleUntil("facts held until started") { a.listJob?.isCompleted == true && a.factsJob?.isActive == true && a.factsJob!!.children.none() }
+        idleUntil("facts held until started") { a.factsAwaitingStart }
         fun counted(): Int {
             val cache = BookFactsCache(ApplicationProvider.getApplicationContext()).apply { load() }
             return books.count { cache.get(bookId(it))?.pages == 2 }
         }
-        assertTrue("read ${counted()} while out of sight", counted() < books.size)
+        assertEquals("read while out of sight", 0, counted())
         controller.start().resume()
         controller.get().settle()
         assertEquals(books.size, counted())

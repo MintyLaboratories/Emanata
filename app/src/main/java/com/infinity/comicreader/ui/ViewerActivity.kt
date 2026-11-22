@@ -197,6 +197,9 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
     /** Pages the adapter decodes ahead ([pagesAhead] as it was built). */
     private var shownAhead = 0
 
+    /** The [Library.generation] the open book's own settings were read in. */
+    private var libraryGeneration = Library.generation
+
     private lateinit var pager: ViewPager2
     private lateinit var vertical: RecyclerView
     private lateinit var toolbar: Toolbar
@@ -762,11 +765,13 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
      * Opens the current chapter again: at the current page, or while it is still
      * opening, at the page it was asked for.
      */
-    private fun reopen() {
+    private fun reopen(save: Boolean = true) {
         if (source != null) intent.putExtra(EXTRA_PAGE, currentIndex)
         stopAutoScroll()
-        flushStats()
-        saveHistory()
+        if (save) {
+            flushStats()
+            saveHistory()
+        }
         openJob?.cancel()
         closeSource()
         endDismissed = false
@@ -839,6 +844,12 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         checkStorage()
         updateShareWait()
         started = true
+        // The library was restored or cleared meanwhile (Settings): the book opens again at the
+        // page shown, with its own settings as stored now, and nothing from before is written over them.
+        if (Library.generation != libraryGeneration) {
+            libraryGeneration = Library.generation
+            if (source != null || openJob?.isActive == true) reopen(save = false)
+        }
         watchUpright()
         // Thresholds moved in Settings: the pages shown go through the models their sizes call for now.
         if (readerAi.thresholdsMoved()) adapter?.aiChanged()

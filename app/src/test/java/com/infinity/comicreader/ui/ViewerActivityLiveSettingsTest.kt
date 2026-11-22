@@ -16,11 +16,13 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.viewpager2.widget.ViewPager2
 import com.infinity.comicreader.R
 import com.infinity.comicreader.ai.OfflineDownloads
+import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ResumeMode
 import com.infinity.comicreader.reader.Fixtures
 import com.infinity.comicreader.testing.idleUntil
 import com.infinity.comicreader.testing.muteSettingsFeed
+import com.infinity.comicreader.testing.ref
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -295,5 +297,34 @@ class ViewerActivityLiveSettingsTest {
         assertSame(adapter, c.get().pageAdapter)
         assertEquals(ZoomImageView.FitMode.WIDTH, adapter.fitMode)
         assertFalse(c.get().pages().any { it.doubleTapEnabled })
+    }
+
+    // ---------------------------------------------------------------- the library replaced
+
+    @Test
+    fun aLibraryClearedInSettingsDropsTheOpenBooksOwnSettingsOnReturn() {
+        val book = book()
+        Library(context).setHiddenPages(ref(book), setOf(1), 3)
+        val c = launch(book)
+        assertEquals(2, c.get().pageAdapter!!.itemCount)
+        c.away { Library(context).clearLibraryData() }
+        idleUntil("the book open again") { c.get().openSettled() }
+        assertEquals(3, c.get().pageAdapter!!.itemCount)
+        // The book's own settings stay cleared.
+        assertTrue(Library(context).hiddenPages(ref(book).id).isEmpty())
+    }
+
+    @Test
+    fun aLibraryRestoredInSettingsGivesTheOpenBookItsRestoredSettingsOnReturn() {
+        val book = book()
+        val library = Library(context)
+        library.setHiddenPages(ref(book), setOf(1), 3)
+        val backup = library.exportAll()
+        library.setHiddenPages(ref(book), emptySet(), 3)
+        val c = launch(book)
+        assertEquals(3, c.get().pageAdapter!!.itemCount)
+        c.away { Library(context).importAll(backup) }
+        idleUntil("the book open again") { c.get().openSettled() }
+        assertEquals(2, c.get().pageAdapter!!.itemCount)
     }
 }

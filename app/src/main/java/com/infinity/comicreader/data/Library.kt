@@ -1117,6 +1117,7 @@ class Library(context: Context) {
             for (k in BOOK_OBJECT_KEYS + FOLDER_KEYS) e.putString(k, "{}")
             e.apply()
             publishNameCharsets()
+            generation++
         }
     }
 
@@ -1158,6 +1159,7 @@ class Library(context: Context) {
             for (k in OBJECT_KEYS) data.optJSONObject(k)?.let { e.putString(k, sanitizeObject(k, it).toString()) }
             e.apply()
             publishNameCharsets()
+            generation++
         }
     }
 
@@ -1351,6 +1353,11 @@ class Library(context: Context) {
         )
 
         private val LOCK = Any()
+
+        /** Counts replacements of the whole library ([importAll], [clearLibraryData]): screens holding books' data from before read it again. */
+        @Volatile
+        var generation = 0
+            private set
 
         private fun tokenOf(id: BookId) = BOOK_TOKEN + id.hex
 

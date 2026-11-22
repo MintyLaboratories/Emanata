@@ -12,7 +12,7 @@ import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
 /** Reads a rar/cbr archive, RAR4 or RAR5 (via junrar); [owned] closes with it. */
-class RarReader private constructor(private val archive: Archive, private val owned: Closeable?) : ArchiveReader {
+class RarReader internal constructor(private val archive: Archive, private val owned: Closeable?) : ArchiveReader {
     constructor(file: File) : this(Archive(file), null)
 
     private val native: List<FileHeader>

@@ -38,9 +38,9 @@ internal object ArchiveRuns {
         }
     }
 
-    /** The pages a reader shows, in its order: image entries by natural order of their paths. */
-    fun pages(entries: List<ArchiveEntry>): List<ArchiveEntry> =
-        entries.filter { Formats.isImageName(it.path) }.sortedWith(compareBy(NaturalOrder) { it.path })
+    /** The pages a reader shows, in its order: image entries (every entry if [anyEntry]) by natural order of their paths. */
+    fun pages(entries: List<ArchiveEntry>, anyEntry: Boolean = false): List<ArchiveEntry> =
+        entries.filter { anyEntry || Formats.isImageName(it.path) }.sortedWith(compareBy(NaturalOrder) { it.path })
 
     /**
      * [take] distinct indexes below [count] in a pseudo-random order fixed by [seed], the same on

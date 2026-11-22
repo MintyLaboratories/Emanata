@@ -42,7 +42,7 @@ import kotlin.concurrent.thread
  *
  * `adb shell am start-foreground-service -n <package>/com.infinity.comicreader.debug.ArchiveCheckService
  *  [--es do time,verify,sustain,selftest,scan|all] [--es paths /path/a.cbr,/path/b.cbr] [--es engines junrar,libarchive]
- *  [--es via file|channel|both] [--ei rounds 3] [--ei random 20] [--el seed 1] [--ez warmup true]
+ *  [--es via file|channel|both] [--ei rounds 3] [--ei random 20] [--el seed 1] [--ez warmup true] [--es pages images|all]
  *  [--ei seconds 60] [--ei energyRounds 2] [--ei cooldown 30] [--ei idle 5] [--es dir /path --ei depth 3]`
  *
  * Archives are `paths`, named in the log by their place in it (`a1`, `a2`...). `via`: the
@@ -53,11 +53,11 @@ import kotlin.concurrent.thread
  * - time (default): per archive and `via`, a warm-up run per engine, then `rounds` interleaved
  *   (A B, B A...), each one line: `openMs` (opening and listing), `firstPageMs` (that plus the
  *   first page in the reader's order), `random` (`random` pages in an order fixed by `seed`,
- *   the same for both engines), `sequential` (every entry in archive order on a new reader,
+ *   the same for both engines; each page's ms in `eachMs`, by `order`), `sequential` (every entry in archive order on a new reader,
  *   as a solid archive streams), process CPU time per step, the peak native heap and Java heap
  *   in use above the start (sampled every 5 ms), and the conditions (`valid` from a bench
  *   build with the app in front: see ResampleCheckService). Bytes are read as the app reads a
- *   page (`BitmapUtils.readCapped`).
+ *   page (`BitmapUtils.readCapped`). `pages all` counts every entry as a page, not only images.
  * - verify (default): both engines' listings compared (paths, sizes, order) and every entry's
  *   bytes; mismatched entries by index (`firstDiffers`).
  * - sustain (not in all): energy per page on battery alone ([EnergyMeter], as
@@ -83,6 +83,7 @@ class ArchiveCheckService : Service() {
         val random: Int,
         val seed: Long,
         val warmup: Boolean,
+        val anyEntry: Boolean,
         val energy: Energy
     )
 
@@ -102,6 +103,7 @@ class ArchiveCheckService : Service() {
             intent?.getIntExtra("random", 20)?.coerceIn(1, 1000) ?: 20,
             intent?.getLongExtra("seed", 1L) ?: 1L,
             intent?.getBooleanExtra("warmup", true) ?: true,
+            intent?.getStringExtra("pages") == "all",
             Energy(
                 intent?.getIntExtra("seconds", 60)?.coerceIn(3, 600) ?: 60, intent?.getIntExtra("energyRounds", 2)?.coerceIn(1, 20) ?: 2,
                 intent?.getIntExtra("cooldown", 30)?.coerceIn(0, 600) ?: 30, intent?.getIntExtra("idle", 5)?.coerceIn(1, 600) ?: 5
@@ -212,7 +214,7 @@ class ArchiveCheckService : Service() {
                         .put("bytes", reader.entries.sumOf { it.size.coerceAtLeast(0) })
                         .put("openMs", ms(openNs)).put("openCpuMs", openCpu)
                     (reader as? LibArchiveReader)?.let { line.put("format", it.format ?: JSONObject.NULL) }
-                    val pages = ArchiveRuns.pages(reader.entries)
+                    val pages = ArchiveRuns.pages(reader.entries, plan.anyEntry)
                     line.put("pages", pages.size)
                     if (pages.isEmpty()) throw IllegalStateException("no pages")
                     step = "firstPage"
@@ -230,7 +232,7 @@ class ArchiveCheckService : Service() {
                     }
                     line.put(
                         "random", JSONObject().put("pages", order.size).put("ms", ms(System.nanoTime() - r0)).put("cpuMs", Process.getElapsedCpuTime() - rc0)
-                            .put("perPage", spread(each))
+                            .put("perPage", spread(each)).put("order", JSONArray(order)).put("eachMs", JSONArray(each))
                     )
                 }
                 step = "sequential"

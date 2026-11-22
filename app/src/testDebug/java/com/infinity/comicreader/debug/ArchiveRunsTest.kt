@@ -44,6 +44,7 @@ class ArchiveRunsTest {
     fun pagesAreImagesInNaturalOrder() {
         val entries = listOf(entry("10.jpg"), entry("notes.txt"), entry("9.png"), entry("b/1.webp"), entry("a/2.JPG"))
         assertEquals(listOf("9.png", "10.jpg", "a/2.JPG", "b/1.webp"), ArchiveRuns.pages(entries).map { it.path })
+        assertEquals(listOf("9.png", "10.jpg", "a/2.JPG", "b/1.webp", "notes.txt"), ArchiveRuns.pages(entries, anyEntry = true).map { it.path })
     }
 
     @Test

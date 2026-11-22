@@ -610,7 +610,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         readerAi = ReaderAi.of(this)
         setContentView(R.layout.activity_viewer)
         bindViews()
-        applied = settings.reader.value
+        applied = settings.readerNow()
         loadPrefs()
         // A recreated reader (theme or language change) continues where it was, turned as it was.
         spreadRotation.restore(savedInstanceState?.getIntArray(STATE_ROTATION))
@@ -731,10 +731,11 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         }
 
         // Changes made while the reader is stopped (the settings screen sits on top
-        // of it) arrive when it starts again.
+        // of it) arrive when it starts again. Each start, and each change, is checked
+        // against the stored settings, so a change the feed did not bring is not missed.
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                settings.reader.collect { applySettings(it) }
+                settings.reader.collect { applySettings(settings.readerNow()) }
             }
         }
         open()

@@ -418,7 +418,7 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
             // A list shown before the facts were in sorts again with them.
             if (allEntries.isNotEmpty()) applyFilterAndSort()
         }
-        applied = settings.list.value
+        applied = settings.listNow()
         setContentView(R.layout.activity_list)
 
         toolbar = findViewById(R.id.toolbar)
@@ -518,10 +518,11 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
         storageWatcher = StorageWatcher(this) { refreshRoots() }
 
         // Settings changed here, in the settings screen or anywhere else apply live;
-        // changes made while this screen was stopped arrive when it starts again.
+        // changes made while this screen was stopped arrive when it starts again,
+        // checked against the stored settings rather than what the feed last brought.
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                settings.list.collect { applySettings(it) }
+                settings.list.collect { applySettings(settings.listNow()) }
             }
         }
         // Covers on screen are made again when the cover text detector's model arrives.

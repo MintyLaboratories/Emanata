@@ -185,6 +185,12 @@ class SettingsRepository internal constructor(private val app: Context) {
     /** What battery saver holds back now. */
     val thrift: Thrift get() = _reader.value.thrift
 
+    /** The library settings as stored now, whatever [list] last published. */
+    fun listNow(): ListSettings = ListSettings.from(prefs, saving)
+
+    /** The reader settings as stored now, whatever [reader] last published. */
+    fun readerNow(): ReaderSettings = ReaderSettings.from(prefs, saving)
+
     private fun publish() {
         _list.value = ListSettings.from(prefs, saving)
         _reader.value = ReaderSettings.from(prefs, saving)

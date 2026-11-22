@@ -401,7 +401,9 @@ class ZoomImageView @JvmOverloads constructor(
     /**
      * Shows [bitmap], the shown page at another size, where the page shows now and as
      * large, its zoom over the fitted scale kept: a decode made for a new fit or view size
-     * takes over from the bitmap standing in for it without a jump. Unzoomed, it lands at
+     * takes over from the bitmap standing in for it without a jump; a page showing its
+     * bottom (or right) end keeps showing it, though the stand-in's shape differs by a few
+     * pixels. Unzoomed, it lands at
      * its fitted scale, 1:1 for a bitmap decoded for the view. [detail] serves its settled
      * zooms; a detail tile already drawn stays until the next settle replaces it.
      */
@@ -425,6 +427,9 @@ class ZoomImageView @JvmOverloads constructor(
         val oldScaleY = values[Matrix.MSCALE_Y]
         val transX = values[Matrix.MTRANS_X]
         val transY = values[Matrix.MTRANS_Y]
+        // A page showing its right or bottom end (one landed at its bottom) keeps that end in place.
+        val atRight = pinnedToEnd(transX, contentW() * oldScaleX, viewW)
+        val atBottom = pinnedToEnd(transY, contentH() * oldScaleY, viewH)
         val zoom = (currentScale / minScale).takeIf { it > 1f + ONE_TO_ONE } ?: 1f
         clearShaders(pageShaders)
         keepGeometry = true
@@ -451,13 +456,19 @@ class ZoomImageView @JvmOverloads constructor(
             scaleX = currentScale
             scaleY = currentScale
         }
-        // The page's top-left corner stays put; the tile follows the page's new pixels.
+        // The page's top-left corner stays put, or the end it shows; the tile follows the page's new pixels.
+        val newX = if (atRight) (viewW - w * scaleX).roundToInt().toFloat() else transX
+        val newY = if (atBottom) (viewH - h * scaleY).roundToInt().toFloat() else transY
         matrix.setScale(scaleX, scaleY)
-        matrix.postTranslate(transX, transY)
+        matrix.postTranslate(newX, newY)
         detailMatrix.postScale(oldScaleX / scaleX, oldScaleY / scaleY)
         clamp()
         applyMatrix()
     }
+
+    /** True when a page [shown] long, offset by [trans], overhangs a [view] long one and its far end sits at the view's far edge. */
+    private fun pinnedToEnd(trans: Float, shown: Float, view: Float): Boolean =
+        shown > view + 0.5f && abs(trans + shown - view) <= 0.5f
 
     internal fun zoomTo(target: Float, focusX: Float, focusY: Float) {
         stopFling()

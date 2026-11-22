@@ -432,6 +432,35 @@ class ZoomImageViewTest {
     }
 
     @Test
+    fun aSwappedBitmapKeepsAPageLandedAtItsBottomAtItsBottom() {
+        // A preview a little shorter than the page, landed at its bottom as a page turned back to.
+        val v = view(320, 470, 100, 985, ZoomImageView.FitMode.WIDTH)
+        v.startAtBottom = true
+        v.fit()
+        assertEquals(470f - 3152f, values(v)[Matrix.MTRANS_Y], 0.5f)
+
+        v.swapBitmap(Bitmap.createBitmap(100, 1000, Bitmap.Config.ARGB_8888), null)
+        val m = values(v)
+        assertEquals(3.2f, m[Matrix.MSCALE_Y], 1e-4f)
+        assertEquals(470f - 3200f, m[Matrix.MTRANS_Y], 0f)
+        pass(50)
+        assertEquals(470f - 3200f, values(v)[Matrix.MTRANS_Y], 0f)
+    }
+
+    @Test
+    fun aSwappedBitmapKeepsAZoomedPagePannedToItsRightEndThere() {
+        val v = view(400, 600, 300, 600, ZoomImageView.FitMode.SCREEN)
+        v.zoomTo(2f, 400f, 0f)
+        assertEquals(400f - 600f, values(v)[Matrix.MTRANS_X], 0.5f)
+
+        // The same page a few pixels wider for its height.
+        v.swapBitmap(Bitmap.createBitmap(306, 600, Bitmap.Config.ARGB_8888), null)
+        val m = values(v)
+        assertEquals(2f, m[Matrix.MSCALE_X], 1e-4f)
+        assertEquals(400f - 612f, m[Matrix.MTRANS_X], 0f)
+    }
+
+    @Test
     fun aSwapKeepsTheZoomAndTheDetailTile() {
         val (v, detail) = zoomedWithDetail()
         pass(160)

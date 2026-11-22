@@ -2958,10 +2958,16 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
     /**
      * A "previous page" action on the chapter's first page: counted toward "Previous
      * chapter on repeated back", which hints at the next one needed, or opens the
-     * previous chapter at its last page (its last spread in two-page mode).
+     * previous chapter at its last page (its last spread in two-page mode). A one-page
+     * book ([onePage]) opens the previous one at the first back, whatever the setting.
      */
     private fun backAtStart() {
         val prev = prevChapter() ?: return
+        if (onePage()) {
+            hideHintNow()
+            openChapter(prev, LAST_PAGE)
+            return
+        }
         when (repeatedBack.back(SystemClock.uptimeMillis(), prefs.prevChapterBacks)) {
             RepeatedBack.Result.IGNORED -> Unit
             RepeatedBack.Result.HINT -> showHint(getString(R.string.hint_prev_chapter), RepeatedBack.WINDOW_MS)

@@ -34,7 +34,7 @@ import java.util.zip.ZipOutputStream
 
 /**
  * A one-page book, as a loose image is, reads as one picture of its folder: no end card,
- * and one turn forward opens the next file, whatever the settings.
+ * one turn forward opens the next file and one back the previous, whatever the settings.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -92,7 +92,14 @@ class ViewerActivityOnePageTest {
         idle()
     }
 
+    private fun ViewerActivity.back() {
+        findViewById<View>(R.id.btn_prev_page).performClick()
+        idle()
+    }
+
     private fun ViewerActivity.cardShown() = findViewById<View>(R.id.viewer_end).visibility == View.VISIBLE
+
+    private fun ViewerActivity.hintShown() = findViewById<View>(R.id.viewer_hint).visibility == View.VISIBLE
 
     private fun ViewerActivity.opened(): Intent? = shadowOf(this).nextStartedActivity
 
@@ -177,6 +184,49 @@ class ViewerActivityOnePageTest {
         val viewer = launch(images[2])
         viewer.next()
         assertOpens(after, 0, viewer.opened())
+    }
+
+    @Test
+    fun oneBackOpensThePreviousFileAtItsEnd() {
+        val viewer = launch(images[1])
+        viewer.back()
+        assertOpens(images[0], Int.MAX_VALUE, viewer.opened())
+        assertEquals(false, viewer.hintShown())
+    }
+
+    @Test
+    fun oneBackOpensThePreviousFileEvenWithRepeatedBackDisabled() {
+        prefs.prevChapterBacks = 0
+        val viewer = launch(images[1])
+        viewer.back()
+        assertOpens(images[0], Int.MAX_VALUE, viewer.opened())
+    }
+
+    @Test
+    fun aSwipeBackOpensThePreviousFile() {
+        val viewer = launch(images[1])
+        val rv = viewer.list()
+        val y = rv.height / 2f
+        viewer.drag(rv.width * 0.1f, y, rv.width * 0.9f, y)
+        assertOpens(images[0], Int.MAX_VALUE, viewer.opened())
+    }
+
+    @Test
+    fun aBookBeforeTheImagesOpensAtItsEnd() {
+        val before = book("a.cbz", pages = 4)
+        val viewer = launch(images[0])
+        viewer.back()
+        assertOpens(before, Int.MAX_VALUE, viewer.opened())
+    }
+
+    @Test
+    fun backOnTheFirstFileStaysPut() {
+        val viewer = launch(images[0])
+        // A local file opens at once on the back, so nothing opened by now opens later.
+        viewer.back()
+        assertEquals(context.getString(R.string.page_indicator, 1, 1), viewer.findViewById<TextView>(R.id.viewer_page_text).text.toString())
+        assertNull(viewer.opened())
+        assertEquals(false, viewer.hintShown())
     }
 
     @Test

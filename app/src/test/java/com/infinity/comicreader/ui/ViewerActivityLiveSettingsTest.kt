@@ -389,6 +389,24 @@ class ViewerActivityLiveSettingsTest {
         assertEquals(2, c.get().page())
     }
 
+    @Test
+    fun aPageCarriedForOneBookIsNotAppliedToAnotherOpenedMeanwhile() {
+        val book = book()
+        val other = Fixtures.zip(File(tmp.newFolder("other"), "Book B.cbz"), *(0 until 3).map { Fixtures.entry("p%02d.png".format(it), byteArrayOf(0)) }.toTypedArray())
+        Library(context).setHiddenPages(ref(book), setOf(1), 3)
+        val c = launch(book, page = 1)
+        c.pause().stop()
+        Library(context).clearLibraryData()
+        // Back from Settings: the book starts opening again at book page 2, then another book replaces it.
+        c.start()
+        assertFalse("the book still opening", c.get().openSettled())
+        c.newIntent(Intent(context, ViewerActivity::class.java).putExtra(ViewerActivity.EXTRA_PATH, other.absolutePath))
+        c.resume()
+        idleUntil("the other book open") { c.get().openSettled() && c.get().pageAdapter != null }
+        assertEquals(other.absolutePath, c.get().intent.getStringExtra(ViewerActivity.EXTRA_PATH))
+        assertEquals(0, c.get().page())
+    }
+
     /** Japanese page names, stored in Shift_JIS; each page's one byte is its place here. */
     private val japanese = listOf("表紙.jpg", "目次.jpg", "第一話.jpg", "第二話.jpg", "あとがき.jpg", "奥付.jpg", "裏表紙.jpg", "001.jpg")
 

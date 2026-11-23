@@ -30,8 +30,9 @@ internal class RefusedRar(message: String) : IOException(message)
  * - Paths use "/" whatever made the archive (RAR 4 stores "\"), as the other formats' do.
  * - A header that cannot be read ends the listing, keeping the entries before it. An archive
  *   without any, or with an encrypted entry, does not open (IOException).
- * - Reads are serialized, first come, first served. Closing closes the channel first, so a read
- *   under way fails instead of being waited for to its end.
+ * - Reads are serialized, first come, first served: a libarchive handle is used by one thread
+ *   at a time. Closing never waits: it closes the channel, so a read under way fails, and that
+ *   read frees its handle when it ends.
  */
 class RarReader private constructor(
     private val channel: SeekableByteChannel,
@@ -132,19 +133,25 @@ class RarReader private constructor(
         }
     }
 
-    override fun <T> read(entry: ArchiveEntry, block: (InputStream) -> T): T = lock.withLock {
-        if (closed) throw IOException("Closed")
-        val ordinal = ordinals[entry.index]
-        // On a share: its header and packed data, about to be read whole.
-        remote?.expect(starts[ordinal], starts[ordinal + 1] - starts[ordinal])
-        moveTo(ordinal, entry.path)
-        source?.chunk = LibArchive.BLOCK_BYTES
-        try {
-            block(EntryStream(handle, generation))
-        } finally {
-            // Not solid: the next read opens a handle of its own; this one's memory goes now.
-            if (solid == false) drop()
+    override fun <T> read(entry: ArchiveEntry, block: (InputStream) -> T): T = try {
+        lock.withLock {
+            if (closed) throw IOException("Closed")
+            val ordinal = ordinals[entry.index]
+            // On a share: its header and packed data, about to be read whole.
+            remote?.expect(starts[ordinal], starts[ordinal + 1] - starts[ordinal])
+            moveTo(ordinal, entry.path)
+            source?.chunk = LibArchive.BLOCK_BYTES
+            try {
+                block(EntryStream(handle, generation))
+            } finally {
+                // Not solid: the next read opens a handle of its own; this one's memory goes now.
+                // Closed meanwhile: close() did not wait for this read, so its handle goes here.
+                if (solid == false || closed) drop()
+            }
         }
+    } finally {
+        // close() found the lock taken: whoever lets go of it last after closing frees the handle.
+        if (closed) dropUnlessBusy()
     }
 
     /** Puts the handle on header [ordinal], which holds [path]. */
@@ -241,11 +248,26 @@ class RarReader private constructor(
         return buffer.array().copyOf(buffer.position())
     }
 
+    /** Never waits: a read under way fails on the closed channel and frees its handle itself. */
     override fun close() {
         closed = true
         runCatching { channel.close() }
-        lock.withLock { drop() }
+        dropUnlessBusy()
     }
+
+    /** Frees the handle unless a read holds the lock; that read frees it once it lets go. */
+    private fun dropUnlessBusy() {
+        if (!lock.tryLock()) return
+        try {
+            drop()
+        } finally {
+            lock.unlock()
+        }
+    }
+
+    /** Whether a libarchive handle is open; for tests. */
+    internal val holdsHandle: Boolean
+        get() = lock.withLock { handle != 0L }
 
     companion object {
         /** How much libarchive reads at once while walking headers: a few, never a page's worth. */

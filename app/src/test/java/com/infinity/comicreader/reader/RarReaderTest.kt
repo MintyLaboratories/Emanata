@@ -17,6 +17,8 @@ import java.nio.channels.FileChannel
 import java.nio.channels.SeekableByteChannel
 import java.nio.file.StandardOpenOption
 import java.util.Collections
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.random.Random
 
 /** The RAR reader over libarchive's calls, as [StoredRarEngine] answers them on the JVM. */
@@ -264,6 +266,32 @@ class RarReaderTest {
         r.close()
         assertThrows(IOException::class.java) { r.bytes(2) }
         r.close()
+    }
+
+    @Test
+    fun closeDoesNotWaitForAReadUnderWay() {
+        for (bytes in listOf(Fixtures.rar5Bytes(*big), Fixtures.rar5Bytes(*big, solid = true))) {
+            val r = RarReader(file(bytes))
+            val entered = CountDownLatch(1)
+            val release = CountDownLatch(1)
+            val outcome = AtomicReference<Result<Int>>()
+            val reader = Thread {
+                outcome.set(runCatching { r.read(r.entries[2]) { entered.countDown(); release.await(); it.readBytes().size } })
+            }.apply { start() }
+            try {
+                awaitUntil("read parked in its block") { entered.count == 0L }
+                val closer = Thread { r.close() }.apply { start() }
+                awaitUntil("close returns while the read is parked") { !closer.isAlive }
+                assertEquals(1L, release.count)
+            } finally {
+                release.countDown()
+            }
+            awaitUntil("read ends") { !reader.isAlive }
+            // The read failed on the closed channel or ended with its entry whole.
+            outcome.get().onSuccess { assertEquals(big[2].second.size, it) }
+            assertFalse(r.holdsHandle)
+            assertThrows(IOException::class.java) { r.bytes(0) }
+        }
     }
 
     @Test

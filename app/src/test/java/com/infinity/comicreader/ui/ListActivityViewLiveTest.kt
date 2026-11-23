@@ -2,7 +2,6 @@ package com.infinity.comicreader.ui
 
 import android.Manifest
 import android.app.Application
-import android.content.SharedPreferences
 import android.os.Environment
 import android.os.Looper
 import android.view.View
@@ -21,6 +20,7 @@ import com.google.android.material.slider.Slider
 import com.google.android.material.tabs.TabLayout
 import com.infinity.comicreader.R
 import com.infinity.comicreader.testing.idleUntil
+import com.infinity.comicreader.testing.muteSettingsFeed
 import com.infinity.comicreader.data.BookId
 import com.infinity.comicreader.data.Bookmark
 import com.infinity.comicreader.data.CoverShape
@@ -29,7 +29,6 @@ import com.infinity.comicreader.data.HistoryItem
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.ListDensity
 import com.infinity.comicreader.data.Prefs
-import com.infinity.comicreader.data.SettingsRepository
 import com.infinity.comicreader.data.SortKey
 import com.infinity.comicreader.data.SortLevel
 import com.infinity.comicreader.data.TabSort
@@ -405,12 +404,7 @@ class ListActivityViewLiveTest {
     // ------------------------------------------------------------------ without the settings feed
 
     /** Stops the settings feed from hearing changes, as if it fell behind the stored settings. */
-    private fun muteFeed() {
-        val repo = SettingsRepository.get(context)
-        val listener = SettingsRepository::class.java.getDeclaredField("listener").apply { isAccessible = true }.get(repo)
-        PreferenceManager.getDefaultSharedPreferences(context)
-            .unregisterOnSharedPreferenceChangeListener(listener as SharedPreferences.OnSharedPreferenceChangeListener)
-    }
+    private fun muteFeed() = muteSettingsFeed(context)
 
     /** Taps the row or chip labeled [text] in [root]. */
     private fun tapText(root: View, text: String) {

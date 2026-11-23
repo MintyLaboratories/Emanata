@@ -1,6 +1,6 @@
 # Host unit tests of native logic that needs no Android: the JPEG XL parallel runner
 # (jxl_runner.c), the GPU resampler's chunk order (resample_chunks.c), RCAS's plain C
-# path (rcas.c) and the modified libarchive RAR 4 reader on a solid archive (rar4_solid_test.c).
+# path (rcas.c) and the modified libarchive RAR 4 reader on the CC0 RAR test files (rar4_solid_test.c).
 # Linux (or WSL) with a C compiler and zlib:
 #
 #     cmake -S app/src/test/cpp -B build/native-test && cmake --build build/native-test && ctest --test-dir build/native-test
@@ -43,7 +43,7 @@ target_compile_options(rcas_test PRIVATE -Wall -Wextra -Werror -O2 -ffp-contract
 add_test(NAME rcas COMMAND rcas_test)
 
 # libarchive's release (src/main/cpp/Libarchive.cmake) built for the host by its own CMake, its
-# RAR 4 reader replaced by the app's modified one, nothing optional.
+# RAR 4 reader replaced by the app's modified one (copied again whenever it changes), nothing optional.
 foreach(option TAR CPIO CAT UNZIP TEST INSTALL OPENSSL MBEDTLS NETTLE LIBB2 LZ4 LZO LZMA ZSTD BZip2
         LIBXML2 EXPAT PCREPOSIX PCRE2POSIX CNG ACL XATTR ICONV)
     set(ENABLE_${option} OFF CACHE BOOL "" FORCE)
@@ -52,13 +52,14 @@ FetchContent_Declare(
     libarchive
     URL "https://github.com/libarchive/libarchive/releases/download/v3.8.11/libarchive-3.8.11.tar.gz"
     URL_HASH SHA256=900fe9fc7237c2b04f090f3c3648de8fe597525771f5035016537ce2d667d12b
-    PATCH_COMMAND ${CMAKE_COMMAND} -E copy "${MAIN}/libarchive_rar/archive_read_support_format_rar.c" libarchive/
 )
 FetchContent_MakeAvailable(libarchive)
+configure_file("${MAIN}/libarchive_rar/archive_read_support_format_rar.c"
+    "${libarchive_SOURCE_DIR}/libarchive/archive_read_support_format_rar.c" COPYONLY)
 find_package(ZLIB REQUIRED)
 
 add_executable(rar4_solid_test rar4_solid_test.c)
 target_include_directories(rar4_solid_test PRIVATE "${libarchive_SOURCE_DIR}/libarchive")
 target_compile_options(rar4_solid_test PRIVATE -Wall -Wextra -Werror)
 target_link_libraries(rar4_solid_test PRIVATE archive_static ZLIB::ZLIB)
-add_test(NAME rar4_solid COMMAND rar4_solid_test "${CMAKE_CURRENT_LIST_DIR}/../resources/rar/testfile.rar3.solid.cbr")
+add_test(NAME rar4_solid COMMAND rar4_solid_test "${CMAKE_CURRENT_LIST_DIR}/../resources/rar")

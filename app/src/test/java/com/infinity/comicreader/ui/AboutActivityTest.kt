@@ -55,11 +55,19 @@ class AboutActivityTest {
     fun licenseRowShowsTheLicense() {
         val about = Robolectric.buildActivity(AboutActivity::class.java).setup().get()
         val links = about.findViewById<LinearLayout>(R.id.about_links)
-        links.getChildAt(links.titles().indexOf(about.getString(R.string.about_license))).performClick()
+        val row = links.getChildAt(links.titles().indexOf(about.getString(R.string.about_license)))
+        assertTrue(row.findViewById<TextView>(R.id.subtitle).text.startsWith("GPL 3.0 or later"))
+        row.performClick()
         shadowOf(about.mainLooper).idle()
         val dialog = ShadowDialog.getLatestDialog() as AlertDialog
         val message = dialog.findViewById<TextView>(android.R.id.message)!!.text.toString()
-        assertTrue(message.contains("Copyright (c) 2026 Emanata Comic Reader contributors"))
+        assertTrue(message.startsWith("Emanata Comic Reader\nCopyright (C) 2026 Emanata Comic Reader contributors"))
+        val order = listOf(
+            "either version 3 of the License, or (at your option) any later version.",
+            "TERMS AND CONDITIONS",
+            "Copyright (c) 2026 ComicReader contributors\n\nPermission is hereby granted"
+        ).map { message.indexOf(it) }
+        assertTrue("$order", order.all { it >= 0 } && order == order.sorted())
     }
 
     @Test

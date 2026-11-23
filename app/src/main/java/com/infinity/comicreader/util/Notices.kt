@@ -51,6 +51,14 @@ object Notices {
     /** Folder under `assets/` holding the license and NOTICE files. */
     const val ASSET_DIR = "licenses"
 
+    /**
+     * The app's own license texts under [ASSET_DIR], shown after its notice (`res/raw/license.txt`):
+     * the GNU GPL version 3, then upstream ComicReader's MIT license.
+     */
+    val appTexts = listOf("gpl-3.0.txt", "comicreader-mit.txt")
+
+    private val RULE = "\n\n${"-".repeat(40)}\n\n"
+
     private const val APACHE_TEXT = "apache-2.0.txt"
     private val APACHE = listOf(APACHE_TEXT)
     private fun withApache(notice: String) = listOf(notice, APACHE_TEXT)
@@ -229,12 +237,16 @@ object Notices {
         m.level?.let { "${it.familyName} (${it.names.joinToString("/")})" } ?: m.name
     }.distinct().joinToString()
 
-    /** Every license and NOTICE file the notices and the AI models refer to. */
-    val textFiles: Set<String> get() = (all + models).flatMap { it.texts }.toSet()
+    /** Every license and NOTICE file the app, the notices and the AI models refer to. */
+    val textFiles: Set<String> get() = (appTexts + (all + models).flatMap { it.texts }).toSet()
 
     /** Every file of [notice] in order, each read by [read], separated by rules. */
     fun fullText(notice: Notice, read: (String) -> String): String =
-        notice.texts.joinToString("\n\n${"-".repeat(40)}\n\n") { read(it).trimEnd() }
+        notice.texts.joinToString(RULE) { read(it).trimEnd() }
+
+    /** The app's [notice], then each of [appTexts] read by [read], each reflowed, separated by rules. */
+    fun appLicense(notice: String, read: (String) -> String): String =
+        (listOf(notice) + appTexts.map(read)).joinToString(RULE) { reflow(it) }
 
     /**
      * Joins the hard-wrapped lines of each paragraph of [text]; blank lines separate

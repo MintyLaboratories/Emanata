@@ -1648,8 +1648,14 @@ estimated from the tiles run in 60 or 120 s):
 
 ## License
 
-The app's own code is released under the [MIT License](LICENSE). Based on
-[ComicReader](https://github.com/infinity6901/ComicReader) by infinity6901 (MIT).
+Emanata Comic Reader\
+Copyright (C) 2026 Emanata Comic Reader contributors
+
+This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the [GNU General Public License](LICENSE) for more details.
+
+Parts of this program come from [ComicReader](https://github.com/infinity6901/ComicReader), Copyright (c) 2026 ComicReader contributors, under the MIT License (see [LICENSE-MIT-upstream](LICENSE-MIT-upstream)).
 
 Third-party components, bundled or downloaded, keep their own licenses. The
 app shows each license and NOTICE text under Settings → About (files in

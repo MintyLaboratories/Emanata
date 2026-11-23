@@ -7,6 +7,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
+import java.security.MessageDigest
 import java.util.zip.ZipFile
 
 class NoticesTest {
@@ -160,11 +161,63 @@ class NoticesTest {
         }
     }
 
+    private val notice by lazy { File("src/main/res/raw/license.txt").readText() }
+
+    private fun sha256(text: String): String =
+        MessageDigest.getInstance("SHA-256").digest(text.toByteArray()).joinToString("") { "%02x".format(it) }
+
+    /** [markdown] as plain text: hard line breaks and links dropped, whitespace runs as one space. */
+    private fun flat(markdown: String): String =
+        markdown.replace("\\\n", " ").replace(Regex("\\[([^\\]]+)\\]\\([^)]+\\)"), "$1").replace(Regex("\\s+"), " ")
+
     @Test
-    fun bundledLicenseMatchesTheRepository() {
-        val bundled = File("src/main/res/raw/license.txt").readText()
-        assertEquals(File("../LICENSE").readText(), bundled)
-        assertTrue(bundled.contains("Emanata Comic Reader contributors"))
+    fun theRepositoryLicenseIsTheUnmodifiedGplVersion3() {
+        val license = File("../LICENSE").readText().replace("\r\n", "\n")
+        // SHA-256 of https://www.gnu.org/licenses/gpl-3.0.txt
+        assertEquals("3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986", sha256(license))
+        assertEquals(license, File(assetDir, "gpl-3.0.txt").readText().replace("\r\n", "\n"))
+        assertFalse(File("../LICENSE-EXCEPTION").exists())
+    }
+
+    @Test
+    fun upstreamsMitLicenseShipsUnchanged() {
+        val upstream = File("../LICENSE-MIT-upstream").readText()
+        assertTrue(upstream.startsWith("MIT License\n\nCopyright (c) 2026 ComicReader contributors\n\nPermission is hereby granted"))
+        assertFalse(upstream.contains("Emanata"))
+        assertEquals(upstream, File(assetDir, "comicreader-mit.txt").readText())
+    }
+
+    @Test
+    fun theNoticeStatesGplVersion3OrLaterAndUpstreamsMit() {
+        assertTrue(notice.startsWith("Emanata Comic Reader\nCopyright (C) 2026 Emanata Comic Reader contributors\n\n"))
+        assertTrue(notice.contains("either version 3 of the License, or (at your option) any later version."))
+        assertTrue(notice.contains("WITHOUT ANY WARRANTY"))
+        assertTrue(notice.trimEnd().endsWith(
+            "Parts of this program come from ComicReader, Copyright (c) 2026 ComicReader contributors, under the MIT License."
+        ))
+        assertFalse(notice.contains("additional permission", ignoreCase = true))
+    }
+
+    @Test
+    fun theReadmesLicenseSectionCarriesTheNotice() {
+        val section = File("../README.md").readText().substringAfter("\n## License\n").substringBefore("\nThird-party components")
+        val readme = flat(section)
+        for (p in Notices.reflow(notice).split("\n\n")) assertTrue(p, readme.contains(flat(p).removeSuffix(".")))
+        assertTrue(section.contains("(see [LICENSE-MIT-upstream](LICENSE-MIT-upstream))"))
+        assertFalse(readme.contains("released under the MIT License"))
+    }
+
+    @Test
+    fun theAppsLicenseIsTheNoticeThenTheGplThenUpstreamsMit() {
+        val text = Notices.appLicense(notice) { File(assetDir, it).readText() }
+        val order = listOf(
+            "Copyright (C) 2026 Emanata Comic Reader contributors",
+            "GNU GENERAL PUBLIC LICENSE Version 3, 29 June 2007",
+            "END OF TERMS AND CONDITIONS",
+            "MIT License\n\nCopyright (c) 2026 ComicReader contributors\n\nPermission is hereby granted"
+        ).map { text.indexOf(it) }
+        assertTrue("$order", order.all { it >= 0 } && order == order.sorted())
+        assertEquals(2, Regex("-{40}").findAll(text).count())
     }
 
     @Test

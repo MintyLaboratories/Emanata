@@ -74,11 +74,15 @@ class AboutActivity : AppCompatActivity() {
         parent.addView(row)
     }
 
+    /** The app's license notice, then the GPL's text and upstream's MIT license. */
     private fun showLicense() {
-        val text = resources.openRawResource(R.raw.license).bufferedReader().use { it.readText() }
+        val notice = resources.openRawResource(R.raw.license).bufferedReader().use { it.readText() }
+        val text = Notices.appLicense(notice) { name ->
+            assets.open("${Notices.ASSET_DIR}/$name").bufferedReader().use { it.readText() }
+        }
         AlertDialog.Builder(this)
             .setTitle(R.string.about_license)
-            .setMessage(Notices.reflow(text))
+            .setMessage(text)
             .setPositiveButton(R.string.ok, null)
             .show()
     }

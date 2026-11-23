@@ -55,7 +55,8 @@ android {
             isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
+                "proguard-rules.pro",
+                "proguard-release.pro"
             )
             buildConfigField("boolean", "TRACES", "false")
             if (keystorePropsFile.exists()) {
@@ -75,7 +76,10 @@ android {
             versionNameSuffix = "-bench"
             signingConfig = signingConfigs.getByName("debug")
             matchingFallbacks += "release"
+            // Keeps trace sections: the release rules without proguard-release.pro.
             buildConfigField("boolean", "TRACES", "true")
+            proguardFiles.clear()
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
 

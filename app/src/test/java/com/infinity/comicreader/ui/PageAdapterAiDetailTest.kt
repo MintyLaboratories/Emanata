@@ -227,10 +227,54 @@ class PageAdapterAiDetailTest {
             enhancer.later = false
             adapter.aiWake()
             idleUntil("item ${item + 1} processed") { enhancer.outputs.any { it.page == item + 1 && !it.released } }
-            // Kept: the page before, the page read and what AI work reaches after it.
+            // Kept: the page before, the page read and the next.
             assertEquals("at item $item", setOf(item - 1, item, item + 1), held())
         }
         assertTrue((0..3).all { p -> enhancer.outputs.filter { it.page == p }.all { it.released } })
+        adapter.release()
+    }
+
+    @Test
+    fun aheadDetailsStayAfterAiWorkEnds() {
+        // RAM enough for the largest budget: the budget lets none go.
+        shadowOf(context.getSystemService(ActivityManager::class.java)).setMemoryInfo(ActivityManager.MemoryInfo().apply { totalMem = 8L shl 30 })
+        val source = Source(8)
+        val enhancer = Enhancer(processed)
+        val (adapter, rv) = reader(source, enhancer)
+        idleUntil("page 0 shown plain") { shownColor(rv, 0) == plain }
+        adapter.reading(0)
+        idleUntil("item 1 processed") { enhancer.outputs.any { it.page == 1 } }
+        turnTo(adapter, rv, 1)
+        idleUntil("item 2 processed") { enhancer.outputs.any { it.page == 2 } }
+        // Back to item 0: items 0 and 1 are done, so AI work has nothing left to do.
+        turnTo(adapter, rv, 0)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(3, enhancer.outputs.size)
+        // Item 2, two ahead, keeps its detail.
+        assertEquals(setOf(0, 1, 2), enhancer.outputs.filter { !it.released }.map { it.page }.toSet())
+        adapter.release()
+    }
+
+    @Test
+    fun turningBackLetsGoOfTheProcessedPagesFarAhead() {
+        shadowOf(context.getSystemService(ActivityManager::class.java)).setMemoryInfo(ActivityManager.MemoryInfo().apply { totalMem = 8L shl 30 })
+        assertTrue(budget >= 10 * 1200L * 1800 * 4)
+        val source = Source(8)
+        val enhancer = Enhancer(processed)
+        val (adapter, rv) = reader(source, enhancer)
+        idleUntil("page 0 shown plain") { shownColor(rv, 0) == plain }
+        adapter.reading(0)
+        idleUntil("page 0 shown processed") { shownColor(rv, 0)?.let { near(it, processed) } == true }
+        for (item in 1..7) turnTo(adapter, rv, item)
+        idleUntil("item 7 processed") { enhancer.outputs.any { it.page == 7 } }
+        for (item in 6 downTo 0) {
+            turnTo(adapter, rv, item)
+            shadowOf(Looper.getMainLooper()).idle()
+            val far = enhancer.outputs.filter { it.page > item + AiLead.MAX + 1 || it.page < item - 1 }
+            assertTrue("at item $item, held far: ${far.filter { !it.released }.map { it.page }}", far.all { it.released })
+        }
+        // By the end, items 6 and 7 were among those far ahead.
+        assertTrue(enhancer.outputs.any { it.page == 6 } && enhancer.outputs.any { it.page == 7 })
         adapter.release()
     }
 

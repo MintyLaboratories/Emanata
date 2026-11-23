@@ -1,4 +1,4 @@
-<img src="screenshots/icon.png" alt="Emanata Comic Reader" width="96" align="right" />
+<img src="tools/icon/icon.png" alt="Emanata Comic Reader" width="96" align="right" />
 
 # Emanata Comic Reader
 
@@ -26,26 +26,6 @@ Get the latest APK from the [**Releases**](https://github.com/MintyLaboratories/
 The app id is `minty.emanata` (debug: `minty.emanata.debug`), so it installs
 beside ComicReader rather than over it. To bring your library across, back it up
 in ComicReader (Settings → Your data) and restore the file in Emanata.
-
-## Screenshots
-
-> Outdated: these show upstream ComicReader and predate Emanata's changes.
-
-| Library | Chapters | Reader — paged |
-|---|---|---|
-| ![Library](screenshots/library.png) | ![Chapters](screenshots/chapters.png) | ![Reader paged](screenshots/reader-paged.jpg) |
-
-| Reader — continuous (webtoon) | End of chapter | Reader settings |
-|---|---|---|
-| ![Continuous](screenshots/reader-continuous.jpg) | ![End of chapter](screenshots/end-of-chapter.jpg) | ![Reader settings](screenshots/reader-settings.png) |
-
-| Two-page spread (RTL manga) | Favorites | History |
-|---|---|---|
-| ![Manga spread](screenshots/manga-spread-rtl.jpg) | ![Favorites](screenshots/favorites.png) | ![History](screenshots/history.png) |
-
-| Dark theme — settings |
-|---|
-| ![Settings dark](screenshots/settings-dark.png) |
 
 ## Features
 
@@ -1364,7 +1344,6 @@ app/src/main/java/com/infinity/comicreader/
                              CropActivity + CropView, PagesActivity + ThumbAdapter,
                              ZoomImageView, PageAdapter, BookAdapter
   util/                      Formats, NaturalOrder, FileUtils/Locales
-screenshots/                 README screenshots
 ```
 
 ## Building

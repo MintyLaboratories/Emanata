@@ -9,7 +9,7 @@ py -3 tools/icon/emanata_icon.py --previews
 ```
 
 - `tools/icon/out/res/` holds the layers: copy its `drawable*/` folders over `app/src/main/res/`.
-- `tools/icon/previews/` holds contact sheets (circle and squircle masks, color and themed, 48–192 px) and `icon_512_fullbleed.png`, which is also `screenshots/icon.png`.
+- `tools/icon/previews/` holds contact sheets (circle and squircle masks, color and themed, 48–192 px) and `icon_512_fullbleed.png`, which is also `tools/icon/icon.png` (the README's icon).
 - `--help` lists every parameter. They are flags of the same name, e.g. `--tail-reach 35.5 --long-reach 28`.
 
 Low densities get fewer shards (`SHARDS_BY_DENSITY`), so `drawable-ldpi`, `-mdpi` and `-hdpi` carry their own layers.

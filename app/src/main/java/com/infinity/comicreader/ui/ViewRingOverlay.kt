@@ -443,8 +443,8 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
      * the shortest forms overlap does the ring grow: to the smallest radius up to [GROW] times
      * that clears those, where labels then take the fullest forms that still fit. Where none
      * does, the ring stays no larger than asked and its label text shrinks just enough ([shrunk]);
-     * where even the floor size does not clear them, the ring takes the radius, up to as large as
-     * the screen lets it, where the labels at that size overlap least.
+     * where even the floor size does not clear them, every label's sides are searched together
+     * (exhaustive [RingGeometry.place]), else the labels at that size overlap least.
      */
     private fun lay(items: List<Item>) {
         val root = root ?: return
@@ -476,13 +476,13 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
         val angles = angles()
         val want = RingGeometry.radius(items.size, SPACING_DP * density, MIN_RADIUS_DP * density)
         val spacing = size + LABEL_GAP_DP * density
-        fun arrange(grow: Float, shortest: Boolean = false) =
-            fitLabels(all = true, shortest) { RingGeometry.arrange(angles, cx, cy, bounds, size.toFloat(), want, spacing, reach(), pad(), it, grow) }
+        fun arrange(grow: Float, shortest: Boolean = false, exhaustive: Boolean = false) =
+            fitLabels(all = true, shortest) { RingGeometry.arrange(angles, cx, cy, bounds, size.toFloat(), want, spacing, reach(), pad(), it, grow, exhaustive) }
         fun refit(radius: Float) = fitLabels(all = true) { RingGeometry.place(angles, cx, cy, bounds, size.toFloat(), radius, reach(), pad(), it) }
         val placed = arrange(1f).takeIf { it.overlap == 0f }
             ?: arrange(GROW, shortest = true).takeIf { it.overlap == 0f }?.let { refit(it.radius) }
             ?: shrunk { arrange(1f) }
-            ?: refit(arrange(Float.MAX_VALUE, shortest = true).radius)
+            ?: arrange(1f, exhaustive = true)
         radius = placed.radius
         for ((i, pair) in buttons.values.withIndex()) {
             val (button, label) = pair

@@ -200,8 +200,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
     the shortest labels cannot clear each other. Where growing does not clear
     them at a large font size, the ring keeps its size and the label text
     shrinks just enough, never below its size at 130% font scale; where even
-    that text does not clear them, the ring takes the size where they overlap
-    least. A tap applies at once and the ring stays open; the X in the
+    that text does not clear them, the labels take whichever sides of their
+    buttons clear them, if any. A tap applies at once and the ring stays open; the X in the
     button's place, a tap outside or Back closes it. Or keep the finger down
     and drag: the button it points toward lights up (at any distance, with a
     tick), lifting there applies it and closes the ring, lifting back on the X

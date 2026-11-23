@@ -22,6 +22,7 @@ import com.infinity.comicreader.data.TitleDisplay
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.Ignore
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
@@ -37,8 +38,8 @@ import java.time.Duration
 /**
  * The view ring's longest labels, measured with real text: whole (no "…"), the value on at
  * most two lines, clear of every button, the hub, each other and (stood-in) system bars, at font
- * scales 1.0, 1.3 and 2.0 on a phone and a tablet, for both hands; the phone at 2.0 also with
- * Android 14's nonlinear font scaling.
+ * scales 1.0, 1.3 and 2.0 on a phone and a tablet, for both hands; the phone at 2.0 also at
+ * common narrower widths and with Android 14's nonlinear font scaling.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29])
@@ -87,8 +88,8 @@ class ViewRingLabelsTest {
 
     private fun center(v: View): Triple<Float, Float, Float> = box(v).let { Triple((it.left + it.right) / 2, (it.top + it.bottom) / 2, v.width / 2f) }
 
-    /** Opens the ring on a screen of [qualifiers] at [scale] and checks every label (clear of the buttons unless not [clear]), and that the radius is at most [most] times the one asked for. */
-    private fun check(qualifiers: String, scale: Float, left: Boolean, count: Int = 6, most: Float = 1f, clear: Boolean = true) {
+    /** Opens the ring on a screen of [qualifiers] at [scale] and checks every label, and that the radius is at most [most] times the one asked for. */
+    private fun check(qualifiers: String, scale: Float, left: Boolean, count: Int = 6, most: Float = 1f) {
         val what = "$qualifiers at $scale${if (left) ", left-handed" else ""}"
         RuntimeEnvironment.setQualifiers(qualifiers)
         RuntimeEnvironment.setFontScale(scale)
@@ -115,7 +116,7 @@ class ViewRingLabelsTest {
             assertTrue("$what: $o \"$text\" on ${layout.lineCount} lines", layout.lineCount <= 3)
             val l = box(label)
             assertTrue("$what: $o $l on $screen", l.within(screen))
-            if (clear) for ((x, y, r) in round) assertEquals("$what: $o \"$text\" on a button at $x, $y", 0f, l.overlap(x, y, r), 0f)
+            for ((x, y, r) in round) assertEquals("$what: $o \"$text\" on a button at $x, $y", 0f, l.overlap(x, y, r), 0f)
             for ((p, other) in labels) if (p != o) assertEquals("$what: $o on $p", 0f, l.overlap(box(other)), 0f)
         }
         // A tap changes values in place; the labels still fit, clear of the bars.
@@ -139,6 +140,18 @@ class ViewRingLabelsTest {
     @Test
     fun aPhonesSixLongestLabelsFitAtTwiceTheFontSize() {
         for (left in listOf(false, true)) check(PHONE, 2.0f, left)
+    }
+
+    /** Common phone widths and split-screen or pop-up windows on a tablet. */
+    @Test
+    fun narrowerWindowsSixLongestLabelsFitAtTwiceTheFontSize() {
+        for (width in listOf(360, 384, 393, 411)) for (left in listOf(false, true)) check("w${width}dp-h800dp-xxhdpi", 2.0f, left)
+    }
+
+    @Test
+    @Ignore("F243 gap: below about 348 dp at font scale 2.0, a label at the 130% text floor reaches over a button")
+    fun theNarrowestWindowsSixLongestLabelsFitAtTwiceTheFontSize() {
+        for (width in listOf(320, 340)) for (left in listOf(false, true)) check("w${width}dp-h800dp-xxhdpi", 2.0f, left)
     }
 
     /** Opens the ring on a screen of [qualifiers] at [scale] and returns a plain label's text size, the ring's text floor and each ring label's size. */
@@ -167,12 +180,11 @@ class ViewRingLabelsTest {
         assertEquals(plain13, floor, 0f)
         for (size in six) assertTrue("$size of $plain, floor $plain13", size < plain && size > plain13 + 0.5f)
         assertEquals(1, six.distinct().size)
-        // On a narrower phone not even the floor clears them: the text stays at the floor, whole, within the screen and
-        // clear of the other labels; one still reaches over a button.
+        // On a narrower phone the floor clears them only with every label's sides searched together.
         val (plainNarrow, _, narrow) = textSizes(2.0f, NARROW)
         assertTrue("floor $plain13 of $plainNarrow", plain13 < plainNarrow)
         for (size in narrow) assertEquals("$size of $plainNarrow", plain13, size, 0f)
-        for (left in listOf(false, true)) check(NARROW, 2.0f, left, most = Float.MAX_VALUE, clear = false)
+        for (left in listOf(false, true)) check(NARROW, 2.0f, left)
         // The default ring's five at twice the font size: the ring grows instead.
         prefs.ringOptions = RingOptions.DEFAULT
         val (plain5, _, five) = textSizes(2.0f)
@@ -192,6 +204,7 @@ class ViewRingLabelsTest {
         assertEquals(plain13, floor, 0f)
         for (size in six) assertTrue("$size of $plain, floor $plain13", size < plain && size >= plain13)
         for (left in listOf(false, true)) check(PHONE, 2.0f, left)
+        for (left in listOf(false, true)) check(NARROW, 2.0f, left)
     }
 
     @Test

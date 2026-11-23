@@ -3,6 +3,7 @@ package com.infinity.comicreader.ui
 import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.res.ColorStateList
+import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.Typeface
 import android.text.SpannableStringBuilder
@@ -13,6 +14,7 @@ import android.text.style.ForegroundColorSpan
 import android.text.style.RelativeSizeSpan
 import android.text.style.StyleSpan
 import android.util.TypedValue
+import android.view.ContextThemeWrapper
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
@@ -492,22 +494,33 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
     }
 
     /**
-     * The labels' text made smaller in [TEXT_STEP]s, never below its size at font scale
-     * [TEXT_FLOOR_SCALE], until [arrange] lays them out clear; that placement, or null with
-     * the text as it was when none does. Only above that font scale can it shrink at all.
+     * The labels' text made smaller in [TEXT_STEP]s, never below [textFloor], until [arrange]
+     * lays them out clear; that placement, or null with the text as it was when none does.
      */
     private fun shrunk(arrange: () -> RingGeometry.Placement): RingGeometry.Placement? {
         val labels = buttons.values.map { it.second }
         val base = labels.firstOrNull()?.textSize ?: return null
-        val floor = TEXT_FLOOR_SCALE / activity.resources.configuration.fontScale
+        val floor = textFloor()
+        if (floor >= base) return null
         var step = 1
-        while (1f - step * TEXT_STEP >= floor - EPSILON) {
+        while (base * (1f - step * TEXT_STEP) >= floor - 0.5f) {
             for (label in labels) label.setTextSize(TypedValue.COMPLEX_UNIT_PX, base * (1f - step * TEXT_STEP))
             arrange().takeIf { it.overlap == 0f }?.let { return it }
             step++
         }
         for (label in labels) label.setTextSize(TypedValue.COMPLEX_UNIT_PX, base)
         return null
+    }
+
+    /**
+     * A ring label's text size in pixels at font scale [TEXT_FLOOR_SCALE]: a plain text view
+     * under the activity's theme, measured with that font scale (nonlinear from Android 14).
+     */
+    internal fun textFloor(): Float {
+        val config = Configuration(activity.resources.configuration).apply { fontScale = TEXT_FLOOR_SCALE }
+        @Suppress("DEPRECATION") // Its flags-object replacement needs Android 13.
+        val theme = activity.packageManager.getActivityInfo(activity.componentName, 0).themeResource
+        return TextView(ContextThemeWrapper(activity.createConfigurationContext(config), theme)).textSize
     }
 
     /** Gives [button] and [label] what [item] shows. */
@@ -626,7 +639,6 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
 
         /** The font scale below whose label size the text never shrinks; at or under it, the text keeps its size. */
         const val TEXT_FLOOR_SCALE = 1.3f
-        const val EPSILON = 1e-4f
         const val LABEL_GAP_DP = 8f
         const val LABEL_MAX_DP = 320f
 

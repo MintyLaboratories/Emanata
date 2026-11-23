@@ -30,13 +30,15 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import org.robolectric.shadows.ShadowEnvironment
 import java.io.File
 import java.time.Duration
 
 /**
  * The view ring's longest labels, measured with real text: whole (no "…"), the value on at
  * most two lines, clear of every button, the hub, each other and (stood-in) system bars, at font
- * scales 1.0, 1.3 and 2.0 on a phone and a tablet, for both hands.
+ * scales 1.0, 1.3 and 2.0 on a phone and a tablet, for both hands; the phone at 2.0 also with
+ * Android 14's nonlinear font scaling.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29])
@@ -63,6 +65,10 @@ class ViewRingLabelsTest {
         prefs.setDetail(Prefs.TAB_BROWSE, DetailDisplay.COMFORTABLE)
         prefs.titleDisplay = TitleDisplay.SINGLE
         prefs.ringOptions = RingOptions.DEFAULT.with(RingOption.SECTIONS, false).with(RingOption.TITLE_LINES, true).moved(3, 0)
+    }
+
+    private companion object {
+        const val PHONE = "w400dp-h800dp-xxhdpi"
     }
 
     private fun settle() = repeat(3) {
@@ -123,20 +129,20 @@ class ViewRingLabelsTest {
 
     @Test
     fun aPhonesLongestLabelsFitAtEveryFontScale() {
-        for (scale in listOf(1.0f, 1.3f)) for (left in listOf(false, true)) check("w400dp-h800dp-xxhdpi", scale, left)
+        for (scale in listOf(1.0f, 1.3f)) for (left in listOf(false, true)) check(PHONE, scale, left)
         // At twice the font size, the default ring's five: short forms before the ring grows, and then no larger than the first ring.
         prefs.ringOptions = RingOptions.DEFAULT
-        for (left in listOf(false, true)) check("w400dp-h800dp-xxhdpi", 2.0f, left, count = 5, most = 1.5f)
+        for (left in listOf(false, true)) check(PHONE, 2.0f, left, count = 5, most = 1.5f)
     }
 
     @Test
     fun aPhonesSixLongestLabelsFitAtTwiceTheFontSize() {
-        for (left in listOf(false, true)) check("w400dp-h800dp-xxhdpi", 2.0f, left)
+        for (left in listOf(false, true)) check(PHONE, 2.0f, left)
     }
 
-    /** Opens the ring on a phone at [scale] and returns a plain label's text size and each ring label's. */
-    private fun textSizes(scale: Float): Pair<Float, List<Float>> {
-        RuntimeEnvironment.setQualifiers("w400dp-h800dp-xxhdpi")
+    /** Opens the ring on a screen of [qualifiers] at [scale] and returns a plain label's text size, the ring's text floor and each ring label's size. */
+    private fun textSizes(scale: Float, qualifiers: String = PHONE): Triple<Float, Float, List<Float>> {
+        RuntimeEnvironment.setQualifiers(qualifiers)
         RuntimeEnvironment.setFontScale(scale)
         val list = Robolectric.buildActivity(ListActivity::class.java).setup().get()
         settle()
@@ -144,23 +150,44 @@ class ViewRingLabelsTest {
         assertTrue(list.findViewById<FloatingActionButton>(R.id.fab).performLongClick())
         settle()
         val sizes = ViewRing.options(Prefs.TAB_BROWSE, prefs.ringOptions).map { list.viewRing.label(it)!!.textSize }
+        val floor = list.viewRing.textFloor()
         list.viewRing.close(animate = false)
-        return TextView(list).textSize to sizes
+        return Triple(TextView(list).textSize, floor, sizes)
     }
 
     @Test
     fun labelTextShrinksOnlyWhereGrowingCannotClearTheLabels() {
-        // Six of the longest at twice the font size: smaller, but never below the size at 1.3.
-        val (plain, six) = textSizes(2.0f)
-        for (size in six) assertTrue("$size of $plain", size < plain && size >= plain * 1.3f / 2.0f - 0.5f)
-        assertEquals(1, six.distinct().size)
-        // At 1.3, the text keeps its size.
-        val (plain13, at13) = textSizes(1.3f)
+        // At 1.3, the text keeps its size, which is the floor.
+        val (plain13, floor13, at13) = textSizes(1.3f)
+        assertEquals(plain13, floor13, 0f)
         for (size in at13) assertEquals(plain13, size, 0f)
+        // Six of the longest at twice the font size: all the same, smaller, and only as much as they need: above the floor.
+        val (plain, floor, six) = textSizes(2.0f)
+        assertEquals(plain13, floor, 0f)
+        for (size in six) assertTrue("$size of $plain, floor $plain13", size < plain && size > plain13 + 0.5f)
+        assertEquals(1, six.distinct().size)
+        // On a narrower phone not even the floor clears them: the text stays at or above it.
+        val (_, _, narrow) = textSizes(2.0f, "w360dp-h800dp-xxhdpi")
+        for (size in narrow) assertTrue("$size, floor $plain13", size >= plain13 - 0.5f)
         // The default ring's five at twice the font size: the ring grows instead.
         prefs.ringOptions = RingOptions.DEFAULT
-        val (plain5, five) = textSizes(2.0f)
+        val (plain5, _, five) = textSizes(2.0f)
         for (size in five) assertEquals(plain5, size, 0f)
+    }
+
+    /** Android 14 scales text nonlinearly, so the floor is the real size at 1.3, not a share of the size at 2.0. */
+    @Test
+    @Config(sdk = [34])
+    fun aPhonesSixLongestLabelsFitAtTwiceTheFontSizeOnAndroid14() {
+        // From Android 11 the list asks for all-files access, which reads the first storage volume.
+        ShadowEnvironment.addExternalDir("emulated")
+        shadowOf(context).grantPermissions(Manifest.permission.MANAGE_EXTERNAL_STORAGE)
+        val (plain13, _, _) = textSizes(1.3f)
+        val (plain, floor, six) = textSizes(2.0f)
+        assertTrue("nonlinear: $plain at 2.0, $plain13 at 1.3", plain < plain13 * 2.0f / 1.3f - 1f)
+        assertEquals(plain13, floor, 0f)
+        for (size in six) assertTrue("$size of $plain, floor $plain13", size < plain && size >= plain13 - 0.5f)
+        for (left in listOf(false, true)) check(PHONE, 2.0f, left)
     }
 
     @Test

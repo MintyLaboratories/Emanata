@@ -5,6 +5,7 @@ import android.app.Application
 import android.os.Environment
 import android.os.Looper
 import android.view.View
+import android.widget.TextView
 import androidx.core.graphics.Insets
 import androidx.preference.PreferenceManager
 import androidx.test.core.app.ApplicationProvider
@@ -21,7 +22,6 @@ import com.infinity.comicreader.data.TitleDisplay
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
-import org.junit.Ignore
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
@@ -130,9 +130,37 @@ class ViewRingLabelsTest {
     }
 
     @Test
-    @Ignore("Unmet: on a 400 dp phone at twice the font size, six of the longest labels overlap a button by about 2 dp with the ring at its tightest spacing; cutting labels with an ellipsis to clear them loses whole values")
     fun aPhonesSixLongestLabelsFitAtTwiceTheFontSize() {
         for (left in listOf(false, true)) check("w400dp-h800dp-xxhdpi", 2.0f, left)
+    }
+
+    /** Opens the ring on a phone at [scale] and returns a plain label's text size and each ring label's. */
+    private fun textSizes(scale: Float): Pair<Float, List<Float>> {
+        RuntimeEnvironment.setQualifiers("w400dp-h800dp-xxhdpi")
+        RuntimeEnvironment.setFontScale(scale)
+        val list = Robolectric.buildActivity(ListActivity::class.java).setup().get()
+        settle()
+        list.viewRing.barInsets = { bars(list) }
+        assertTrue(list.findViewById<FloatingActionButton>(R.id.fab).performLongClick())
+        settle()
+        val sizes = ViewRing.options(Prefs.TAB_BROWSE, prefs.ringOptions).map { list.viewRing.label(it)!!.textSize }
+        list.viewRing.close(animate = false)
+        return TextView(list).textSize to sizes
+    }
+
+    @Test
+    fun labelTextShrinksOnlyWhereGrowingCannotClearTheLabels() {
+        // Six of the longest at twice the font size: smaller, but never below the size at 1.3.
+        val (plain, six) = textSizes(2.0f)
+        for (size in six) assertTrue("$size of $plain", size < plain && size >= plain * 1.3f / 2.0f - 0.5f)
+        assertEquals(1, six.distinct().size)
+        // At 1.3, the text keeps its size.
+        val (plain13, at13) = textSizes(1.3f)
+        for (size in at13) assertEquals(plain13, size, 0f)
+        // The default ring's five at twice the font size: the ring grows instead.
+        prefs.ringOptions = RingOptions.DEFAULT
+        val (plain5, five) = textSizes(2.0f)
+        for (size in five) assertEquals(plain5, size, 0f)
     }
 
     @Test

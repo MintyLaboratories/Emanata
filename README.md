@@ -197,7 +197,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
     shorter form ("Dir. LTR→RTL") where the full one does not fit; "…" only as
     a last resort. The buttons sit 75 dp apart center to center (closer on a
     tight screen), at least 91 dp from the X; the ring grows only where even
-    the shortest labels cannot clear each other. A tap applies at once and the ring stays open; the X in the
+    the shortest labels cannot clear each other. Where growing does not clear
+    them at a large font size, the ring keeps its size and the label text
+    shrinks just enough, never below its size at 130 % font scale. A tap applies at once and the ring stays open; the X in the
     button's place, a tap outside or Back closes it. Or keep the finger down
     and drag: the button it points toward lights up (at any distance, with a
     tick), lifting there applies it and closes the ring, lifting back on the X

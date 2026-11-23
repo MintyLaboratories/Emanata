@@ -12,6 +12,7 @@ import android.text.TextUtils
 import android.text.style.ForegroundColorSpan
 import android.text.style.RelativeSizeSpan
 import android.text.style.StyleSpan
+import android.util.TypedValue
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
@@ -40,7 +41,8 @@ import kotlin.math.roundToInt
  * button toward the screen's inside ([RingGeometry]), each with its setting's name and
  * what a tap does, "current→next", beside it: the current part muted, the next in the label
  * color. Each label takes the fullest of its value's forms that fits on two lines, shorter
- * ones where labels would overlap ([RingGeometry.fit]); cut with "…" only when none fits. A
+ * ones where labels would overlap ([RingGeometry.fit]), smaller text at large font scales
+ * where even those overlap ([lay]); cut with "…" only when none fits. A
  * tap on a button or its label runs [onTap] (the caller writes the setting and calls
  * [refresh]); a long press runs [onLongTap] where an item has a [Item.longLabel]. The hub in
  * the button's place, a tap on the scrim, or Back ([close]) closes it.
@@ -436,8 +438,10 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
      * Lays [items] out around the hub: as wide as the spacing asks, but small enough that the
      * buttons and their labels stay within [bounds], labels clear of every button and of each
      * other ([RingGeometry.arrange]), each the fullest form that lets them. Only where even
-     * the shortest forms overlap does the ring grow: to the smallest radius that clears those,
-     * where labels then take the fullest forms that still fit.
+     * the shortest forms overlap does the ring grow: to the smallest radius up to [GROW] times
+     * that clears those, where labels then take the fullest forms that still fit. Where none
+     * does, the ring stays no larger than asked and its label text shrinks just enough ([shrunk]);
+     * only past that, the ring grows as far as the screen lets it.
      */
     private fun lay(items: List<Item>) {
         val root = root ?: return
@@ -471,10 +475,11 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
         val spacing = size + LABEL_GAP_DP * density
         fun arrange(grow: Float, shortest: Boolean = false) =
             fitLabels(all = true, shortest) { RingGeometry.arrange(angles, cx, cy, bounds, size.toFloat(), want, spacing, reach(), pad(), it, grow) }
-        val placed = arrange(1f).takeIf { it.overlap == 0f } ?: run {
-            val grown = arrange(GROW, shortest = true).takeIf { it.overlap == 0f } ?: arrange(Float.MAX_VALUE, shortest = true)
-            fitLabels(all = true) { RingGeometry.place(angles, cx, cy, bounds, size.toFloat(), grown.radius, reach(), pad(), it) }
-        }
+        fun refit(radius: Float) = fitLabels(all = true) { RingGeometry.place(angles, cx, cy, bounds, size.toFloat(), radius, reach(), pad(), it) }
+        val placed = arrange(1f).takeIf { it.overlap == 0f }
+            ?: arrange(GROW, shortest = true).takeIf { it.overlap == 0f }?.let { refit(it.radius) }
+            ?: shrunk { arrange(1f) }
+            ?: refit(arrange(Float.MAX_VALUE, shortest = true).radius)
         radius = placed.radius
         for ((i, pair) in buttons.values.withIndex()) {
             val (button, label) = pair
@@ -484,6 +489,25 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
             place(button, cx + dx - size / 2f, cy + dy - size / 2f, size, size)
             placeLabel(label, placed.boxes[i])
         }
+    }
+
+    /**
+     * The labels' text made smaller in [TEXT_STEP]s, never below its size at font scale
+     * [TEXT_FLOOR_SCALE], until [arrange] lays them out clear; that placement, or null with
+     * the text as it was when none does. Only above that font scale can it shrink at all.
+     */
+    private fun shrunk(arrange: () -> RingGeometry.Placement): RingGeometry.Placement? {
+        val labels = buttons.values.map { it.second }
+        val base = labels.firstOrNull()?.textSize ?: return null
+        val floor = TEXT_FLOOR_SCALE / activity.resources.configuration.fontScale
+        var step = 1
+        while (1f - step * TEXT_STEP >= floor - EPSILON) {
+            for (label in labels) label.setTextSize(TypedValue.COMPLEX_UNIT_PX, base * (1f - step * TEXT_STEP))
+            arrange().takeIf { it.overlap == 0f }?.let { return it }
+            step++
+        }
+        for (label in labels) label.setTextSize(TypedValue.COMPLEX_UNIT_PX, base)
+        return null
     }
 
     /** Gives [button] and [label] what [item] shows. */
@@ -596,6 +620,13 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
 
         /** How much larger the ring grows first where even its shortest labels cannot clear each other. */
         const val GROW = 1.5f
+
+        /** How much smaller, as a share of its size, a label's text gets per step where even a grown ring's labels overlap. */
+        const val TEXT_STEP = 0.05f
+
+        /** The font scale below whose label size the text never shrinks; at or under it, the text keeps its size. */
+        const val TEXT_FLOOR_SCALE = 1.3f
+        const val EPSILON = 1e-4f
         const val LABEL_GAP_DP = 8f
         const val LABEL_MAX_DP = 320f
 

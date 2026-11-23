@@ -2850,6 +2850,9 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         persistAdjustments()
         file = nextFile
         bookId = stripAheadId
+        // Its spreads are read on the next paged layout; its shape for AI waits for its own pages.
+        sizesJob?.cancel()
+        analysis = null
         aiBooks()
         val fresh = bookId?.let { !library.mayHaveData(it) } == true
         noteLikeness(nextFile, next, bookId, fresh)
@@ -2858,9 +2861,6 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         loadAdjustments()
         // Reopening or recreating the reader must load the chapter now shown.
         intent.putExtra(EXTRA_PATH, nextFile.absolutePath)
-        // Its spreads are read on the next paged layout.
-        sizesJob?.cancel()
-        analysis = null
         storeVisits()
         pageStore = null
         lifecycleScope.launch {
@@ -4362,10 +4362,10 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
     /**
      * The shape of the pages of a book [marked] manga or not by its ComicInfo (null: unread),
      * running [kind]'s default chain, which sets the size they are read at for AI: by the
-     * direction on screen and the open book's pages' shapes found.
+     * direction on screen and its pages' shapes found ([pages]; null: none yet).
      */
-    private fun aiShape(marked: ComicInfo.Manga?, kind: ChainKind): BookShape =
-        BookShape.of(PageClass.manga(readingDir == "rtl", marked, kind), topToBottom(), analysis)
+    private fun aiShape(marked: ComicInfo.Manga?, kind: ChainKind, pages: Spreads.Analysis?): BookShape =
+        BookShape.of(PageClass.manga(readingDir == "rtl", marked, kind), topToBottom(), pages)
 
     /**
      * Reads what [src]'s ComicInfo says of manga where that is cheap, then reads its pages by it
@@ -4384,13 +4384,13 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
 
     /**
      * Tells the reader's AI the shape of each open book's pages ([aiShape]; the chapter laid in
-     * behind this one by its own ComicInfo and chain); the shape told before, by book key ("" for none), of each
+     * behind this one by its own ComicInfo and chain, its pages not found yet); the shape told before, by book key ("" for none), of each
      * whose shape changed and whose pages go through AI.
      */
     private fun aiShapes(): Map<String, BookShape> {
         val was = HashMap<String, BookShape>()
         val marked = bookMarked?.takeIf { it.first === source }?.second
-        val shapes = listOfNotNull(source?.let { it to aiShape(marked, aiKind()) }, stripAhead?.let { it to aiShape(stripAheadMarked, stripAheadKind()) })
+        val shapes = listOfNotNull(source?.let { it to aiShape(marked, aiKind(), analysis) }, stripAhead?.let { it to aiShape(stripAheadMarked, stripAheadKind(), null) })
         // Every book is told; only a change on one AI processes matters.
         for ((s, shape) in shapes) readerAi.shape(s.bookKey, shape)?.let { if (readerAi.enhances(s)) was[s.bookKey.orEmpty()] = it }
         return was

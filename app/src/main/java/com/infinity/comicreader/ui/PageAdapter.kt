@@ -949,13 +949,10 @@ class PageAdapter(
             details.trim()
         }
 
-    /** The last item AI work reaches ([wantAi]); [NO_PAGE] before any. */
-    private var aiReach = NO_PAGE
-
     /**
      * How near [key]'s page is to the item read, for the processed details kept
      * ([DetailStore.rank]): the item read, the next, the one before, then the items after as far
-     * as AI work reaches; none further.
+     * as AI work may start ahead ([AiLead.MAX] + 1); none further.
      */
     private fun detailRank(key: PageKey): Int? {
         if (readingAt < 0) return null
@@ -963,7 +960,7 @@ class PageAdapter(
         return when {
             d == 0 -> 0
             d == -1 -> 2
-            d >= 1 && (d == 1 || readingAt + d <= aiReach) -> 2 * d - 1
+            d in 1..AiLead.MAX + 1 -> 2 * d - 1
             else -> null
         }
     }
@@ -1732,8 +1729,7 @@ class PageAdapter(
         val wanted = keys.toSet()
         aiPages.keys.retainAll(wanted)
         remakes.retainAll(wanted)
-        aiReach = maxOf(readingAt + 1, keys.maxOfOrNull { layout.itemOf(it.part) } ?: NO_PAGE)
-        // The processed details of pages AI work no longer reaches are let go of.
+        // The processed details of pages now far from the item read are let go of.
         details.trim()
         if (keys.isNotEmpty() || ai != null) queueOf(e).want(keys)
     }

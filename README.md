@@ -1299,7 +1299,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   detail budget (a sixteenth of RAM, 32-200 MB, halved for each page of a
   spread), and zooms render from it with the same resampler, never
   sharpened. Such details are kept for the item read, the one before it and
-  the items AI works on after it, the farthest let go of first while the
+  up to five items after it, the farthest let go of first while the
   details held exceed the budget, and none further. A processed page whose
   detail was let go of, or that was read back from disk (which keeps only its
   display size), zooms from the plain page while its detail is made again in

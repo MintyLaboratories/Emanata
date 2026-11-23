@@ -43,6 +43,7 @@ class BookCachesTest {
         context = ApplicationProvider.getApplicationContext()
         cache = context.cacheDir
         cache.listFiles()?.forEach { it.deleteRecursively() }
+        BookFactsCache.reset()
     }
 
     /** A cache file of [id] in [dir], named as the stores name theirs. */
@@ -89,6 +90,31 @@ class BookCachesTest {
         assertEquals(listOf("${idTwo.hex}-0.bin"), PageSizes.dirIn(cache).list()!!.toList())
         // What the library keeps by ID stays for copies elsewhere.
         assertTrue(library.isRead(idOne))
+    }
+
+    @Test
+    fun carriedPagesTakeTheirSizesAlongAndTheFactsOnlyWhenEveryPageIsTheSame() {
+        val names = listOf("1.jpg", "2.jpg")
+        val sizes = PageSizes(PageSizes.dirIn(cache))
+        sizes.write("id:${a.hex}", names, arrayOf(intArrayOf(1, 2), intArrayOf(3, 4)))
+        BookFactsCache(context).put(a, BookFacts(2, 2014))
+        // One page made anew: the facts are left to be read again.
+        BookCaches.carry(context, a, b, intArrayOf(0, 1), BookCaches.SamePages(intArrayOf(1), names, listOf("1.jxl", "2.jpg")), move = false)
+        val read = sizes.read("id:${b.hex}", listOf("1.jxl", "2.jpg"))!!
+        assertNull(read[0])
+        assertEquals(listOf(3, 4), read[1]!!.toList())
+        assertNull(BookFactsCache(context).get(b))
+        // Every page the same, but in another order: the facts are left too.
+        val c = BookId(0xcc)
+        BookCaches.carry(context, a, c, intArrayOf(1, 0), BookCaches.SamePages(intArrayOf(0, 1), names, listOf("2.jpg", "1.jpg")), move = false)
+        assertEquals(listOf(1, 2), sizes.read("id:${c.hex}", listOf("2.jpg", "1.jpg"))!![1]!!.toList())
+        assertNull(BookFactsCache(context).get(c))
+        // Every page the same, in order: the facts come along, and moved, the old book keeps none.
+        val d = BookId(0xdd)
+        BookCaches.carry(context, a, d, intArrayOf(0, 1), BookCaches.SamePages(intArrayOf(0, 1), names, names), move = true)
+        assertEquals(BookFacts(2, 2014), BookFactsCache(context).get(d))
+        assertNull(BookFactsCache(context).get(a))
+        assertNull(sizes.read("id:${a.hex}", names))
     }
 
     @Test

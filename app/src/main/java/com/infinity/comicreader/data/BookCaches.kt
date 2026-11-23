@@ -79,6 +79,38 @@ object BookCaches {
     }
 
     /**
+     * The pages of a book found byte-identical in its rebuilt file: book pages [pages]
+     * (ascending), the pages named as the reader lists them in the book ([oldNames]) and in
+     * the new file ([newNames]).
+     */
+    class SamePages(val pages: IntArray, val oldNames: List<String>, val newNames: List<String>)
+
+    /**
+     * Hands what is cached for the pages of book [old] that [same] finds byte-identical in its
+     * rebuilt file, book [new], to that file, book page `i` as new page [moves]`[i]`: their
+     * sizes, seams, pages seen and previews; the book's facts too when every page is
+     * identical, in the same order. With [move] [old] keeps none of what was handed over,
+     * else all. Blocking.
+     */
+    fun carry(context: Context, old: BookId, new: BookId, moves: IntArray, same: SamePages, move: Boolean) {
+        val app = context.applicationContext
+        val cacheDir = app.cacheDir
+        val count = same.oldNames.size
+        if (moves.size != count) return
+        val map = IntArray(count) { -1 }
+        for (i in same.pages) if (i in map.indices && moves[i] in same.newNames.indices) map[i] = moves[i]
+        val from = keyOf(old)
+        val to = keyOf(new)
+        PageSizes(PageSizes.dirIn(cacheDir)).carry(from, same.oldNames, to, same.newNames, map, move)
+        PageSeams(PageSeams.dirIn(cacheDir)).carry(from, same.oldNames, to, same.newNames, map, move)
+        PreviewStore.carry(PreviewStore.dirIn(cacheDir), from, same.oldNames, to, same.newNames, map, move)
+        if (count == same.newNames.size && map.indices.all { map[it] == it }) BookFactsCache(app).carry(old, new, move)
+    }
+
+    /** The cache key of book [id]'s contents, as [BookIds.keyOf] makes it. */
+    private fun keyOf(id: BookId) = "id:${id.hex}"
+
+    /**
      * Deletes what is cached for book [id] alone, as when it is deleted: its facts, network
      * copy, page sizes, seams, previews, pages processed by AI, nested archives and what the
      * similar-books search read of it. Blocking.

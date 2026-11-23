@@ -86,6 +86,22 @@ class BookFactsCache(context: Context) {
         store.helper.writableDatabase.insertWithOnConflict(TABLE, null, row, SQLiteDatabase.CONFLICT_REPLACE)
     }
 
+    /**
+     * Stores book [from]'s facts as book [to]'s, as when [to] holds the same pages in the same
+     * order; with [move], [from] keeps none. Nothing when [from] has none. Blocking.
+     */
+    fun carry(from: BookId, to: BookId, move: Boolean) {
+        load()
+        synchronized(store) {
+            val known = store.loaded?.get(from.value) ?: return
+            write(to, known)
+            if (move) {
+                store.loaded?.remove(from.value)
+                store.helper.writableDatabase.delete(TABLE, "$ID = ?", arrayOf(from.value.toString()))
+            }
+        }
+    }
+
     /** Forgets the facts of book [id], as when what they were read from changes. Blocking. */
     fun remove(id: BookId) {
         load()

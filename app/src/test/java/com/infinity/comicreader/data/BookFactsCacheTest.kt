@@ -57,6 +57,26 @@ class BookFactsCacheTest {
     }
 
     @Test
+    fun carriedFactsAreCopiedOrMovedWhole() {
+        val detected = DirectionDetection.Detected(ReadingDirection.RTL, DirectionDetection.Source.PUBLISHER)
+        val facts = BookFacts(5, 2014, detected, Slices.Checked(null), CoverFront(0, null, V))
+        BookFactsCache(context).put(a, facts)
+        BookFactsCache(context).carry(a, b, move = false)
+        BookFactsCache.reset()
+        val read = BookFactsCache(context).apply { load() }
+        assertEquals(facts, read.get(b))
+        assertEquals(facts, read.get(a))
+        read.carry(a, c, move = true)
+        BookFactsCache.reset()
+        val after = BookFactsCache(context).apply { load() }
+        assertEquals(facts, after.get(c))
+        assertNull(after.get(a))
+        // Nothing known, nothing carried.
+        after.carry(a, BookId(0x0d), move = true)
+        assertNull(after.get(BookId(0x0d)))
+    }
+
+    @Test
     fun detectedDirectionIsKept() {
         val detected = DirectionDetection.Detected(ReadingDirection.RTL, DirectionDetection.Source.PUBLISHER)
         BookFactsCache(context).put(BookId(-5), BookFacts(20, 0, detected))

@@ -1657,6 +1657,8 @@ This program is distributed in the hope that it will be useful, but WITHOUT ANY 
 
 Parts of this program come from [ComicReader](https://github.com/infinity6901/ComicReader), Copyright (c) 2026 ComicReader contributors, under the MIT License (see [LICENSE-MIT-upstream](LICENSE-MIT-upstream)).
 
+Contributions are accepted under the same license ([CONTRIBUTING.md](CONTRIBUTING.md)).
+
 Third-party components, bundled or downloaded, keep their own licenses. The
 app shows each license and NOTICE text under Settings → About (files in
 `app/src/main/assets/licenses/`).

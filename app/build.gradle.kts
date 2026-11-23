@@ -1,8 +1,14 @@
+import com.android.build.api.artifact.SingleArtifact
+import com.android.build.api.variant.ApplicationVariant
+import com.android.build.api.variant.BuiltArtifactsLoader
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.io.FileInputStream
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.time.Duration
 import java.util.Properties
+import java.util.zip.ZipFile
 
 plugins {
     id("com.android.application")
@@ -154,6 +160,93 @@ val releaseModules = tasks.register("releaseModules") {
         out.get().asFile.apply { parentFile.mkdirs() }.writeText(modules.joinToString("\n", postfix = "\n"))
     }
 }
+// Reads a release or bench APK's dex files: a release APK must hold no android.os.Trace calls
+// and none of the probe section names, a bench APK all of them (so the probes stay current).
+// assembleRelease and assembleBench run it.
+abstract class TraceSectionCheck : DefaultTask() {
+    @get:InputFiles
+    abstract val apkDir: DirectoryProperty
+
+    @get:Internal
+    abstract val loader: Property<BuiltArtifactsLoader>
+
+    @get:Input
+    abstract val traced: Property<Boolean>
+
+    @get:Input
+    abstract val probes: ListProperty<String>
+
+    @TaskAction
+    fun verify() {
+        val apks = loader.get().load(apkDir.get())?.elements?.map { File(it.outputFile) }.orEmpty()
+        check(apks.isNotEmpty()) { "No APK in ${apkDir.get()}" }
+        val strings = HashSet<String>()
+        val traceCalls = HashSet<String>()
+        for (apk in apks) ZipFile(apk).use { zip ->
+            zip.entries().asSequence().filter { it.name.matches(Regex("""classes\d*\.dex""")) }.forEach { entry ->
+                val dex = Dex(zip.getInputStream(entry).use { it.readBytes() })
+                strings += dex.strings
+                traceCalls += dex.methodRefs().filter { it.first == "Landroid/os/Trace;" }.map { it.second }
+            }
+        }
+        val names = probes.get().filter { it in strings }
+        if (traced.get()) {
+            val missing = probes.get() - names.toSet()
+            check(missing.isEmpty() && traceCalls.isNotEmpty()) {
+                "Trace sections missing from ${apks.joinToString { it.name }}: names $missing, android.os.Trace calls $traceCalls"
+            }
+        } else {
+            check(names.isEmpty() && traceCalls.isEmpty()) {
+                "Trace sections left in ${apks.joinToString { it.name }}: names $names, android.os.Trace calls $traceCalls"
+            }
+        }
+    }
+
+    /** The string and method tables of one dex file. */
+    private class Dex(bytes: ByteArray) {
+        private val buf = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+        val strings: List<String> = List(buf.getInt(0x38)) { i -> string(buf.getInt(buf.getInt(0x3C) + 4 * i)) }
+
+        /** (class descriptor, method name) of every method the dex refers to. */
+        fun methodRefs(): List<Pair<String, String>> {
+            val types = buf.getInt(0x44)
+            return List(buf.getInt(0x58)) { i ->
+                val at = buf.getInt(0x5C) + 8 * i
+                strings[buf.getInt(types + 4 * (buf.getShort(at).toInt() and 0xFFFF))] to strings[buf.getInt(at + 4)]
+            }
+        }
+
+        // MUTF-8 after a ULEB128 length in UTF-16 units; plain UTF-8 decoding suffices for ASCII names.
+        private fun string(off: Int): String {
+            var at = off
+            while (buf.get(at).toInt() and 0x80 != 0) at++
+            at++
+            var end = at
+            while (buf.get(end).toInt() != 0) end++
+            return String(buf.array(), at, end - at, Charsets.UTF_8)
+        }
+    }
+}
+
+// Section names from util/Traces.kt callers, one per kind of call site.
+val traceProbes = listOf("book open", "freeze copy", "open: book id", "Resize shown", "processed read")
+
+androidComponents {
+    onVariants(selector().withBuildType("release")) { variant -> traceCheck(variant, traced = false) }
+    onVariants(selector().withBuildType("bench")) { variant -> traceCheck(variant, traced = true) }
+}
+
+fun traceCheck(variant: ApplicationVariant, traced: Boolean) {
+    val name = variant.name.replaceFirstChar { it.uppercase() }
+    val check = tasks.register<TraceSectionCheck>("check${name}TraceSections") {
+        apkDir.set(variant.artifacts.get(SingleArtifact.APK))
+        loader.set(variant.artifacts.getBuiltArtifactsLoader())
+        this.traced.set(traced)
+        probes.set(traceProbes)
+    }
+    tasks.matching { it.name == "assemble$name" }.configureEach { dependsOn(check) }
+}
+
 tasks.withType<Test>().configureEach {
     inputs.files(releaseModules)
     // NoticesTest reads the Java resources the release APK packs, under this build directory.

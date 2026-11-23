@@ -279,13 +279,16 @@ internal object AiPages {
      * its input's pixels: those [thresholds] let run at the size the page shows at against
      * their input ([AiThresholds.shownPercent]), the models before them having enlarged it.
      * [width] x [height] is the chain's input: the page after its reduction to
-     * [ReaderAi.MAX_INPUT_PIXELS], as [plan] is in its pixels.
+     * [ReaderAi.MAX_INPUT_PIXELS], as [plan] is in its pixels. [read] scales the shown size to
+     * the size the page is read at ([ReadSize.factor]).
      */
-    fun steps(models: List<ChainModel>, width: Int, height: Int, plan: Plan, thresholds: AiThresholds = AiThresholds()): List<ChainStep> {
+    fun steps(
+        models: List<ChainModel>, width: Int, height: Int, plan: Plan, thresholds: AiThresholds = AiThresholds(), read: Double = 1.0
+    ): List<ChainStep> {
         val out = ArrayList<ChainStep>()
         var scale = 1
         for ((i, m) in models.withIndex()) {
-            if (!thresholds.runs(m.rule, AiThresholds.shownPercent(plan, scale))) continue
+            if (!thresholds.runs(m.rule, AiThresholds.shownPercent(plan, scale) * read)) continue
             out += ChainStep(i, width.toLong() * height * scale * scale)
             scale *= m.scale
         }
@@ -295,11 +298,13 @@ internal object AiPages {
     /**
      * The handles of [thresholds] that decide some of [models] ([ChainModel.rule]), as part of a
      * processed page's key where the models that run are not known before its decode: "u" and
-     * the upscale handle, "c" and the cleanup one; empty when no handle does (descreen alone).
+     * the upscale handle, "c" and the cleanup one, then what decides the read size ([ReadSize.key])
+     * after "|"; empty when no handle does (descreen alone).
      */
-    fun handles(models: List<ChainModel>, thresholds: AiThresholds): String = buildString {
+    fun handles(models: List<ChainModel>, thresholds: AiThresholds, read: ReadSize? = null): String = buildString {
         if (models.any { it.rule == AiStep.UPSCALE }) append("u").append(thresholds.upscalePct)
         if (models.any { it.rule == AiStep.ARTIFACTS }) append("c").append(thresholds.cleanupPct)
+        if (isNotEmpty() && read != null) append('|').append(read.key)
     }
 
     /** The models that run, [run] (indices into the chain), as part of a processed page's key: "r" and the indices, as "r0,2". */

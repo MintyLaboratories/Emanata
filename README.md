@@ -1373,7 +1373,7 @@ cmake -S app/src/test/cpp -B build/native-test && cmake --build build/native-tes
 On Windows, if JDK 21 is not on PATH:
 
 ```powershell
-$env:JAVA_HOME = "C:\Program Files\Eclipse Adoptium\jdk-21.0.11.10-hotspot"
+$env:JAVA_HOME = "<path to your JDK 21>"
 $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 .\gradlew.bat assembleRelease
 ```

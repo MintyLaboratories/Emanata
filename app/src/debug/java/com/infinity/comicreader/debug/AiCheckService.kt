@@ -57,12 +57,14 @@ import com.infinity.comicreader.reader.NativeResampler
 import com.infinity.comicreader.reader.Plan
 import com.infinity.comicreader.reader.Scaling
 import com.infinity.comicreader.reader.SyntheticPage
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.CancellationException
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 import kotlin.math.abs
+import kotlin.math.log10
 import kotlin.math.max
 
 /**
@@ -158,6 +160,26 @@ import kotlin.math.max
  *   texture offsets, depth-to-space, bilinear sampling, channels and stages as the runner
  *   should have them. With `save`, both as PNG.
  *
+ * or, to bench one model or shader chain closely: `--es do a3 [--es kind ncnn|catalog|user|shader]
+ *  --es ref <.param path | catalog id | imported model id | shader id> [--es size 1000x1500] [--es tiles 128,192,256,384]
+ *  [--ei reps 3] [--ef cool 0.85] [--ei stops 5] [--es seam <WxH>] [--ez seamonly false] [--es label <name>] [--ez fp16 true] [--ei threads 4]`
+ *
+ * or, for a shader chain against its ncnn twin: `--es do a3psnr --es shader <shader id> --es ref <.param of the twin>
+ *  [--es size 1000x1500] [--es tiles <tile>] [--ez fp16 true] [--ei threads 4]`
+ *
+ * - a3: opens it on the GPU (`a3open`: time, geometry, the PSS and graphics memory it took), then
+ *   per tile size that fits: waits for thermal status none and headroom below `cool` (up to
+ *   [COOL_TIME_MAX_S]), one warm-up page and `reps` timed pages (`a3time`: each page's time,
+ *   tile times, `memWarm` and `mem`: base and peak resident, PSS and graphics memory through
+ *   the warm-up and through the timed pages, `sysRun`: [DeviceClocks.summary] through the timed
+ *   pages, thermal state and forecast `before` and `after`), then `stops` pages each canceled
+ *   half way through by the median page time (`stops`: [A3Runs.stopsJson]). Lines name it by
+ *   `label`, else the ref's file name. With `seam`, seams on a page of that size at each tile
+ *   size (`a3seam`, [a3Seams]); `seamonly` skips the timing.
+ * - a3psnr: the chain and its twin, each at the first of `tiles` (else its own tile), on one
+ *   synthetic page: PSNR (RGB and BT.601 luma) and the largest difference, over the whole output
+ *   and without a 16 px border of the page (`inner16`); both outputs saved as PNG.
+ *
  * Results go to the log under "AiCheck", one JSON object per line, ending with "done", and
  * to `files/bench/ai.jsonl` in the app's external files (samples beside it). Every line
  * carries `sys` ([DeviceClocks.Snapshot]) as it is written: the cpuset and allowed CPUs of
@@ -189,7 +211,7 @@ class AiCheckService : Service() {
         val tune = intent?.getBooleanExtra("tune", false) ?: false
         thread(name = "ai-check") { Calibrator.hold {
             checkTid = Process.myTid()
-            shaderRun = what == "shaders" || what == "shaderref"
+            shaderRun = what == "shaders" || what == "shaderref" || (what == "a3" && intent?.getStringExtra("kind") == "shader")
             try {
                 out.parentFile?.mkdirs()
                 if (what == "download") {
@@ -218,6 +240,21 @@ class AiCheckService : Service() {
                     val asked = intent?.getStringExtra("tiles")?.split(',')?.mapNotNull { it.trim().toIntOrNull() }.orEmpty()
                     val inputs = intent?.getStringExtra("input")?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }?.map(::File).orEmpty()
                     shaders(ids, pages, asked, reps, timeCool, intent?.getBooleanExtra("save", false) ?: false, intent?.getBooleanExtra("off", false) ?: false, inputs)
+                    return@hold
+                }
+                if (what == "a3") {
+                    require(size.size == 2) { "unreadable size" }
+                    val seam = intent?.getStringExtra("seam")?.split('x')?.mapNotNull { it.toIntOrNull() }?.takeIf { it.size == 2 }
+                    a3(
+                        intent?.getStringExtra("kind") ?: "ncnn", intent?.getStringExtra("ref").orEmpty(), size[0], size[1], tiles, reps, cool,
+                        intent?.getIntExtra("stops", 5)?.coerceIn(1, 21) ?: 5, seam, fp16, threads, intent?.getStringExtra("label"),
+                        intent?.getBooleanExtra("seamonly", false) ?: false
+                    )
+                    return@hold
+                }
+                if (what == "a3psnr") {
+                    require(size.size == 2) { "unreadable size" }
+                    a3Psnr(intent?.getStringExtra("shader").orEmpty(), intent?.getStringExtra("ref").orEmpty(), size[0], size[1], tiles.firstOrNull() ?: 512, fp16, threads)
                     return@hold
                 }
                 if (what == "shaderref") {
@@ -785,6 +822,269 @@ class AiCheckService : Service() {
         }
     }
 
+    // ------------------------------------------------------------------ a3
+
+    private class A3Open(val session: Session, val cpuRef: (() -> Session?)?, val openMs: Long)
+
+    /**
+     * [ref] opened on the GPU as [kind] says: an ncnn `.param` path (`ncnn`, its `.bin` beside it),
+     * a catalog model or shader chain by id (`catalog`, `shader`; downloaded first when missing)
+     * or an imported model by id (`user`). For ncnn, also how to open it on the CPU (the seam
+     * check's reference); null when it does not open.
+     */
+    private fun a3Open(kind: String, ref: String, fp16: Boolean, threads: Int): A3Open? {
+        val store = ModelStore.of(this)
+        val t0 = SystemClock.elapsedRealtime()
+        if (kind == "shader") {
+            val m = ShaderCatalog.byId(ref) ?: return null
+            if (!store.installed(m)) ModelDownloader(store).download(m)
+            val files = store.shaderFiles(m)!!
+            val s = ShaderSessions.attempt(GlesShaders, { files.map { it.readText() } }, m.scale, ModelMemory.of(this), cache = ReaderAi.programsIn(this)).session
+                ?: return null
+            return A3Open(s, null, SystemClock.elapsedRealtime() - t0)
+        }
+        val files = when (kind) {
+            "catalog" -> {
+                val m = ModelCatalog.byId(ref) ?: return null
+                if (!store.installed(m)) ModelDownloader(store).download(m)
+                store.files(m)!!
+            }
+            "user" -> store.userFiles(store.userDir(ref))
+            else -> ModelFiles(File(ref), File(ref.removeSuffix(".param") + ".bin"))
+        }
+        val s = Sessions.open(LibNcnn, files, threads, gpu = true, fp16 = fp16) ?: return null
+        return A3Open(s, { Sessions.open(LibNcnn, files, threads, gpu = false) }, SystemClock.elapsedRealtime() - t0)
+    }
+
+    /** Waits for thermal status none and headroom below [below], up to [COOL_TIME_MAX_S]; the seconds waited. */
+    private fun a3Cool(below: Float): Long {
+        val waited = coolDown(below, COOL_TIME_MAX_S, statusNone = true)
+        Thread.sleep(HEADROOM_GAP_MS)
+        return waited
+    }
+
+    /** Thermal status, headroom now and forecast 10 s ahead, battery level and plug. */
+    private fun a3State(): JSONObject {
+        if (Build.VERSION.SDK_INT < 30) return state()
+        val power = getSystemService(PowerManager::class.java)
+        val now = power.getThermalHeadroom(0)
+        Thread.sleep(HEADROOM_GAP_MS)
+        val forecast = power.getThermalHeadroom(10)
+        fun r(f: Float): Any = if (f.isNaN()) JSONObject.NULL else Stats.round1(f * 100.0) / 100
+        val sticky = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        return JSONObject().put("thermal", power.currentThermalStatus).put("headroom", r(now)).put("forecast10s", r(forecast))
+            .put("level", sticky?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1)
+            .put("plugged", (sticky?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0) != 0)
+    }
+
+    private fun mem(): A3Runs.Mem {
+        val mi = Debug.MemoryInfo().also { Debug.getMemoryInfo(it) }
+        return A3Runs.Mem(rssKb(), mi.totalPss.toLong(), mi.getMemoryStat("summary.graphics")?.toLongOrNull() ?: 0L)
+    }
+
+    /** Until [stop], on a thread of its own: resident memory every 20 ms; PSS, graphics memory and the clocks every 100 ms. */
+    private inner class RunSampler {
+        val peaks = A3Runs.Peaks(mem())
+        val clocks = ArrayList<DeviceClocks.Snapshot>()
+        private val running = AtomicBoolean(true)
+        private val worker = thread(name = "a3-sampler") {
+            var n = 0
+            while (running.get()) {
+                if (n++ % 5 == 0) {
+                    peaks.see(mem())
+                    clocks += clocksNow()
+                } else {
+                    peaks.seeRss(rssKb())
+                }
+                Thread.sleep(20)
+            }
+        }
+
+        /** Ends sampling; [peaks] and [clocks] are complete once it returns. */
+        fun stop(): RunSampler {
+            running.set(false)
+            worker.join()
+            return this
+        }
+    }
+
+    private fun a3(
+        kind: String, ref: String, w: Int, h: Int, tiles: List<Int>, reps: Int, cool: Float, stops: Int, seam: List<Int>?,
+        fp16: Boolean, threads: Int, label: String?, seamOnly: Boolean
+    ) {
+        val name = label ?: ref.substringAfterLast('/')
+        val m0 = mem()
+        val opened = a3Open(kind, ref, fp16, threads) ?: return log(JSONObject().put("a3", name).put("failed", "open"))
+        val m1 = mem()
+        opened.session.use { s ->
+            val g = s.geometry
+            log(
+                JSONObject().put("a3open", name).put("kind", kind).put("ms", opened.openMs).put("onGpu", s.model.onGpu).put("fp16", s.fp16)
+                    .put("scale", g.scale).put("trim", g.trim).put("context", g.context).put("margin", g.margin).put("tile", s.size)
+                    .put("own", s.sizeFor(w, h)).put("pssOpenMb", (m1.pssKb - m0.pssKb) / 1024).put("graphicsOpenMb", (m1.graphicsKb - m0.graphicsKb) / 1024)
+            )
+            val page = SyntheticPage.draw(w, h)
+            for (size in tiles.filter { TilePlan.fits(it, g) && !seamOnly }) {
+                val waited = a3Cool(cool)
+                val before = a3State()
+                val session = Session(s.model, g, size)
+                val warmSampler = RunSampler()
+                val w0 = SystemClock.elapsedRealtime()
+                val warm = TileEngine.run(session, page, UNLIMITED)
+                val warmMs = SystemClock.elapsedRealtime() - w0
+                warmSampler.stop()
+                warm.bitmap?.recycle()
+                val pages = ArrayList<Long>()
+                val tileMs = ArrayList<Long>()
+                var planned = 0
+                var fallback: Fallback? = warm.fallback
+                val sampler = RunSampler()
+                for (r in 0 until reps) {
+                    val p0 = SystemClock.elapsedRealtime()
+                    val run = TileEngine.run(session, page, UNLIMITED)
+                    pages += SystemClock.elapsedRealtime() - p0
+                    tileMs += run.stats.tileMs.toList()
+                    planned = run.stats.planned
+                    fallback = fallback ?: run.fallback
+                    run.bitmap?.recycle()
+                }
+                sampler.stop()
+                val after = a3State()
+                // Pages canceled half way through, by the median page time.
+                val median = Stats.percentile(pages.sorted(), 50)
+                val stopped = (0 until stops).map { a3Stop(session, page, median / 2) }
+                log(
+                    JSONObject().put("a3time", name).put("kind", kind).put("page", "${w}x$h").put("tile", size).put("tiles", planned).put("cooledS", waited)
+                        .put("warmUpMs", warmMs).put("pages", JSONArray(pages)).put("pageMs", Stats.summary(pages)).put("tileMs", Stats.summary(tileMs))
+                        .put("fallback", fallback?.name ?: JSONObject.NULL)
+                        .put("memWarm", warmSampler.peaks.toJson()).put("mem", sampler.peaks.toJson()).put("sysRun", DeviceClocks.summary(sampler.clocks))
+                        .put("stops", A3Runs.stopsJson(stopped)).put("before", before).put("after", after)
+                )
+            }
+            page.recycle()
+            if (seam != null) a3Seams(name, s, opened.cpuRef, tiles, seam[0], seam[1])
+        }
+        log(JSONObject().put("a3closed", name).put("graphicsMb", graphicsKb() / 1024))
+    }
+
+    /** [page] through [session], canceled [afterMs] after it starts: how long it took to stop; null when it ran to the end first. */
+    private fun a3Stop(session: Session, page: Bitmap, afterMs: Long): A3Runs.Stop? {
+        val cancelAt = SystemClock.elapsedRealtime() + afterMs
+        var done = 0
+        return try {
+            TileEngine.run(session, page, UNLIMITED, canceled = { SystemClock.elapsedRealtime() >= cancelAt }, onTile = { d, _, _ -> done = d }).bitmap?.recycle()
+            null
+        } catch (e: CancellationException) {
+            A3Runs.Stop(afterMs, SystemClock.elapsedRealtime() - cancelAt, done)
+        }
+    }
+
+    /**
+     * Seams at each tile size on a [w] x [h] synthetic page: ncnn against the CPU's fp32 run of the
+     * whole page, split into pixels within 2 of a tile join and the rest (pass: joins no worse than
+     * the rest plus one code); shaders against the same chain in other tiles (pass: at most 1 code).
+     */
+    private fun a3Seams(name: String, s: Session, cpuRef: (() -> Session?)?, tiles: List<Int>, w: Int, h: Int) {
+        val page = SyntheticPage.draw(w, h)
+        val g = s.geometry
+        val ow = w * g.scale
+        // CPU fp32 in 320 px tiles (joins apart from every size tested): a whole-page tile of a wide model needs gigabytes.
+        val reference: IntArray? = cpuRef?.invoke()?.use { cpu ->
+            val whole = Session(cpu.model, cpu.geometry, 320)
+            TileEngine.run(whole, page, UNLIMITED).bitmap?.let { b -> pixels(b).also { b.recycle() } }
+        }
+        val outs = tiles.filter { TilePlan.fits(it, g) }.associateWith { size ->
+            TileEngine.run(Session(s.model, g, size), page, UNLIMITED).bitmap?.let { b -> pixels(b).also { b.recycle() } }
+        }
+        for ((size, out) in outs) {
+            val line = JSONObject().put("a3seam", name).put("page", "${w}x$h").put("tile", size)
+            if (out == null) {
+                log(line.put("failed", true))
+                continue
+            }
+            val plan = TilePlan.tiles(w, h, size, g)
+            val joinX = plan.map { it.dx }.filter { it > 0 }.toSet()
+            val joinY = plan.map { it.dy }.filter { it > 0 }.toSet()
+            val nearX = BooleanArray(ow) { x -> joinX.any { abs(x - it) <= 2 } }
+            val nearY = BooleanArray(h * g.scale) { y -> joinY.any { abs(y - it) <= 2 } }
+            fun split(other: IntArray): Pair<Int, Int> {
+                var atJoin = 0
+                var rest = 0
+                for (i in out.indices) {
+                    var d = 0
+                    for (sh in 0..16 step 8) d = max(d, abs(((out[i] shr sh) and 0xFF) - ((other[i] shr sh) and 0xFF)))
+                    if (nearX[i % ow] || nearY[i / ow]) atJoin = max(atJoin, d) else rest = max(rest, d)
+                }
+                return atJoin to rest
+            }
+            if (reference != null) {
+                val (j, r) = split(reference)
+                line.put("vsCpuJoinMax", j).put("vsCpuRestMax", r).put("pass", j <= r + 1)
+            }
+            val otherSize = outs.keys.firstOrNull { it != size && outs[it] != null }
+            if (otherSize != null) {
+                val d = diff(out, outs[otherSize]!!)
+                line.put("vsTile", otherSize).put("vsTileMax", d.max).put("vsTileOver2", d.over2)
+                if (reference == null) line.put("pass", d.max <= 1)
+            }
+            log(line)
+        }
+        page.recycle()
+    }
+
+    /** A shader chain against its ncnn twin on one synthetic page: PSNR (RGB and BT.601 luma), largest difference; both outputs saved. */
+    private fun a3Psnr(shader: String, param: String, w: Int, h: Int, tile: Int, fp16: Boolean, threads: Int) {
+        val page = SyntheticPage.draw(w, h)
+        val outs = listOf("shader" to shader, "ncnn" to param).map { (kind, ref) ->
+            a3Open(kind, ref, fp16, threads)?.session?.use { s ->
+                val size = if (TilePlan.fits(tile, s.geometry)) tile else s.size
+                TileEngine.run(Session(s.model, s.geometry, size), page, UNLIMITED).bitmap
+            }
+        }
+        val (a, b) = outs
+        val line = JSONObject().put("a3psnr", shader).put("twin", param.substringAfterLast('/')).put("page", "${w}x$h").put("tile", tile)
+        if (a == null || b == null || a.width != b.width || a.height != b.height) {
+            log(line.put("failed", true))
+        } else {
+            save(a, "a3-$shader-shader-${w}x$h.png")
+            save(b, "a3-$shader-ncnn-${w}x$h.png")
+            val pa = pixels(a)
+            val pb = pixels(b)
+            val ow = a.width
+            val oh = a.height
+            val shifts = intArrayOf(16, 8, 0)
+            val luma = doubleArrayOf(0.299, 0.587, 0.114)
+            fun stats(border: Int): JSONObject {
+                var se = 0.0
+                var sy = 0.0
+                var n = 0L
+                var worst = 0
+                for (y in border until oh - border) for (x in border until ow - border) {
+                    val i = y * ow + x
+                    var ya = 0.0
+                    var yb = 0.0
+                    for (k in 0..2) {
+                        val ca = (pa[i] shr shifts[k]) and 0xFF
+                        val cb = (pb[i] shr shifts[k]) and 0xFF
+                        val d = ca - cb
+                        se += d * d
+                        worst = max(worst, abs(d))
+                        ya += luma[k] * ca
+                        yb += luma[k] * cb
+                    }
+                    sy += (ya - yb) * (ya - yb)
+                    n++
+                }
+                fun db(mse: Double) = if (mse == 0.0) 999.0 else Stats.round1(10 * log10(255.0 * 255.0 / mse) * 100) / 100
+                return JSONObject().put("psnrRgb", db(se / (3 * n))).put("psnrY", db(sy / n)).put("maxDiff", worst)
+            }
+            log(line.put("whole", stats(0)).put("inner16", stats(16 * ow / w)))
+        }
+        a?.recycle()
+        b?.recycle()
+        page.recycle()
+    }
+
     // ------------------------------------------------------------------ gray
 
     private fun gray(ids: List<String>, param: File?, engines: List<Boolean>, w: Int, h: Int, fp16: Boolean, threads: Int, cool: Float) {
@@ -855,14 +1155,17 @@ class AiCheckService : Service() {
         JSONObject().put("max", s.max).put("mean", Stats.round1(s.mean * 100) / 100).put("over2", s.over2).put("over16", s.over16)
             .put("at", if (s.atX < 0) JSONObject.NULL else "${s.atX},${s.atY}")
 
-    /** Waits, up to [maxS] seconds, for the thermal headroom to fall below [below]; the seconds waited. */
-    private fun coolDown(below: Float, maxS: Int = COOL_MAX_S): Long {
+    /**
+     * Waits, up to [maxS] seconds, for the thermal headroom to fall below [below] (and with
+     * [statusNone], the thermal status to be none); the seconds waited.
+     */
+    private fun coolDown(below: Float, maxS: Int = COOL_MAX_S, statusNone: Boolean = false): Long {
         if (Build.VERSION.SDK_INT < 30) return 0
         val power = getSystemService(PowerManager::class.java)
         val t0 = SystemClock.elapsedRealtime()
         while (SystemClock.elapsedRealtime() - t0 < maxS * 1000L) {
             val h = power.getThermalHeadroom(0)
-            if (!h.isNaN() && h < below) break
+            if (!h.isNaN() && h < below && (!statusNone || power.currentThermalStatus == PowerManager.THERMAL_STATUS_NONE)) break
             Thread.sleep(5_000)
         }
         return (SystemClock.elapsedRealtime() - t0) / 1000
@@ -980,6 +1283,9 @@ class AiCheckService : Service() {
 
         /** Limits no timed page reaches. */
         val UNLIMITED = PageLimits(timeoutMs = 3_600_000L)
+
+        /** The thermal headroom answers NaN when asked again sooner than this. */
+        const val HEADROOM_GAP_MS = 1_100L
 
         /** Where procfs and sysfs are. */
         val ROOT = File("/")

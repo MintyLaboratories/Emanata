@@ -1485,7 +1485,9 @@ against one tile covering a whole page on the CPU in fp32, GPU against CPU, time
 tile and page with memory and thermal state, the timeout and cancel paths, and pages
 back to back until the heat gate stops them. See its KDoc for the extras. Each
 line it writes carries the cpuset of the thread running the model and the GPU and
-CPU clocks where the system shows them. On a
+CPU clocks where the system shows them. `--es do a3` times one model or shader
+chain closely (memory sampled through every page, the median of several cancels)
+and `--es do a3psnr` compares a shader chain with its ncnn twin. On a
 Snapdragon 8 Gen 1 (Adreno 730, Android 16, debug build in the foreground, plugged
 in but not charging), a 2x compact upscaler (OpenComic AI upscale 2x compact v2)
 took a synthetic 1000x1500 page to 2000x3000 (medians of 5 pages):

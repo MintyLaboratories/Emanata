@@ -26,6 +26,7 @@ import com.infinity.comicreader.ai.ModelCatalog
 import com.infinity.comicreader.ai.ModelRatings
 import com.infinity.comicreader.ai.RatingCategory
 import java.text.NumberFormat
+import java.util.EnumMap
 import kotlin.math.roundToInt
 
 /**
@@ -39,8 +40,11 @@ import kotlin.math.roundToInt
  * the picker closes ([flush]), so stepping across levels picks only the last. A family's level
  * picked is remembered for [step] ([PickerLevels]): its slider shows it while another row is
  * picked, and picks nothing until moved or its row tapped. [openKeys]: the keys
- * ([PickerRow.key]) of the rows whose info shows; [startY]: where the list starts, else at the
- * picked row (both as [expandedKeys] and [scrollY] left them, across a rebuilt dialog).
+ * ([PickerRow.key]) of the rows whose info shows; [startY]: where the list starts (both as
+ * [expandedKeys] and [scrollY] left them, across a rebuilt dialog). Else it opens where
+ * [step]'s picker was left while the app runs, in Settings or the reader alike, so a row sits
+ * where it sat when last tapped; scrolled the least that shows the picked row whole, when
+ * that row is not ([inSight]).
  */
 class ModelPicker(
     private val context: Context,
@@ -78,11 +82,22 @@ class ModelPicker(
 
     init {
         for (h in holders) list.addView(h.item)
-        // Where it was left, else the picked row in sight as the picker opens.
+        // Read now: focus may scroll the list before it is laid out.
+        val left = Left.at(context, step) ?: 0
         view.post {
-            val y = startY ?: holders.firstOrNull { it.chosen }?.let { (it.item.top - it.item.height).coerceAtLeast(0) } ?: return@post
-            (view as NestedScrollView).scrollTo(0, y)
+            val scroll = view as NestedScrollView
+            scroll.scrollTo(0, startY ?: opening(left))
+            Left.keep(context, step, scroll.scrollY)
+            scroll.setOnScrollChangeListener { _: NestedScrollView, _: Int, y: Int, _: Int, _: Int -> Left.keep(context, step, y) }
         }
+    }
+
+    /** Where the laid-out list starts from [left]: there, or moved the least that shows the picked row whole ([inSight]). */
+    private fun opening(left: Int): Int {
+        val shown = view.height - view.paddingTop - view.paddingBottom
+        val y = left.coerceIn(0, (list.height - shown).coerceAtLeast(0))
+        val row = holders.firstOrNull { it.chosen }?.item ?: return y
+        return inSight(y, list.top + row.top, list.top + row.bottom, shown)
     }
 
     private fun pick(id: String?, done: Boolean) {
@@ -293,9 +308,40 @@ class ModelPicker(
         }
     }
 
+    /** Where each step's picker was left, for the life of the app (its application object: one a process). */
+    private object Left {
+        private var app: Context? = null
+        private val y = EnumMap<AiStep, Int>(AiStep::class.java)
+
+        fun at(context: Context, step: AiStep): Int? = of(context)[step]
+
+        fun keep(context: Context, step: AiStep, at: Int) {
+            of(context)[step] = at
+        }
+
+        private fun of(context: Context): EnumMap<AiStep, Int> {
+            val a = context.applicationContext
+            if (a !== app) {
+                app = a
+                y.clear()
+            }
+            return y
+        }
+    }
+
     companion object {
         /** How long a slider moved by keys or a screen reader rests before its level is picked. */
         const val SETTLE_MS = 500L
+
+        /**
+         * The scroll from [y] that shows a row from [top] to [bottom] whole in a window [shown]
+         * high: [y] when it does, else the least move that does (the row's top when it is taller).
+         */
+        fun inSight(y: Int, top: Int, bottom: Int, shown: Int): Int = when {
+            top < y -> top
+            bottom > y + shown -> minOf(top, bottom - shown)
+            else -> y
+        }
 
         /** The picker of [step]'s models, [current] picked (null: none); [openKeys] and [startY] as [ModelPicker] takes them. */
         fun of(

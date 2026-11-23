@@ -297,6 +297,70 @@ class SettingsAiTest {
         assertFalse(asked("anime4k-a-m"))
     }
 
+    private fun scrollOf(dialog: android.app.Dialog) = dialog.findViewById<View>(R.id.ai_model_list)!!.parent as androidx.core.widget.NestedScrollView
+
+    private fun screenY(v: View): Int = IntArray(2).also(v::getLocationOnScreen)[1]
+
+    /** The height the picker's list shows at once. */
+    private fun shown(scroll: androidx.core.widget.NestedScrollView) = scroll.height - scroll.paddingTop - scroll.paddingBottom
+
+    @Test
+    fun aTappedRowSitsWhereItWasTappedWhenThePickerOpensAgain() {
+        Prefs(context).aiEnabled = true
+        val fragment = settings()
+        var dialog = openUpscalePicker(fragment)
+        val scroll = scrollOf(dialog)
+        // Longer than the window, opened at the top: the default shows there.
+        assertTrue(scroll.canScrollVertically(1))
+        assertEquals(0, scroll.scrollY)
+        val rows = ModelPickerTest.rows(dialog)
+        val row = rows[rows.size - 2]
+        val name = ModelPickerTest.name(row)
+        // Scrolled to the row, then tapped.
+        scroll.scrollTo(0, row.top - (shown(scroll) - row.height) / 2)
+        idle()
+        assertTrue(scroll.scrollY > 0)
+        val y = screenY(row)
+        ModelPickerTest.tap(row)
+        idle()
+        assertFalse(dialog.isShowing)
+        dialog = openUpscalePicker(fragment)
+        val again = ModelPickerTest.rows(dialog).first { ModelPickerTest.name(it) == name }
+        assertTrue(ModelPickerTest.checked(again))
+        assertEquals(y, screenY(again))
+    }
+
+    @Test
+    fun aPickedRowOutOfSightScrollsTheLeastIntoSight() {
+        Prefs(context).aiEnabled = true
+        val fragment = settings()
+        val pref = fragment.findPreference<ListPreference>(Prefs.aiKey(AiStep.UPSCALE))!!
+        val last = PickerRows.of(AiStep.UPSCALE, keepSimple = true, current = null, noneName = context.getString(R.string.ai_none)).last()
+        if (pref.callChangeListener(last.models.last().id)) pref.value = last.models.last().id
+        // First opened on the last row: scrolled just enough to show it whole, at the bottom.
+        var dialog = openUpscalePicker(fragment)
+        var scroll = scrollOf(dialog)
+        var list = dialog.findViewById<View>(R.id.ai_model_list)!!
+        var row = ModelPickerTest.rows(dialog).last()
+        assertTrue(ModelPickerTest.checked(row))
+        assertTrue(scroll.scrollY > 0)
+        assertEquals(scroll.scrollY + shown(scroll), list.top + row.bottom)
+        // Left at the very bottom, then waifu2x picked elsewhere: scrolled up just enough to show it, at the top.
+        scroll.scrollTo(0, list.height)
+        idle()
+        assertFalse(scroll.canScrollVertically(1))
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE).performClick()
+        idle()
+        if (pref.callChangeListener(ModelCatalog.DEFAULT_UPSCALE)) pref.value = ModelCatalog.DEFAULT_UPSCALE
+        dialog = openUpscalePicker(fragment)
+        scroll = scrollOf(dialog)
+        list = dialog.findViewById(R.id.ai_model_list)!!
+        row = ModelPickerTest.rows(dialog)[1]
+        assertTrue(ModelPickerTest.checked(row))
+        assertEquals(list.top + row.top, scroll.scrollY)
+        assertTrue(scroll.scrollY > 0)
+    }
+
     @Test
     fun aRebuiltPickerKeepsItsOpenPanels() {
         Prefs(context).aiEnabled = true

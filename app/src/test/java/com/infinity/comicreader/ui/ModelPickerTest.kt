@@ -362,6 +362,18 @@ class ModelPickerTest {
     }
 
     @Test
+    fun aRowComesIntoSightByTheLeastScroll() {
+        // In sight: unmoved.
+        assertEquals(100, ModelPicker.inSight(100, 150, 200, 300))
+        assertEquals(100, ModelPicker.inSight(100, 100, 400, 300))
+        // Below: its bottom at the bottom; above: its top at the top.
+        assertEquals(150, ModelPicker.inSight(100, 400, 450, 300))
+        assertEquals(40, ModelPicker.inSight(100, 40, 90, 300))
+        // Taller than the window: its top at the top.
+        assertEquals(500, ModelPicker.inSight(100, 500, 900, 300))
+    }
+
+    @Test
     fun tappingNonePicksNone() {
         val p = picker(AiStep.DESCREEN, current = "opencomic-ai-descreen-hard-compact-v2")
         assertTrue(checked(rowOf(p, "OpenComic v2")))

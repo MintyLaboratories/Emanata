@@ -70,8 +70,11 @@ class RarReader private constructor(
     /** Counts the handles opened, so a stream outliving its handle is told apart. */
     private var generation = 0
 
-    /** False once a [Spliced] view failed: reads walk from the start from then on. */
+    /** False once a [Spliced] view landed on another header or failed twice: reads walk from the start from then on. */
     private var splicing = true
+
+    /** [Spliced] views that failed where the walk from the start then found the entry. */
+    private var viewFailures = 0
 
     @Volatile
     private var closed = false
@@ -171,6 +174,8 @@ class RarReader private constructor(
                     if (closed) throw e
                     drop()
                     viewFailed = true
+                    // Another header where this one was listed: views cannot be trusted here.
+                    if (e is Misplaced) splicing = false
                 }
             }
         }
@@ -180,10 +185,10 @@ class RarReader private constructor(
             current = -1
         }
         while (current < ordinal) step(ordinal, path)
-        // The walk from the start found the entry the view did not: no more views.
+        // The walk from the start found the entry the view did not; a second time, no more views.
         if (viewFailed) {
-            splicing = false
             unspliced++
+            if (++viewFailures >= MAX_VIEW_FAILURES) splicing = false
         }
     }
 
@@ -207,9 +212,12 @@ class RarReader private constructor(
         current++
         if (current == ordinal && pathOf(name) != path) {
             drop()
-            throw IOException("Entry $ordinal is not where it was listed")
+            throw Misplaced("Entry $ordinal is not where it was listed")
         }
     }
+
+    /** The header reached is not the one listed there. */
+    private class Misplaced(message: String) : IOException(message)
 
     /** Runs a native [call], letting go of the handle when it fails: libarchive reads no further after an error. */
     private inline fun <T> native(call: () -> T): T = try {
@@ -275,6 +283,9 @@ class RarReader private constructor(
 
         /** The longest main header put before an entry's ([Spliced]); one longer is walked past instead. */
         private const val MAX_PREFIX_BYTES = 64L * 1024
+
+        /** [Spliced] view failures, each followed by a walk that found the entry, before views stop. */
+        private const val MAX_VIEW_FAILURES = 2
 
         /** [name] (UTF-8) with "/" as the only separator. */
         private fun pathOf(name: ByteArray): String = String(name, Charsets.UTF_8).replace('\\', '/')

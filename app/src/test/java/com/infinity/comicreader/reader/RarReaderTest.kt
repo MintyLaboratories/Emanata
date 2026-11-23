@@ -147,6 +147,38 @@ class RarReaderTest {
     }
 
     @Test
+    fun oneFailedViewKeepsSplicingWhileASecondOrAMisplacedHeaderStopsIt() {
+        val bytes = Fixtures.rar5Bytes(*big)
+        val starts = FileChannel.open(file(bytes).toPath(), StandardOpenOption.READ).use { Rar5Headers.list(it).map { h -> h.start } }
+        fun open() = Faulty(FileChannel.open(file(bytes).toPath(), StandardOpenOption.READ)).let { RarReader.of(it) to it }
+        open().let { (r, channel) ->
+            r.use {
+                // A read error on the view: the walk from the start finds the entry; the next read splices again.
+                channel.failAt = starts[3]
+                assertArrayEquals(big[3].second, r.bytes(3))
+                assertEquals(0 to 1, r.spliced to r.unspliced)
+                assertArrayEquals(big[4].second, r.bytes(4))
+                assertEquals(1 to 1, r.spliced to r.unspliced)
+                // A second one: reads walk from the start from then on.
+                channel.failAt = starts[2]
+                assertArrayEquals(big[2].second, r.bytes(2))
+                assertArrayEquals(big[5].second, r.bytes(5))
+                assertEquals(1 to 2, r.spliced to r.unspliced)
+            }
+        }
+        open().let { (r, channel) ->
+            r.use {
+                // The view lands on the next entry's header: no more views at once.
+                channel.failAt = starts[3]
+                channel.substitute = starts[4]
+                assertArrayEquals(big[3].second, r.bytes(3))
+                assertArrayEquals(big[1].second, r.bytes(1))
+                assertEquals(0 to 1, r.spliced to r.unspliced)
+            }
+        }
+    }
+
+    @Test
     fun aSolidArchiveIsListedByItsHeadersAndReadForward() {
         val bytes = Fixtures.rar5Bytes(*big, solid = true)
         val f = file(bytes)
@@ -371,5 +403,29 @@ class RarReaderTest {
         var read = 0L
 
         override fun read(dst: ByteBuffer): Int = inner.read(dst).also { if (it > 0) read += it }
+    }
+
+    /**
+     * [inner], whose first read starting at [failAt] fails, or, with [substitute] set, returns
+     * the bytes from there instead; each is used once.
+     */
+    private class Faulty(private val inner: SeekableByteChannel) : SeekableByteChannel by inner {
+        @Volatile
+        var failAt = -1L
+
+        @Volatile
+        var substitute = -1L
+
+        override fun read(dst: ByteBuffer): Int {
+            val at = inner.position()
+            if (at != failAt) return inner.read(dst)
+            failAt = -1
+            val from = substitute.also { substitute = -1 }
+            if (from < 0) throw IOException("Read failed")
+            inner.position(from)
+            val n = inner.read(dst)
+            inner.position(at + n.coerceAtLeast(0))
+            return n
+        }
     }
 }

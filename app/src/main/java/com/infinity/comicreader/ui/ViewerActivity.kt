@@ -3208,11 +3208,10 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
     }
 
     private fun saveHistory() {
-        val f = file ?: return
         val book = book() ?: return
         val count = source?.pageCount ?: return
         library.addHistory(
-            HistoryItem(book.path, f.name, currentIndex, count, System.currentTimeMillis(), book.id)
+            HistoryItem(book.path, keptName(book), currentIndex, count, System.currentTimeMillis(), book.id)
         )
     }
 
@@ -3715,6 +3714,10 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
      */
     private fun keptPath(id: BookId, f: File): String =
         if (handedIn(f)) library.pathOf(id)?.takeUnless { handedIn(File(it)) } ?: f.absolutePath else f.absolutePath
+
+    /** The name kept with [ref]: the open file's own name when it is kept at its own path, else the kept path's. */
+    private fun keptName(ref: BookRef): String =
+        file?.takeIf { it.absolutePath == ref.path }?.name ?: File(ref.path).name
 
     /** Reads whether the open comic and its folder are favorites. */
     private fun refreshFavorites() {
@@ -5184,7 +5187,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
             library.removeBookmark(ref.id, page)
             toast(R.string.bookmark_removed)
         } else {
-            library.addBookmark(Bookmark(ref.path, File(ref.path).name, page, "", System.currentTimeMillis(), ref.id))
+            library.addBookmark(Bookmark(ref.path, keptName(ref), page, "", System.currentTimeMillis(), ref.id))
             toast(R.string.bookmark_saved)
         }
         invalidateOptionsMenu()

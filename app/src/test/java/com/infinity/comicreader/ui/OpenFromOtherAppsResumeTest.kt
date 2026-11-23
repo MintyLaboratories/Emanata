@@ -13,10 +13,12 @@ import androidx.preference.PreferenceManager
 import androidx.test.core.app.ApplicationProvider
 import androidx.viewpager2.widget.ViewPager2
 import com.infinity.comicreader.R
+import com.infinity.comicreader.data.BookId
 import com.infinity.comicreader.data.HistoryItem
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ResumeMode
+import org.json.JSONArray
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -102,6 +104,12 @@ class OpenFromOtherAppsResumeTest {
 
     private fun ActivityController<ViewerActivity>.page(): Int = get().findViewById<SeekBar>(R.id.viewer_seek).progress
 
+    /** The name stored in [id]'s row of the library's [key] list, which rebuilding a book from its images matches by. */
+    private fun storedName(key: String, id: BookId): String {
+        val rows = JSONArray(context.getSharedPreferences("library", 0).getString(key, "[]"))
+        return (0 until rows.length()).map(rows::getJSONObject).single { it.getString("id") == id.hex }.getString("name")
+    }
+
     @Test
     fun aBookOpenedByPathResumes() {
         savePosition(5)
@@ -126,6 +134,8 @@ class OpenFromOtherAppsResumeTest {
         assertEquals(6, library.pageFor(id))
         assertEquals(book.absolutePath, library.pathOf(id))
         assertEquals(book.absolutePath, library.historyFor(id)!!.path)
+        assertEquals(book.name, library.historyFor(id)!!.name)
+        assertEquals(book.name, storedName("history", id))
         reader.destroy()
     }
 
@@ -138,6 +148,9 @@ class OpenFromOtherAppsResumeTest {
         val id = bookId(book)
         assertEquals(book.absolutePath, library.pathOf(id))
         assertEquals(book.absolutePath, library.bookmarksFor(id).single().path)
+        assertEquals(book.name, library.bookmarksFor(id).single().name)
+        assertEquals(book.name, storedName("bookmarks", id))
+        assertEquals(book.name, storedName("history", id))
         assertEquals(book.absolutePath, library.historyFor(id)!!.path)
         reader.destroy()
     }
@@ -174,6 +187,8 @@ class OpenFromOtherAppsResumeTest {
         assertEquals(4, library.pageFor(id))
         assertEquals(copy.absolutePath, library.pathOf(id))
         assertEquals(copy.absolutePath, library.historyFor(id)!!.path)
+        assertEquals(copy.name, library.historyFor(id)!!.name)
+        assertEquals(copy.name, storedName("history", id))
     }
 
     private companion object {

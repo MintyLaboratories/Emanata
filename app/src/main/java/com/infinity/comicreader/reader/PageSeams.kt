@@ -132,6 +132,46 @@ class PageSeams(val dir: File) {
         wrote()
     }
 
+    /**
+     * Stores under book [to] with pages [toNames] the seams and pages seen kept for book
+     * [from] with pages [fromNames], page `i` as page [map]`[i]` (none where -1), over what
+     * [to] has there: a seam only where both its pages map and stay next to each other.
+     * With [move], [from]'s go.
+     */
+    fun carry(from: String, fromNames: List<String?>, to: String, toNames: List<String?>, map: IntArray, move: Boolean) {
+        fun at(i: Int) = map.getOrElse(i) { -1 }.takeIf { it in toNames.indices } ?: -1
+        read(from, fromNames)?.let { old ->
+            val out = read(to, toNames) ?: Found(toNames.size)
+            val ltr = old.of(rightToLeft = false)
+            val rtl = old.of(rightToLeft = true)
+            var any = false
+            for (i in ltr.indices) {
+                val l = ltr[i] ?: continue
+                val r = rtl[i] ?: continue
+                val j = at(i)
+                if (j < 0 || at(i + 1) != j + 1) continue
+                out.set(j, l, r)
+                any = true
+            }
+            if (any) write(to, toNames, out)
+        }
+        val seen = readSeen(from, fromNames)
+        if (!seen.isEmpty) {
+            val out = readSeen(to, toNames)
+            val before = out.cardinality()
+            var i = seen.nextSetBit(0)
+            while (i >= 0) {
+                at(i).takeIf { it >= 0 }?.let(out::set)
+                i = seen.nextSetBit(i + 1)
+            }
+            if (out.cardinality() != before) writeSeen(to, toNames, out)
+        }
+        if (move) {
+            fileOf(from, fromNames).delete()
+            seenFileOf(from, fromNames).delete()
+        }
+    }
+
     private fun write(out: DataOutputStream, v: SpreadSeams.Verdict?) {
         out.writeByte(v?.seam?.let { it.ordinal + 1 } ?: 0)
         out.writeByte(((v?.confidence ?: 0.0) * 255).roundToInt().coerceIn(0, 255))

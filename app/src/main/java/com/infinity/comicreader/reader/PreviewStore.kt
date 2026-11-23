@@ -9,6 +9,8 @@ import com.infinity.comicreader.data.BookIds
 import com.infinity.comicreader.util.CacheFiles
 import com.infinity.comicreader.util.Traces
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executor
@@ -101,7 +103,7 @@ class PreviewStore(
         if (opaque !== preview) opaque.recycle()
     }
 
-    private fun fileOf(key: String) = File(dir, CacheFiles.nameOf(key, key, ends = '|') + ".jpg")
+    private fun fileOf(key: String) = fileIn(dir, key)
 
     companion object {
         private const val DIR = "page-previews"
@@ -158,6 +160,33 @@ class PreviewStore(
 
         /** Deletes the previews of book [id] in [dir]. */
         fun forget(dir: File, id: BookId) = CacheFiles.forget(dir, id.hex)
+
+        /** The file in [dir] of the preview keyed [key] ([keyOf]). */
+        private fun fileIn(dir: File, key: String) = File(dir, CacheFiles.nameOf(key, key, ends = '|') + ".jpg")
+
+        /**
+         * Gives book [to] with pages [toNames] the previews in [dir] of book [from] with pages
+         * [fromNames]: page `i`'s as page [map]`[i]`'s, none where -1, over any there. With
+         * [move] they are moved, else copied; each file appears whole or not at all.
+         */
+        fun carry(dir: File, from: String, fromNames: List<String?>, to: String, toNames: List<String?>, map: IntArray, move: Boolean) {
+            for (i in map.indices) {
+                val j = map[i]
+                if (j !in toNames.indices) continue
+                val source = fileIn(dir, keyOf(from, i, fromNames.getOrNull(i)))
+                if (!source.isFile) continue
+                val target = fileIn(dir, keyOf(to, j, toNames[j])).toPath()
+                runCatching {
+                    if (move) {
+                        Files.move(source.toPath(), target, StandardCopyOption.REPLACE_EXISTING)
+                    } else {
+                        val part = File(target.toString() + PART_SUFFIX).toPath()
+                        Files.copy(source.toPath(), part, StandardCopyOption.REPLACE_EXISTING)
+                        Files.move(part, target, StandardCopyOption.REPLACE_EXISTING)
+                    }
+                }
+            }
+        }
 
         fun clear(dir: File) {
             runCatching { dir.deleteRecursively() }

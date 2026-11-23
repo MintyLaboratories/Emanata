@@ -94,6 +94,28 @@ class PageSizesTest {
     }
 
     @Test
+    fun carriedSizesFollowTheirPagesToTheNewBook() {
+        val dir = tmp.newFolder("sizes")
+        val store = PageSizes(dir)
+        val old = listOf("a/1.jpg", "a/2.jpg", "a/3.jpg")
+        val new = listOf("1.jpg", "3.jpg")
+        store.write("id:00000000000000aa", old, arrayOf(intArrayOf(1, 10), intArrayOf(2, 10), intArrayOf(3, 10)))
+        // Page 2 left out, page 1 changed: only page 3 carries, as new page 1.
+        store.carry("id:00000000000000aa", old, "id:00000000000000bb", new, intArrayOf(-1, -1, 1), move = false)
+        val read = store.read("id:00000000000000bb", new)!!
+        assertNull(read[0])
+        assertArrayEquals(intArrayOf(3, 10), read[1])
+        assertArrayEquals(intArrayOf(1, 10), store.read("id:00000000000000aa", old)!![0])
+        // Moved, the old book keeps none.
+        store.carry("id:00000000000000aa", old, "id:00000000000000cc", new, intArrayOf(0, -1, 1), move = true)
+        assertArrayEquals(intArrayOf(1, 10), store.read("id:00000000000000cc", new)!![0])
+        assertNull(store.read("id:00000000000000aa", old))
+        // Nothing kept, nothing written.
+        store.carry("id:00000000000000aa", old, "id:00000000000000dd", new, intArrayOf(0, -1, 1), move = true)
+        assertFalse(dir.list()!!.any { it.startsWith("00000000000000dd-") })
+    }
+
+    @Test
     fun aScanStartsAtTheOpenPageAndWorksOutward() {
         assertEquals(listOf(3, 4, 2, 5, 1, 0), PageSizes.outward(6, 3))
         assertEquals(listOf(0, 1, 2), PageSizes.outward(3, 0))

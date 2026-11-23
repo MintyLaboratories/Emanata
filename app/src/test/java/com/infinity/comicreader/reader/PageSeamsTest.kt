@@ -151,6 +151,40 @@ class PageSeamsTest {
     }
 
     @Test
+    fun carriedSeamsKeepOnlyPagesStillNextToEachOther() {
+        val store = PageSeams(tmp.newFolder("seams"))
+        val old = listOf("1.jpg", "2.jpg", "3.jpg", "4.jpg")
+        val new = listOf("1.jxl", "2.jpg", "4.jpg")
+        val found = PageSeams.Found(old.size)
+        for (i in 0..2) found.set(i, Verdict(Seam.MATCH, 1.0), Verdict(Seam.NO_MATCH, 1.0))
+        store.write("id:00000000000000aa", old, found)
+        store.writeSeen("id:00000000000000aa", old, BitSet().apply { set(0); set(1); set(3) })
+        // Page 1 changed, page 3 left out: only pages 2 and 4 carry, now next to each other.
+        store.carry("id:00000000000000aa", old, "id:00000000000000bb", new, intArrayOf(-1, 1, -1, 2), move = true)
+        // Pages 2 and 4 were not next to each other: no seam carries.
+        assertNull(store.read("id:00000000000000bb", new))
+        assertEquals(BitSet().apply { set(1); set(2) }, store.readSeen("id:00000000000000bb", new))
+        assertNull(store.read("id:00000000000000aa", old))
+        assertTrue(store.readSeen("id:00000000000000aa", old).isEmpty)
+    }
+
+    @Test
+    fun carriedSeamsOfPagesStillTogetherComeAlongAndACopyKeepsTheOld() {
+        val store = PageSeams(tmp.newFolder("seams"))
+        val old = listOf("1.jpg", "2.jpg", "3.jpg")
+        val new = listOf("1.jxl", "2.jpg", "3.jpg")
+        val found = PageSeams.Found(old.size)
+        found.set(0, Verdict(Seam.MATCH, 1.0), Verdict(Seam.NO_MATCH, 1.0))
+        found.set(1, Verdict(Seam.NO_MATCH, 1.0), Verdict(Seam.MATCH, 1.0))
+        store.write("id:00000000000000aa", old, found)
+        store.carry("id:00000000000000aa", old, "id:00000000000000bb", new, intArrayOf(-1, 1, 2), move = false)
+        val read = store.read("id:00000000000000bb", new)!!
+        assertFalse(read.checked(0))
+        assertEquals(Seam.MATCH, read.of(rightToLeft = true)[1]!!.seam)
+        assertTrue(store.read("id:00000000000000aa", old)!!.checked(0))
+    }
+
+    @Test
     fun checkingStopsWhenCanceled() {
         val found = PageSeams.Found(3)
         assertFalse(PageSeams.check(Sided(listOf(null, null, null)), listOf(0, 1), found) { true })

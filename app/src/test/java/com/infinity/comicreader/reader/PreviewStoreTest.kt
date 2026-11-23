@@ -119,6 +119,25 @@ class PreviewStoreTest {
     }
 
     @Test
+    fun carriedPreviewsFollowTheirPagesMovedOrCopied() {
+        val s = store()
+        val old = listOf("a/1.jpg", "a/2.jpg", "a/3.jpg")
+        val new = listOf("1.jpg", "3.jpg")
+        for (i in old.indices) s.put(PreviewStore.keyOf("id:00000000000000aa", i, old[i]), solid(Color.BLUE))
+        val map = intArrayOf(0, -1, 1)
+        PreviewStore.carry(s.dir, "id:00000000000000aa", old, "id:00000000000000bb", new, map, move = false)
+        assertTrue(s.has(PreviewStore.keyOf("id:00000000000000bb", 0, "1.jpg")))
+        assertTrue(s.has(PreviewStore.keyOf("id:00000000000000bb", 1, "3.jpg")))
+        assertTrue(s.has(PreviewStore.keyOf("id:00000000000000aa", 2, "a/3.jpg")))
+        PreviewStore.carry(s.dir, "id:00000000000000aa", old, "id:00000000000000cc", new, map, move = true)
+        assertNotNull(s.get(PreviewStore.keyOf("id:00000000000000cc", 1, "3.jpg")))
+        assertFalse(s.has(PreviewStore.keyOf("id:00000000000000aa", 2, "a/3.jpg")))
+        // A page not carried stays with its book.
+        assertTrue(s.has(PreviewStore.keyOf("id:00000000000000aa", 1, "a/2.jpg")))
+        assertFalse(s.dir.list()!!.any { it.endsWith(".part") })
+    }
+
+    @Test
     fun clearRemovesTheStore() {
         val s = store()
         s.put(PreviewStore.keyOf("b", 0, null), solid(Color.GREEN))

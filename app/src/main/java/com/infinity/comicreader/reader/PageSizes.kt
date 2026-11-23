@@ -58,6 +58,26 @@ class PageSizes(val dir: File) {
         if (WRITES.incrementAndGet() % TRIM_EVERY == 0) trim(dir)
     }
 
+    /**
+     * Stores under book [to] with pages [toNames] the sizes kept for book [from] with pages
+     * [fromNames]: page `i`'s as page [map]`[i]`'s, none where -1, over what [to] has there;
+     * with [move], [from]'s go. Nothing when [from] has none.
+     */
+    fun carry(from: String, fromNames: List<String?>, to: String, toNames: List<String?>, map: IntArray, move: Boolean) {
+        val old = read(from, fromNames) ?: return
+        val out = read(to, toNames) ?: arrayOfNulls(toNames.size)
+        var any = false
+        for (i in old.indices) {
+            val j = map.getOrElse(i) { -1 }
+            val size = old[i] ?: continue
+            if (j !in out.indices) continue
+            out[j] = size
+            any = true
+        }
+        if (any) write(to, toNames, out)
+        if (move) fileOf(from, fromNames).delete()
+    }
+
     private fun fileOf(bookId: String, names: List<String?>) =
         File(dir, CacheFiles.nameOf(bookId, bookId + "\u0000" + names.joinToString("\u0000") { it.orEmpty() }) + ".bin")
 

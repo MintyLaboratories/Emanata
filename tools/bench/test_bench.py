@@ -1,7 +1,9 @@
-"""Tests for bench.py's battery gate, session log, thermal readings and build info: `py -m unittest discover tools/bench` from the repository root."""
+"""Tests for bench.py's battery gate, session log, thermal readings, build info and device folder: `py -m unittest discover tools/bench` from the repository root."""
 import contextlib
 import io
+import json
 import unittest
+from pathlib import Path
 
 import bench
 
@@ -90,6 +92,29 @@ class Extras(unittest.TestCase):
     def test_a_wide_pages_choice_is_a_string_extra(self):
         self.assertEqual(["--es", "wide", "image", "--ei", "turns", "4", "--ez", "fresh", "true"],
                          bench.extras({"wide": "image", "turns": 4, "fresh": True}))
+
+
+class DeviceDir(unittest.TestCase):
+    def test_relative_path_goes_under_the_folder(self):
+        self.assertEqual({"do": "read", "path": "/sdcard/books/a.cbz"},
+                         bench.on_device({"do": "read", "path": "a.cbz"}, "/sdcard/books/"))
+
+    def test_absolute_or_missing_path_is_kept(self):
+        for session in ({"do": "read", "path": "/sdcard/a.cbz"}, {"do": "grid"}):
+            self.assertEqual(session, bench.on_device(session, "/sdcard/books"))
+
+    def test_every_device_command_takes_the_folder(self):
+        for cmd in (["push", "--src", "s"], ["fixtures", "--out", "o"], ["run", "--plan", "p.json", "--out", "o"],
+                    ["ab", "--a", "a.apk", "--b", "b.apk", "--plan", "p.json", "--out", "o"]):
+            self.assertEqual(bench.DEVICE_DIR, bench.build_parser().parse_args(cmd).device_dir)
+            self.assertEqual("/sdcard/x", bench.build_parser().parse_args(cmd + ["--device-dir", "/sdcard/x"]).device_dir)
+
+    def test_shipped_plans_name_books_relative_to_the_folder(self):
+        plans = sorted((Path(bench.__file__).parent / "plans").glob("*.json"))
+        self.assertTrue(plans)
+        for plan in plans:
+            for session in json.loads(plan.read_text()):
+                self.assertFalse(session["path"].startswith("/"), f"{plan.name}: {session['path']}")
 
 
 class PackageInfo(unittest.TestCase):

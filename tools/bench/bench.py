@@ -3,7 +3,7 @@
 Run from the repository root with Python 3.10+ (standard library only):
 
     py tools/bench/bench.py make --out <dir>                 # synthetic books (magick; cjxl, avifenc, 7z where found)
-    py tools/bench/bench.py push --src <dir>                 # to the device's Download/emanata-test
+    py tools/bench/bench.py push --src <dir>                 # to --device-dir on the device
     py tools/bench/bench.py fixtures --out <dir>             # JPEG XL decode fixtures (magick, cjxl, djxl)
     py tools/bench/bench.py run --plan <plan.json> --out <dir> [--trace] [--energy]
     py tools/bench/bench.py ab --a <a.apk> --b <b.apk> --plan <plan.json> --out <dir> [--rounds 6]
@@ -11,8 +11,10 @@ Run from the repository root with Python 3.10+ (standard library only):
     py tools/bench/bench.py slices <trace.pftrace>           # app trace sections by total time (needs the perfetto package)
 
 A plan is a JSON list of sessions, each the extras of BenchActivity (see its KDoc), e.g.
-    [{"do": "read", "path": "/storage/emulated/0/Download/emanata-test/synth-2k-jpeg.cbz",
+    [{"do": "read", "path": "synth-2k-jpeg.cbz",
       "label": "2k jpeg", "layout": "paged", "turns": 10, "reps": 3}]
+A "path" not starting with "/" is under --device-dir, where `push` and `fixtures --push` put
+files (default /storage/emulated/0/Download/emanata-bench).
 Results, traces and battery statistics go to --out; nothing is written to the device but the
 pushed books, the app's own results file, and traces under /data/misc/perfetto-traces.
 
@@ -74,7 +76,8 @@ from pathlib import Path
 
 PACKAGE = "minty.emanata.debug"
 BENCH = f"{PACKAGE}/com.infinity.comicreader.debug.BenchActivity"
-DEVICE_DIR = "/storage/emulated/0/Download/emanata-test"
+# Where `push` and `fixtures --push` put files, and where relative plan paths point (--device-dir).
+DEVICE_DIR = "/storage/emulated/0/Download/emanata-bench"
 TRACE_DIR = "/data/misc/perfetto-traces"
 RESULTS = f"/storage/emulated/0/Android/data/{PACKAGE}/files/bench/results.jsonl"
 # Battery percent below which no session starts (--min-battery); 0 turns the check off.
@@ -298,16 +301,16 @@ def fixtures(args) -> None:
         shutil.copyfile(photo, out / "jpeg.jpg")
     print("fixtures in", out)
     if args.push:
-        dest = f"{DEVICE_DIR}/fixtures"
+        dest = f"{args.device_dir}/fixtures"
         adb("shell", "mkdir", "-p", dest)
         for f in sorted(out.iterdir()):
             adb("push", str(f), f"{dest}/{f.name}")
 
 
 def push(args) -> None:
-    adb("shell", "mkdir", "-p", DEVICE_DIR)
+    adb("shell", "mkdir", "-p", args.device_dir)
     for f in sorted(Path(args.src).glob("synth-*.cb*")):
-        adb("push", str(f), f"{DEVICE_DIR}/{f.name}")
+        adb("push", str(f), f"{args.device_dir}/{f.name}")
 
 
 # ---------------------------------------------------------------- sessions
@@ -341,6 +344,14 @@ def extras(session: dict) -> list[str]:
         else:
             out += ["--es", k, shlex.quote(str(v))]
     return out
+
+
+def on_device(session: dict, device_dir: str) -> dict:
+    """[session] with a relative "path" made absolute under [device_dir]."""
+    path = session.get("path")
+    if isinstance(path, str) and not path.startswith("/"):
+        return {**session, "path": f"{device_dir.rstrip('/')}/{path}"}
+    return session
 
 
 def bench_once(session: dict, timeout_s: int) -> list[dict]:
@@ -526,7 +537,7 @@ def run_plan(args) -> None:
         lines: list[dict] = []
         temps = TempSampler().start()
         try:
-            lines = bench_once(session, args.timeout)
+            lines = bench_once(on_device(session, args.device_dir), args.timeout)
         finally:
             sensors = temps.stop()
             for line in lines:
@@ -749,11 +760,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=make)
     p = sub.add_parser("fixtures")
     p.add_argument("--out", required=True)
-    p.add_argument("--push", action="store_true", help="also to the device's Download/emanata-test/fixtures")
+    p.add_argument("--push", action="store_true", help="also to fixtures/ under --device-dir")
     p.add_argument("--icc", help="an RGB display profile no enum describes, for icc-lossy")
+    p.add_argument("--device-dir", default=DEVICE_DIR, help="the folder on the device for books and fixtures")
     p.set_defaults(func=fixtures)
     p = sub.add_parser("push")
     p.add_argument("--src", required=True)
+    p.add_argument("--device-dir", default=DEVICE_DIR, help="the folder on the device for books and fixtures")
     p.set_defaults(func=push)
     p = sub.add_parser("run")
     p.add_argument("--plan", required=True)
@@ -763,6 +776,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--restart", action="store_true", help="stop the app before each session: a fresh process each")
     p.add_argument("--timeout", type=int, default=600)
     p.add_argument("--min-battery", type=int, default=MIN_BATTERY, help="percent below which no session starts (0: no check)")
+    p.add_argument("--device-dir", default=DEVICE_DIR, help="the folder on the device for books and fixtures")
     p.set_defaults(func=run_plan)
     p = sub.add_parser("ab")
     p.add_argument("--a", required=True, help="the build A apk")
@@ -776,6 +790,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--restart", action="store_true", help="stop the app before each session: a fresh process each")
     p.add_argument("--timeout", type=int, default=600)
     p.add_argument("--min-battery", type=int, default=MIN_BATTERY, help="percent below which no session starts (0: no check)")
+    p.add_argument("--device-dir", default=DEVICE_DIR, help="the folder on the device for books and fixtures")
     p.set_defaults(func=ab)
     p = sub.add_parser("report")
     p.add_argument("results")

@@ -1,7 +1,7 @@
 [
  {
   "do": "read",
-  "path": "/storage/emulated/0/Download/emanata-test/synth-2k-jpeg.cbz",
+  "path": "synth-2k-jpeg.cbz",
   "label": "2k jpeg",
   "turns": 4,
   "pace": 8000,
@@ -9,7 +9,7 @@
  },
  {
   "do": "read",
-  "path": "/storage/emulated/0/Download/emanata-test/synth-2k-webp.cbz",
+  "path": "synth-2k-webp.cbz",
   "label": "2k webp",
   "turns": 4,
   "pace": 8000,
@@ -17,7 +17,7 @@
  },
  {
   "do": "read",
-  "path": "/storage/emulated/0/Download/emanata-test/synth-2k-jxl.cbz",
+  "path": "synth-2k-jxl.cbz",
   "label": "2k jxl q91",
   "turns": 4,
   "pace": 8000,
@@ -25,7 +25,7 @@
  },
  {
   "do": "read",
-  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jxl.cbz",
+  "path": "synth-4k-jxl.cbz",
   "label": "4k jxl q91",
   "turns": 4,
   "pace": 8000,
@@ -33,7 +33,7 @@
  },
  {
   "do": "read",
-  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-avif.cbz",
+  "path": "synth-4k-avif.cbz",
   "label": "4k avif",
   "turns": 4,
   "pace": 8000,
@@ -41,7 +41,7 @@
  },
  {
   "do": "read",
-  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-png.cbz",
+  "path": "synth-4k-png.cbz",
   "label": "4k png",
   "turns": 4,
   "pace": 8000,

@@ -1,7 +1,7 @@
 [
  {
   "do": "read",
-  "path": "/storage/emulated/0/Download/emanata-test/synth-2k-jxl.cbz",
+  "path": "synth-2k-jxl.cbz",
   "label": "2k jxl coder",
   "turns": 8,
   "pace": 1500,
@@ -10,7 +10,7 @@
  },
  {
   "do": "read",
-  "path": "/storage/emulated/0/Download/emanata-test/synth-2k-jxl.cbz",
+  "path": "synth-2k-jxl.cbz",
   "label": "2k jxl native",
   "turns": 8,
   "pace": 1500,
@@ -19,7 +19,7 @@
  },
  {
   "do": "read",
-  "path": "/storage/emulated/0/Download/emanata-test/synth-2k-jxl.cbz",
+  "path": "synth-2k-jxl.cbz",
   "label": "2k jxl native",
   "turns": 8,
   "pace": 1500,
@@ -28,7 +28,7 @@
  },
  {
   "do": "read",
-  "path": "/storage/emulated/0/Download/emanata-test/synth-2k-jxl.cbz",
+  "path": "synth-2k-jxl.cbz",
   "label": "2k jxl coder",
   "turns": 8,
   "pace": 1500,
@@ -37,7 +37,7 @@
  },
  {
   "do": "read",
-  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jxl.cbz",
+  "path": "synth-4k-jxl.cbz",
   "label": "4k jxl coder",
   "turns": 8,
   "pace": 1500,
@@ -46,7 +46,7 @@
  },
  {
   "do": "read",
-  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jxl.cbz",
+  "path": "synth-4k-jxl.cbz",
   "label": "4k jxl native",
   "turns": 8,
   "pace": 1500,
@@ -55,7 +55,7 @@
  },
  {
   "do": "read",
-  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jxl.cbz",
+  "path": "synth-4k-jxl.cbz",
   "label": "4k jxl native",
   "turns": 8,
   "pace": 1500,
@@ -64,7 +64,7 @@
  },
  {
   "do": "read",
-  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jxl.cbz",
+  "path": "synth-4k-jxl.cbz",
   "label": "4k jxl coder",
   "turns": 8,
   "pace": 1500,

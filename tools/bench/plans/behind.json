@@ -1,7 +1,7 @@
 [
  {
   "do": "read",
-  "path": "/storage/emulated/0/Download/emanata-test/synth-2k-jpeg.cbz",
+  "path": "synth-2k-jpeg.cbz",
   "label": "2k jpeg forward behind on",
   "turns": 12,
   "pace": 3000,
@@ -9,7 +9,7 @@
  },
  {
   "do": "read",
-  "path": "/storage/emulated/0/Download/emanata-test/synth-2k-jpeg.cbz",
+  "path": "synth-2k-jpeg.cbz",
   "label": "2k jpeg forward behind off",
   "turns": 12,
   "pace": 3000,
@@ -17,7 +17,7 @@
  },
  {
   "do": "read",
-  "path": "/storage/emulated/0/Download/emanata-test/synth-2k-jpeg.cbz",
+  "path": "synth-2k-jpeg.cbz",
   "label": "2k jpeg back behind off",
   "page": 12,
   "turns": 6,
@@ -27,7 +27,7 @@
  },
  {
   "do": "read",
-  "path": "/storage/emulated/0/Download/emanata-test/synth-2k-jpeg.cbz",
+  "path": "synth-2k-jpeg.cbz",
   "label": "2k jpeg back behind on",
   "page": 12,
   "turns": 6,
@@ -37,7 +37,7 @@
  },
  {
   "do": "read",
-  "path": "/storage/emulated/0/Download/emanata-test/synth-2k-jxl.cbz",
+  "path": "synth-2k-jxl.cbz",
   "label": "2k jxl q91 forward behind on",
   "turns": 12,
   "pace": 3000,
@@ -45,7 +45,7 @@
  },
  {
   "do": "read",
-  "path": "/storage/emulated/0/Download/emanata-test/synth-2k-jxl.cbz",
+  "path": "synth-2k-jxl.cbz",
   "label": "2k jxl q91 forward behind off",
   "turns": 12,
   "pace": 3000,
@@ -53,7 +53,7 @@
  },
  {
   "do": "read",
-  "path": "/storage/emulated/0/Download/emanata-test/synth-2k-jxl.cbz",
+  "path": "synth-2k-jxl.cbz",
   "label": "2k jxl q91 back behind off",
   "page": 12,
   "turns": 6,
@@ -63,7 +63,7 @@
  },
  {
   "do": "read",
-  "path": "/storage/emulated/0/Download/emanata-test/synth-2k-jxl.cbz",
+  "path": "synth-2k-jxl.cbz",
   "label": "2k jxl q91 back behind on",
   "page": 12,
   "turns": 6,

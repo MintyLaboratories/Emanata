@@ -1,7 +1,7 @@
 [
  {
   "do": "read",
-  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jxl.cbz",
+  "path": "synth-4k-jxl.cbz",
   "label": "4k jxl warm-up",
   "input": "key",
   "turns": 12,
@@ -12,7 +12,7 @@
  },
  {
   "do": "read",
-  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jxl.cbz",
+  "path": "synth-4k-jxl.cbz",
   "label": "4k jxl fast 4big",
   "input": "key",
   "turns": 12,
@@ -26,7 +26,7 @@
  },
  {
   "do": "read",
-  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jxl.cbz",
+  "path": "synth-4k-jxl.cbz",
   "label": "4k jxl fast 2big",
   "input": "key",
   "turns": 12,
@@ -40,7 +40,7 @@
  },
  {
   "do": "read",
-  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jxl.cbz",
+  "path": "synth-4k-jxl.cbz",
   "label": "4k jxl fast 1big",
   "input": "key",
   "turns": 12,
@@ -54,7 +54,7 @@
  },
  {
   "do": "read",
-  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jxl.cbz",
+  "path": "synth-4k-jxl.cbz",
   "label": "4k jxl fast 4little",
   "input": "key",
   "turns": 12,
@@ -68,7 +68,7 @@
  },
  {
   "do": "read",
-  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jxl.cbz",
+  "path": "synth-4k-jxl.cbz",
   "label": "4k jxl fast 4big-nice10",
   "input": "key",
   "turns": 12,
@@ -82,7 +82,7 @@
  },
  {
   "do": "read",
-  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jxl.cbz",
+  "path": "synth-4k-jxl.cbz",
   "label": "4k jxl fast 4big",
   "input": "key",
   "turns": 12,
@@ -96,7 +96,7 @@
  },
  {
   "do": "read",
-  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jxl.cbz",
+  "path": "synth-4k-jxl.cbz",
   "label": "4k jxl fast 4big-nice10",
   "input": "key",
   "turns": 12,
@@ -110,7 +110,7 @@
  },
  {
   "do": "read",
-  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jxl.cbz",
+  "path": "synth-4k-jxl.cbz",
   "label": "4k jxl fast 4little",
   "input": "key",
   "turns": 12,
@@ -124,7 +124,7 @@
  },
  {
   "do": "read",
-  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jxl.cbz",
+  "path": "synth-4k-jxl.cbz",
   "label": "4k jxl fast 1big",
   "input": "key",
   "turns": 12,
@@ -138,7 +138,7 @@
  },
  {
   "do": "read",
-  "path": "/storage/emulated/0/Download/emanata-test/synth-4k-jxl.cbz",
+  "path": "synth-4k-jxl.cbz",
   "label": "4k jxl fast 2big",
   "input": "key",
   "turns": 12,

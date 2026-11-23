@@ -8,6 +8,7 @@ import android.graphics.drawable.BitmapDrawable
 import android.os.Looper
 import android.view.View
 import androidx.preference.PreferenceManager
+import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
 import androidx.viewpager2.widget.ViewPager2
@@ -72,9 +73,6 @@ class ViewerActivityAiShapeTest {
     /** Pages asked for, in order, by every adapter the reader made. */
     private val asked: MutableList<Int> = Collections.synchronizedList(ArrayList())
 
-    /** Pages asked for, in order, each with its book's page count. */
-    private val askedIn: MutableList<Pair<Int, Int>> = Collections.synchronizedList(ArrayList())
-
     /** What each page's work was told to stop on, by page, as last asked. */
     private val canceled = ConcurrentHashMap<Int, () -> Boolean>()
 
@@ -89,7 +87,6 @@ class ViewerActivityAiShapeTest {
             source: PageSource, index: Int, target: Target, width: Int, height: Int, held: () -> Boolean, models: () -> Unit, canceled: () -> Boolean
         ): AiOutcome {
             asked += index
-            askedIn += source.pageCount to index
             this@ViewerActivityAiShapeTest.canceled[index] = canceled
             models()
             this@ViewerActivityAiShapeTest.held[index]?.await(Waits.LIVENESS_MS, TimeUnit.MILLISECONDS)
@@ -186,22 +183,26 @@ class ViewerActivityAiShapeTest {
         val dir = tmp.newFolder()
         val first = Fixtures.zip(File(dir, "Sample v01.cbz"), *pages(650, 650, 650))
         val info = Fixtures.entry("ComicInfo.xml", "<?xml version=\"1.0\"?><ComicInfo><Manga>Yes</Manga></ComicInfo>".toByteArray())
-        // Four pages, told apart from the first chapter's by that, of their own aspect, 0.70: told once it is the open book.
-        val second = Fixtures.zip(File(dir, "Sample v02.cbz"), *pages(700, 700, 700, 700), info)
+        // Pages of their own aspect, 0.70: told once they are found, after it is the open book.
+        val second = Fixtures.zip(File(dir, "Sample v02.cbz"), *pages(700, 700, 700), info)
         val viewer = open(first)
         val strip = viewer.findViewById<RecyclerView>(R.id.viewer_vertical)
         fun openPath() = viewer.intent.getStringExtra(ViewerActivity.EXTRA_PATH)
+        val lm = strip.layoutManager as LinearLayoutManager
         val scroll = { strip.scrollBy(0, strip.height / 2); idle() }
-        idleUntil("the second chapter laid in behind") { (strip.adapter?.itemCount ?: 0) >= 7 }
+        idleUntil("the second chapter laid in behind") { (strip.adapter?.itemCount ?: 0) >= 6 }
         assertEquals(PageClass.WEB, viewer.aiShapeRun()?.pageClass)
 
-        // Its first page, item 3, is processed while the first chapter is still the open book.
-        idleUntil("its first page asked for", step = scroll) { (4 to 0) in askedIn }
-        assertEquals(first.absolutePath, openPath())
+        // Its first page, item 3, on screen and processed while the first chapter is still the open book.
+        idleUntil("its first page on screen", step = scroll) { lm.findLastVisibleItemPosition() >= 3 }
+        assertEquals(2, lm.findFirstVisibleItemPosition())
         idleUntil("its first page shown processed") { shownProcessed(strip, 3) }
+        assertEquals(first.absolutePath, openPath())
         val rebinds = Rebinds(strip.adapter!!).also { strip.adapter!!.registerAdapterDataObserver(it) }
 
-        idleUntil("the second chapter open", step = scroll) { openPath() == second.absolutePath }
+        // Scrolled until it starts the strip, which posts the roll-on (it renumbers the items).
+        idleUntil("its first page at the top", step = scroll) { lm.findFirstVisibleItemPosition() >= 3 || openPath() == second.absolutePath }
+        idleUntil("the second chapter open") { openPath() == second.absolutePath }
         idleUntil("its own pages' shape told") { viewer.aiShapeRun()?.aspect == 0.70 }
         assertEquals("read at B6", PageClass.MANGA, viewer.aiShapeRun()?.pageClass)
         // Its pages already processed for B6 stay so: none shown plain again.

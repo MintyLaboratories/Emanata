@@ -1,10 +1,13 @@
 package com.infinity.comicreader.ai
 
+import com.infinity.comicreader.reader.ComicInfo
 import com.infinity.comicreader.reader.Plan
 import com.infinity.comicreader.reader.Spreads
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** A book's page class from its direction and median page shape, and the size its pages are read at ([ReadSize]). */
@@ -25,14 +28,26 @@ class ReadSizeTest {
 
     @Test
     fun theDirectionDecidesFirst() {
-        assertEquals(PageClass.MANGA, PageClass.of(rightToLeft = true, topToBottom = false, aspect = 0.741))
-        assertEquals(PageClass.MANGA, PageClass.of(rightToLeft = true, topToBottom = false, aspect = 0.3))
-        assertEquals(PageClass.WEB, PageClass.of(rightToLeft = false, topToBottom = true, aspect = 0.65))
+        assertEquals(PageClass.MANGA, PageClass.of(manga = true, topToBottom = false, aspect = 0.741))
+        assertEquals(PageClass.MANGA, PageClass.of(manga = true, topToBottom = false, aspect = 0.3))
+        assertEquals(PageClass.WEB, PageClass.of(manga = false, topToBottom = true, aspect = 0.65))
+    }
+
+    @Test
+    fun aBookIsMangaReadRightToLeftMarkedMangaOrRunningTheMangaChain() {
+        assertTrue(PageClass.manga(rightToLeft = true, marked = null, kind = ChainKind.OTHER))
+        assertTrue("left to right, Manga=Yes", PageClass.manga(rightToLeft = false, marked = ComicInfo.Manga.YES, kind = ChainKind.OTHER))
+        assertTrue("Manga=YesAndRightToLeft read left to right", PageClass.manga(rightToLeft = false, marked = ComicInfo.Manga.YES_RTL, kind = ChainKind.OTHER))
+        assertTrue("the manga chain", PageClass.manga(rightToLeft = false, marked = null, kind = ChainKind.MANGA))
+        assertFalse(PageClass.manga(rightToLeft = false, marked = ComicInfo.Manga.NO, kind = ChainKind.OTHER))
+        assertFalse(PageClass.manga(rightToLeft = false, marked = ComicInfo.Manga.UNKNOWN, kind = ChainKind.OTHER))
+        val us = book(1988, 3056)
+        assertEquals(PageClass.MANGA, BookShape.of(PageClass.manga(false, ComicInfo.Manga.YES, ChainKind.OTHER), false, us).pageClass)
     }
 
     @Test
     fun aMedianAspectOutsideTheComicRangeReadsAsWeb() {
-        fun of(a: Double) = PageClass.of(rightToLeft = false, topToBottom = false, aspect = a)
+        fun of(a: Double) = PageClass.of(manga = false, topToBottom = false, aspect = a)
         assertEquals(PageClass.WEB, of(0.59))
         assertEquals(PageClass.US, of(0.60))
         assertEquals(PageClass.US, of(0.78))
@@ -42,14 +57,14 @@ class ReadSizeTest {
 
     @Test
     fun francoBelgianOnlyWithinItsNarrowRangeElseUs() {
-        fun of(a: Double) = PageClass.of(rightToLeft = false, topToBottom = false, aspect = a)
+        fun of(a: Double) = PageClass.of(manga = false, topToBottom = false, aspect = a)
         assertEquals(PageClass.US, of(0.729))
         assertEquals(PageClass.FRANCO_BELGIAN, of(0.73))
         assertEquals(PageClass.FRANCO_BELGIAN, of(0.741))
         assertEquals(PageClass.FRANCO_BELGIAN, of(0.755))
         assertEquals(PageClass.US, of(0.756))
         assertEquals(PageClass.US, of(0.65))
-        assertEquals("unknown shape", PageClass.US, PageClass.of(rightToLeft = false, topToBottom = false, aspect = null))
+        assertEquals("unknown shape", PageClass.US, PageClass.of(manga = false, topToBottom = false, aspect = null))
     }
 
     @Test
@@ -57,7 +72,7 @@ class ReadSizeTest {
         // A square cover and four spreads, each far from the story pages' 0.65.
         val us = book(1988, 3056, spreads = 4)
         assertEquals(1988.0 / 3056, PageClass.medianAspect(us)!!, 1e-9)
-        assertEquals(BookShape(PageClass.US, 0.65), BookShape.of(rightToLeft = false, topToBottom = false, analysis = us))
+        assertEquals(BookShape(PageClass.US, 0.65), BookShape.of(manga = false, topToBottom = false, analysis = us))
         assertEquals(PageClass.FRANCO_BELGIAN, BookShape.of(false, false, book(2400, 3240, spreads = 2)).pageClass)
         assertEquals(PageClass.WEB, BookShape.of(false, false, book(800, 12000)).pageClass)
     }
@@ -74,7 +89,7 @@ class ReadSizeTest {
         val unknown = Spreads.classify(listOf("Book 001.jpg", "Book 002.jpg"), listOf(null, null))
         assertNull(PageClass.medianAspect(unknown))
         assertEquals(BookShape.UNKNOWN, BookShape.of(false, false, unknown))
-        assertEquals(BookShape(PageClass.MANGA), BookShape.of(rightToLeft = true, topToBottom = false, analysis = null))
+        assertEquals(BookShape(PageClass.MANGA), BookShape.of(manga = true, topToBottom = false, analysis = null))
     }
 
     @Test

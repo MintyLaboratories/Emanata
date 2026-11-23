@@ -75,6 +75,7 @@ import com.infinity.comicreader.ai.ModelDownloads
 import com.infinity.comicreader.ai.ModelRefusal
 import com.infinity.comicreader.ai.ModelStore
 import com.infinity.comicreader.ai.Models
+import com.infinity.comicreader.ai.PageClass
 import com.infinity.comicreader.ai.PageEnhancer
 import com.infinity.comicreader.ai.PageTimes
 import com.infinity.comicreader.ai.ReaderAi
@@ -506,6 +507,15 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
 
     /** The open book's ComicInfo once Book info has read it, with the source it came from. */
     private var bookComicInfo: Pair<PageSource, ComicInfo?>? = null
+
+    /** What the open book's ComicInfo says of manga, with the source it came from ([readMarked]); null until read. */
+    private var bookMarked: Pair<PageSource, ComicInfo.Manga?>? = null
+
+    /** Reads what the open book's ComicInfo says of manga ([readMarked]). */
+    private var markedJob: Job? = null
+
+    /** What the ComicInfo of the chapter laid in behind this one says of manga; null when unread or none. */
+    private var stripAheadMarked: ComicInfo.Manga? = null
 
     /** Finishes the open book's direction detection after it shows ([detectAfterOpen]). */
     private var lateDetectionJob: Job? = null
@@ -1501,6 +1511,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
             applyDetection()
             source = src
             aiBooks()
+            readMarked(src)
             known?.let { showPages(it) }
             setup(src)
             updateShareWait()
@@ -1825,6 +1836,9 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         bookInfoJob?.cancel()
         bookInfoJob = null
         bookComicInfo = null
+        markedJob?.cancel()
+        markedJob = null
+        bookMarked = null
         dropSeekPreviews()
         adapter?.release()
         adapter = null
@@ -1834,6 +1848,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         stripAhead = null
         stripAheadFile = null
         stripAheadId = null
+        stripAheadMarked = null
         runCatching { source?.close() }
         source = null
         pager.adapter = null
@@ -2767,6 +2782,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         stripAheadJob = lifecycleScope.launch {
             // The reader's own: once reached, its pages show from what this opens.
             var id: BookId? = null
+            var marked: ComicInfo.Manga? = null
             val (src, ok) = withContext(AppDispatchers.io + Remotes.askingAs(asker)) {
                 if (LargeBookWarning.wouldAsk(prefs, next)) return@withContext null to false
                 // Nested archives are not copied ahead: a book needing new copies opens when reached.
@@ -2776,6 +2792,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
                     val raw = PageSources.open(next, prefs.charset, cacheDir, canceled = { !job.isActive }, copyNested = false)
                     hiding((id ?: BookIds.known(next)).also { id = it }, raw)
                 }.getOrNull()
+                marked = s?.let { runCatching { it.comicInfo(cheapOnly = true) }.getOrNull()?.manga }
                 try {
                     ensureActive()
                 } catch (e: CancellationException) {
@@ -2793,6 +2810,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
             stripAhead = src
             stripAheadFile = next
             stripAheadId = id
+            stripAheadMarked = marked
             aiBooks()
             // The mode or the setting may have changed while the archive was opening.
             if (mode != MODE_PAGED && prefs.autoNext) adapter?.append(src)
@@ -2855,6 +2873,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         stripAhead = null
         stripAheadFile = null
         stripAheadId = null
+        stripAheadMarked = null
         seenPages.clear()
         markedRead = false
         landedAtEnd = false
@@ -2881,6 +2900,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         stripAhead = null
         stripAheadFile = null
         stripAheadId = null
+        stripAheadMarked = null
         // The adapter owns its segments: trimming the chapter out of the strip
         // lets it close the source once nothing is decoding from it anymore.
         val a = adapter
@@ -4339,19 +4359,40 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         syncSheet()
     }
 
-    /** The shape of the open book's pages, which sets the size they are read at for AI: by its direction and the pages' shapes found. */
-    private fun aiShape(): BookShape = BookShape.of(readingDir == "rtl", topToBottom(), analysis)
+    /**
+     * The shape of the pages of a book [marked] manga or not by its ComicInfo (null: unread),
+     * running [kind]'s default chain, which sets the size they are read at for AI: by the
+     * direction on screen and the open book's pages' shapes found.
+     */
+    private fun aiShape(marked: ComicInfo.Manga?, kind: ChainKind): BookShape =
+        BookShape.of(PageClass.manga(readingDir == "rtl", marked, kind), topToBottom(), analysis)
+
+    /**
+     * Reads what [src]'s ComicInfo says of manga where that is cheap, then reads its pages by it
+     * ([syncAiShape]); a ComicInfo only unpacking pages reaches is left to Book info.
+     */
+    private fun readMarked(src: PageSource) {
+        markedJob?.cancel()
+        markedJob = lifecycleScope.launch {
+            val marked = withContext(AppDispatchers.io) { runCatching { src.comicInfo(cheapOnly = true) }.getOrNull()?.manga }
+            // Book info may have read a ComicInfo too costly here meanwhile.
+            if (source !== src || bookMarked?.takeIf { it.first === src }?.second != null) return@launch
+            bookMarked = src to marked
+            syncAiShape()
+        }
+    }
 
     /**
      * Tells the reader's AI the shape of each open book's pages ([aiShape]; the chapter laid in
-     * behind this one reads alike); the shape told before, by book key ("" for none), of each
+     * behind this one by its own ComicInfo and chain); the shape told before, by book key ("" for none), of each
      * whose shape changed and whose pages go through AI.
      */
     private fun aiShapes(): Map<String, BookShape> {
-        val shape = aiShape()
         val was = HashMap<String, BookShape>()
+        val marked = bookMarked?.takeIf { it.first === source }?.second
+        val shapes = listOfNotNull(source?.let { it to aiShape(marked, aiKind()) }, stripAhead?.let { it to aiShape(stripAheadMarked, stripAheadKind()) })
         // Every book is told; only a change on one AI processes matters.
-        for (s in listOfNotNull(source, stripAhead)) readerAi.shape(s.bookKey, shape)?.let { if (readerAi.enhances(s)) was[s.bookKey.orEmpty()] = it }
+        for ((s, shape) in shapes) readerAi.shape(s.bookKey, shape)?.let { if (readerAi.enhances(s)) was[s.bookKey.orEmpty()] = it }
         return was
     }
 
@@ -4751,6 +4792,10 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
             val (kind, info, size) = facts
             if (isFinishing || source !== src) return@launch
             bookComicInfo = src to info
+            if (bookMarked?.takeIf { it.first === src }?.second == null && info != null) {
+                bookMarked = src to info.manga
+                syncAiShape()
+            }
             val text = SpannableStringBuilder()
             fun row(label: Int, value: String) {
                 if (text.isNotEmpty()) text.append("\n\n")

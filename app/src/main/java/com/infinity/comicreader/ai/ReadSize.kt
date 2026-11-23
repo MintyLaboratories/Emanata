@@ -1,5 +1,6 @@
 package com.infinity.comicreader.ai
 
+import com.infinity.comicreader.reader.ComicInfo
 import com.infinity.comicreader.reader.Plan
 import com.infinity.comicreader.reader.Spreads
 import kotlin.math.roundToInt
@@ -35,18 +36,25 @@ enum class PageClass(val key: Char, val widthCm: Double) {
         const val ALBUM_TO = 0.755
 
         /**
-         * A book's class: manga when read right to left, web when read top to bottom or its
-         * median page [aspect] is outside [WEB_BELOW]..[WEB_ABOVE], Franco-Belgian only within
-         * [ALBUM_FROM]..[ALBUM_TO], US for the rest and while [aspect] is unknown (null).
+         * A book's class: [manga] (read right to left, or marked manga), web when read top to
+         * bottom or its median page [aspect] is outside [WEB_BELOW]..[WEB_ABOVE], Franco-Belgian
+         * only within [ALBUM_FROM]..[ALBUM_TO], US for the rest and while [aspect] is unknown (null).
          */
-        fun of(rightToLeft: Boolean, topToBottom: Boolean, aspect: Double?): PageClass = when {
-            rightToLeft -> MANGA
+        fun of(manga: Boolean, topToBottom: Boolean, aspect: Double?): PageClass = when {
+            manga -> MANGA
             topToBottom -> WEB
             aspect == null -> US
             aspect < WEB_BELOW || aspect > WEB_ABOVE -> WEB
             aspect in ALBUM_FROM..ALBUM_TO -> FRANCO_BELGIAN
             else -> US
         }
+
+        /**
+         * True for a manga book: read [rightToLeft], its ComicInfo [marked] it manga (left to
+         * right or not; null: unread), or it runs the manga chain ([kind]).
+         */
+        fun manga(rightToLeft: Boolean, marked: ComicInfo.Manga?, kind: ChainKind): Boolean =
+            rightToLeft || marked == ComicInfo.Manga.YES || marked == ComicInfo.Manga.YES_RTL || kind == ChainKind.MANGA
 
         /**
          * The median aspect of [analysis]'s pages of known size, covers (and the first page),
@@ -80,10 +88,10 @@ data class BookShape(val pageClass: PageClass, val aspect: Double? = null) {
         /** A book nothing is known of: a US comic. */
         val UNKNOWN = BookShape(PageClass.US)
 
-        /** The shape of a book read [rightToLeft] or [topToBottom] whose pages [analysis] found; null while not analyzed. */
-        fun of(rightToLeft: Boolean, topToBottom: Boolean, analysis: Spreads.Analysis?): BookShape {
+        /** The shape of a [manga] book ([PageClass.of]), or one read [topToBottom], whose pages [analysis] found (null: not analyzed). */
+        fun of(manga: Boolean, topToBottom: Boolean, analysis: Spreads.Analysis?): BookShape {
             val aspect = analysis?.let { PageClass.medianAspect(it) }
-            return BookShape(PageClass.of(rightToLeft, topToBottom, aspect), aspect?.let { (it * 100).roundToInt() / 100.0 })
+            return BookShape(PageClass.of(manga, topToBottom, aspect), aspect?.let { (it * 100).roundToInt() / 100.0 })
         }
     }
 }

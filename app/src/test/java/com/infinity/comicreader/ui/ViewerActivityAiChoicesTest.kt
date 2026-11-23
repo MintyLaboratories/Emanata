@@ -25,6 +25,7 @@ import com.infinity.comicreader.ai.Models
 import com.infinity.comicreader.ai.OfflineDownloads
 import com.infinity.comicreader.ai.PageTimes
 import com.infinity.comicreader.data.BookIds
+import com.infinity.comicreader.data.FolderLayout
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.ResumeMode
@@ -85,8 +86,11 @@ class ViewerActivityAiChoicesTest {
     private val folder: String get() = book.parent!!
 
     /** Opens [book] and waits until everything its open started is done: a late result (its ID, its direction) would land mid-test. */
-    private fun open(): ViewerActivity {
-        val intent = Intent(context, ViewerActivity::class.java).putExtra(ViewerActivity.EXTRA_PATH, book.absolutePath)
+    private fun open(): ViewerActivity = open(book)
+
+    /** Opens [file] as [open] does [book]. */
+    private fun open(file: File): ViewerActivity {
+        val intent = Intent(context, ViewerActivity::class.java).putExtra(ViewerActivity.EXTRA_PATH, file.absolutePath)
         val viewer = Robolectric.buildActivity(ViewerActivity::class.java, intent).setup().get()
         val progress = viewer.findViewById<View>(R.id.viewer_progress)
         idleUntil("the book open and all its open started done") { progress.visibility != View.VISIBLE && viewer.openSettled() }
@@ -344,6 +348,29 @@ class ViewerActivityAiChoicesTest {
         assertEquals("read at B6", PageClass.MANGA, viewer.aiShapeRun()?.pageClass)
         sheet.tap(R.id.btn_dir_ttb)
         assertEquals("top to bottom reads as web", PageClass.WEB, viewer.aiShapeRun()?.pageClass)
+    }
+
+    /** A book of three pages whose ComicInfo says `<Manga>[manga]</Manga>`, alone in its folder. */
+    private fun marked(manga: String): File {
+        val info = "<?xml version=\"1.0\"?><ComicInfo><Manga>$manga</Manga></ComicInfo>".toByteArray()
+        val pages = (0 until 3).map { Fixtures.entry("p%02d.png".format(it), byteArrayOf(0)) }
+        return Fixtures.zip(File(tmp.newFolder(), "Marked v01.cbz"), *(pages + Fixtures.entry("ComicInfo.xml", info)).toTypedArray())
+    }
+
+    @Test
+    fun aLeftToRightBookMarkedMangaReadsAtB6() {
+        val viewer = open(marked("Yes"))
+        idleUntil("its ComicInfo read") { viewer.aiShapeRun()?.pageClass == PageClass.MANGA }
+        assertEquals("read left to right, on its chain", ChainKind.OTHER, viewer.aiKindRun())
+    }
+
+    @Test
+    fun aRightToLeftMangaInAFolderReadLeftToRightStillReadsAtB6() {
+        val book = marked("YesAndRightToLeft")
+        Library(context).setFolderLayout(book.parent!!, FolderLayout.Direction("ltr"))
+        val viewer = open(book)
+        idleUntil("its ComicInfo read") { viewer.aiShapeRun()?.pageClass == PageClass.MANGA }
+        assertEquals("read left to right, as its folder says", ChainKind.OTHER, viewer.aiKindRun())
     }
 
     @Test

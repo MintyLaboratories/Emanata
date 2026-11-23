@@ -70,13 +70,13 @@ class Rar5HeadersTest {
         assertEquals(4L shl 30, Rar5Headers.dictOf(15L shl 10 or 1))
         assertEquals((64L shl 20) + (64L shl 20) / 32 * 3, Rar5Headers.dictOf(3L shl 15 or (9L shl 10) or 1))
         assertEquals(64L shl 20, Rar5Headers.dictOf(3L shl 15 or (9L shl 10)))
-        val headers = list(Fixtures.rar5Bytes(entry("01.jpg"), solid = true, dictBits = 9))
+        val headers = list(Fixtures.rar5Bytes(entry("01.jpg"), solid = true, dictBits = { 9 }))
         assertEquals(listOf(64L shl 20), headers.map { it.dict })
     }
 
     @Test
     fun aDictionaryOver64MiBIsTurnedDown() {
-        val e = assertThrows(RefusedRar::class.java) { list(Fixtures.rar5Bytes(entry("01.jpg"), solid = true, dictBits = 10)) }
+        val e = assertThrows(RefusedRar::class.java) { list(Fixtures.rar5Bytes(entry("01.jpg"), solid = true, dictBits = { 10 })) }
         assertEquals("Dictionary over 64 MiB", e.message)
     }
 

@@ -145,14 +145,14 @@ object Fixtures {
      * (compression flag 0x0040), as real solid archives are.
      * [encrypted] gives every entry an encryption record; [headersEncrypted] puts an archive
      * encryption header before the main header, as an archive with encrypted names has;
-     * [dictBits] declares each entry's dictionary as 128 KiB shifted left by it.
+     * [dictBits] declares entry i's dictionary as 128 KiB shifted left by dictBits(i).
      */
     fun rar5Bytes(
         vararg entries: Pair<String, ByteArray>,
         solid: Boolean = false,
         encrypted: Boolean = false,
         headersEncrypted: Boolean = false,
-        dictBits: Int = 0
+        dictBits: (Int) -> Int = { 0 }
     ): ByteArray {
         val out = ByteArrayOutputStream()
         out.write(bytes(0x52, 0x61, 0x72, 0x21, 0x1A, 0x07, 0x01, 0x00))
@@ -170,7 +170,7 @@ object Fixtures {
             val head = lead.v(content.size.toLong()) // type, extra and data areas, data size
                 .v(0x0004).v(content.size.toLong()).v(0x20) // CRC present, unpacked size, attributes
                 .u32(crc(content))
-                .v(dictBits.toLong() shl 10 or linked).v(0) // stored with that dictionary, Windows
+                .v(dictBits(i).toLong() shl 10 or linked).v(0) // stored with that dictionary, Windows
                 .v(name.size.toLong()).raw(name).raw(record).bytes()
             rar5Block(out, head)
             out.write(content)

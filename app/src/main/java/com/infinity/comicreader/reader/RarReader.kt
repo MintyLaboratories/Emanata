@@ -13,7 +13,7 @@ import java.util.Objects
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
-/** An archive the RAR reader turns down whatever it listed: encrypted, or solid RAR 4. */
+/** An archive the RAR reader turns down whatever it listed: encrypted, solid RAR 4, or a RAR 5 dictionary over 64 MiB. */
 internal class RefusedRar(message: String) : IOException(message)
 
 /**
@@ -26,7 +26,8 @@ internal class RefusedRar(message: String) : IOException(message)
  *   A solid archive keeps its handle going forward; an entry at or before the last one read
  *   reopens it and unpacks every entry up to it ([ExtractingReader] reads them in order).
  * - A solid RAR 5 is listed by its headers ([Rar5Headers]): libarchive would unpack it whole to
- *   list it. libarchive cannot read solid RAR 4 past its first entry: such an archive does not open.
+ *   list it. libarchive cannot read solid RAR 4 past its first entry, nor RAR 5 with a dictionary
+ *   over 64 MiB: such an archive does not open.
  * - Paths use "/" whatever made the archive (RAR 4 stores "\"), as the other formats' do.
  * - A header that cannot be read ends the listing, keeping the entries before it. An archive
  *   without any, or with an encrypted entry, does not open (IOException).
@@ -127,7 +128,13 @@ class RarReader private constructor(
         try {
             val meta = LongArray(LibArchive.META_COUNT)
             while (true) {
-                val name = engine.next(h, meta) ?: break
+                val name = try {
+                    engine.next(h, meta)
+                } catch (e: IOException) {
+                    // libarchive turns down a RAR 5 dictionary over 64 MiB: the pages from there on would be lost.
+                    if (e.message?.contains(DICT_REFUSED) == true) throw RefusedRar("Dictionary over 64 MiB")
+                    throw e
+                } ?: break
                 if (meta[LibArchive.META_ENCRYPTED] != 0L) throw RefusedRar("Encrypted archive")
                 into += Rar5Headers.Header(name, meta[LibArchive.META_SIZE], meta[LibArchive.META_TYPE] == LibArchive.TYPE_FILE, meta[LibArchive.META_POSITION])
             }
@@ -283,6 +290,9 @@ class RarReader private constructor(
 
         /** The longest main header put before an entry's ([Spliced]); one longer is walked past instead. */
         private const val MAX_PREFIX_BYTES = 64L * 1024
+
+        /** libarchive's error for a RAR 5 file header declaring a dictionary over 64 MiB (rar5.c). */
+        private const val DICT_REFUSED = "Declared dictionary size is not supported"
 
         /** [Spliced] view failures, each followed by a walk that found the entry, before views stop. */
         private const val MAX_VIEW_FAILURES = 2

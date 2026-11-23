@@ -243,9 +243,13 @@ class RarReaderTest {
     @Test
     fun aRar5WhoseDictionaryIsOver64MiBDoesNotOpen() {
         // libarchive unpacks with 64 MiB at most: a solid one is turned down by its headers, the other by libarchive.
-        assertThrows(RefusedRar::class.java) { RarReader(file(Fixtures.rar5Bytes(*pages, solid = true, dictBits = 10))) }
-        assertThrows(IOException::class.java) { RarReader(file(Fixtures.rar5Bytes(*pages, dictBits = 10))) }
-        RarReader(file(Fixtures.rar5Bytes(*pages, solid = true, dictBits = 9))).use { assertEquals("02.jpg", String(it.bytes(0))) }
+        // Only the last entry's being over still turns the whole book down: its pages from there on would be lost.
+        for (solid in listOf(true, false)) {
+            for (bits in listOf<(Int) -> Int>({ 10 }, { if (it == pages.size - 1) 10 else 0 })) {
+                assertThrows("solid $solid", RefusedRar::class.java) { RarReader(file(Fixtures.rar5Bytes(*pages, solid = solid, dictBits = bits))) }
+            }
+            RarReader(file(Fixtures.rar5Bytes(*pages, solid = solid, dictBits = { 9 }))).use { assertEquals("02.jpg", String(it.bytes(0))) }
+        }
     }
 
     @Test

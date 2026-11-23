@@ -979,8 +979,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   extension only when they match nothing.
 - RAR limits: these do not open ("Cannot open this file"):
   - solid RAR 4: libarchive 3.8.11 cannot read it past its first entry;
-  - RAR 5 with a dictionary over 64 MiB (libarchive's limit; WinRAR's default
-    is 32 MB), told from the headers for a solid archive;
+  - RAR 5 with any entry's dictionary over 64 MiB (libarchive's limit;
+    WinRAR's default is 32 MB);
   - encrypted RAR (entries or headers).
 - Every image, in an archive or not, decodes through `Decoders`, which picks the
   decoder from the magic bytes (`ImageKind`). PNG, JPEG XL and TIFF sizes come

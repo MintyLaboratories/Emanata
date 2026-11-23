@@ -15,7 +15,6 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import com.infinity.comicreader.R
-import com.infinity.comicreader.debug.ArchiveRuns.Engine
 import com.infinity.comicreader.debug.ArchiveRuns.Via
 import com.infinity.comicreader.reader.ArchiveEntry
 import com.infinity.comicreader.reader.ArchiveKind
@@ -23,8 +22,8 @@ import com.infinity.comicreader.reader.ArchiveReader
 import com.infinity.comicreader.reader.BitmapUtils
 import com.infinity.comicreader.reader.ChannelZipReader
 import com.infinity.comicreader.reader.LibArchive
-import com.infinity.comicreader.reader.LibArchiveReader
 import com.infinity.comicreader.reader.RarMain
+import com.infinity.comicreader.reader.RarReader
 import com.infinity.comicreader.reader.SevenZipReader
 import com.infinity.comicreader.util.Formats
 import org.json.JSONArray
@@ -32,42 +31,34 @@ import org.json.JSONObject
 import java.io.File
 import java.nio.channels.FileChannel
 import java.nio.file.StandardOpenOption
-import java.util.zip.ZipFile
+import java.util.zip.CRC32
 import kotlin.concurrent.thread
 
 /**
- * Debug and bench builds only: times reading archives by the app's reader for the format
- * (junrar for RAR) against libarchive (F119), and checks both return the same bytes. Only
- * the shell may start it:
+ * Debug and bench builds only: times the app's archive readers on real archives and checks they
+ * return the same bytes whatever the route and order (RAR through libarchive, F119). Only the
+ * shell may start it:
  *
  * `adb shell am start-foreground-service -n <package>/com.infinity.comicreader.debug.ArchiveCheckService
- *  [--es do time,verify,sustain,selftest,scan|all] [--es paths /path/a.cbr,/path/b.cbr] [--es engines junrar,libarchive]
- *  [--es via file|channel|both] [--ei rounds 3] [--ei random 20] [--el seed 1] [--ez warmup true] [--es pages images|all]
- *  [--ei seconds 60] [--ei energyRounds 2] [--ei cooldown 30] [--ei idle 5] [--es dir /path --ei depth 3]`
+ *  [--es do time,verify,scan] [--es paths /path/a.cbr,/path/b.cbr] [--es via file|channel|both]
+ *  [--ei rounds 3] [--ei random 20] [--el seed 1] [--ez warmup true] [--es pages images|all] [--es dir /path --ei depth 3]`
  *
- * Archives are `paths`, named in the log by their place in it (`a1`, `a2`...). `via`: the
- * file (libarchive reads its descriptor), or a channel over it, as the app reads books on a
- * share (`LibArchive.Source` callbacks; junrar through a channel volume). `junrar` stands
- * for the app's reader of the format: junrar for RAR, Commons Compress for 7z, its own for ZIP.
+ * Archives are `paths`, named in the log by their place in it (`a1`, `a2`...). `via`: the file,
+ * or a channel over it, as the app reads books on a share.
  *
- * - time (default): per archive and `via`, a warm-up run per engine, then `rounds` interleaved
- *   (A B, B A...), each one line: `openMs` (opening and listing), `firstPageMs` (that plus the
- *   first page in the reader's order), `random` (`random` pages in an order fixed by `seed`,
- *   the same for both engines; each page's ms in `eachMs`, by `order`), `sequential` (every entry in archive order on a new reader,
- *   as a solid archive streams), process CPU time per step, the peak native heap and Java heap
- *   in use above the start (sampled every 5 ms), and the conditions (`valid` from a bench
- *   build with the app in front: see ResampleCheckService). Bytes are read as the app reads a
- *   page (`BitmapUtils.readCapped`). `pages all` counts every entry as a page, not only images.
- * - verify (default): both engines' listings compared (paths, sizes, order) and every entry's
- *   bytes; mismatched entries by index (`firstDiffers`).
- * - sustain (not in all): energy per page on battery alone ([EnergyMeter], as
- *   DecodeCheckService's sustain): per archive and engine, `energyRounds` interleaved rounds of
- *   a `cooldown` s pause, an `idle` s baseline, then entries read in archive order back to back
- *   for `seconds` (reopening at the end); then each engine's energy per page across valid rounds.
- * - selftest: a ZIP (stored and deflated, with an archive comment) and a 7z (LZMA2) made in the
- *   cache, read by libarchive through a descriptor and a channel against their bytes; and whether
- *   the ZIP comment survives (read by java.util.zip) while libarchive offers none (it has no API).
- * - scan (not in all): each archive under `dir`, `depth` folders down: its kind, RAR version
+ * - time (default): per archive and `via`, a warm-up run, then `rounds` runs, each one line:
+ *   `openMs` (opening and listing), `firstPageMs` (that plus the first page in the reader's
+ *   order), `random` (`random` pages in an order fixed by `seed`; each page's ms in `eachMs`, by
+ *   `order`), `sequential` (every entry in archive order on a new reader, as a solid archive
+ *   streams), process CPU time per step, the peak native heap and Java heap in use above the start
+ *   (sampled every 5 ms), and the conditions (`valid` from a bench build with the app in front:
+ *   see ResampleCheckService). Bytes are read as the app reads a page (`BitmapUtils.readCapped`).
+ *   `pages all` counts every entry as a page, not only images.
+ * - verify (default): every entry's CRC-32 read in archive order from the file, against a new
+ *   reader by `via` reading them backward, then in an order fixed by `seed`: listings compared
+ *   (paths, sizes, order), mismatched entries by index (`firstDiffers`); for RAR, how many reads
+ *   went straight to their entry (`spliced`) and how many had to walk from the start (`unspliced`).
+ * - scan (not in default): each archive under `dir`, `depth` folders down: its kind, RAR version
  *   and solid flag, to find test archives. It names files: keep its lines out of reports.
  *
  * Results go to the log under "ArchiveCheck", one JSON object per line, ending with "done",
@@ -76,53 +67,32 @@ import kotlin.concurrent.thread
 class ArchiveCheckService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
-    private class Plan(
-        val engines: List<Engine>,
-        val vias: List<Via>,
-        val rounds: Int,
-        val random: Int,
-        val seed: Long,
-        val warmup: Boolean,
-        val anyEntry: Boolean,
-        val energy: Energy
-    )
-
-    /** How `sustain` runs: [seconds] of reading per run, [rounds], a [cooldown] s pause and an [idle] s baseline before each. */
-    private class Energy(val seconds: Int, val rounds: Int, val cooldown: Int, val idle: Int)
+    private class Plan(val vias: List<Via>, val rounds: Int, val random: Int, val seed: Long, val warmup: Boolean, val anyEntry: Boolean)
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         ServiceCompat.startForeground(this, NOTIFICATION_ID, notification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
         val what = (intent?.getStringExtra("do") ?: "time,verify").split(',').map { it.trim() }.toSet()
         val paths = intent?.getStringExtra("paths")?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty()
-        val askedEngines = intent?.getStringExtra("engines")?.split(',')
-        val engines = askedEngines?.mapNotNull { Engine.of(it) }?.distinct() ?: Engine.entries
         val vias = Via.list(intent?.getStringExtra("via"))
         val plan = Plan(
-            engines, vias ?: listOf(Via.FILE),
+            vias ?: listOf(Via.FILE),
             intent?.getIntExtra("rounds", 3)?.coerceIn(1, 50) ?: 3,
             intent?.getIntExtra("random", 20)?.coerceIn(1, 1000) ?: 20,
             intent?.getLongExtra("seed", 1L) ?: 1L,
             intent?.getBooleanExtra("warmup", true) ?: true,
-            intent?.getStringExtra("pages") == "all",
-            Energy(
-                intent?.getIntExtra("seconds", 60)?.coerceIn(3, 600) ?: 60, intent?.getIntExtra("energyRounds", 2)?.coerceIn(1, 20) ?: 2,
-                intent?.getIntExtra("cooldown", 30)?.coerceIn(0, 600) ?: 30, intent?.getIntExtra("idle", 5)?.coerceIn(1, 600) ?: 5
-            )
+            intent?.getStringExtra("pages") == "all"
         )
         val dir = intent?.getStringExtra("dir")
         val depth = intent?.getIntExtra("depth", 3)?.coerceIn(0, 10) ?: 3
         thread(name = "archive-check") {
             try {
                 out.parentFile?.mkdirs()
-                if (askedEngines != null && engines.size != askedEngines.size) log(JSONObject().put("failed", "unreadable engines: $askedEngines"))
                 if (vias == null) log(JSONObject().put("failed", "unreadable via"))
-                val loaded = LibArchive.available
+                val loaded = LibArchive.loaded
                 log(
                     JSONObject().put("libarchive", if (loaded) LibArchive.nVersion() else JSONObject.NULL).put("loaded", loaded)
                         .put("conditions", conditions())
                 )
-                val all = "all" in what
-                if ("selftest" in what || all) selftest()
                 if ("scan" in what) dir?.let { scan(File(it), depth) } ?: log(JSONObject().put("failed", "scan needs dir"))
                 for ((i, path) in paths.withIndex()) {
                     val file = File(path)
@@ -133,10 +103,9 @@ class ArchiveCheckService : Service() {
                     }
                     log(describe(file, label))
                     for (via in plan.vias) {
-                        if ("time" in what || all) time(file, label, via, plan)
-                        if ("verify" in what || all) verify(file, label, via)
+                        if ("time" in what) time(file, label, via, plan)
+                        if ("verify" in what) verify(file, label, via, plan.seed)
                     }
-                    if ("sustain" in what) sustain(file, label, plan)
                 }
             } catch (t: Throwable) {
                 log(JSONObject().put("failed", "${t.javaClass.simpleName}: ${t.message}"))
@@ -159,20 +128,21 @@ class ArchiveCheckService : Service() {
 
     // ------------------------------------------------------------------ readers
 
-    private fun open(engine: Engine, file: File, via: Via): ArchiveReader {
+    /** The app's reader of [file], from the file or through a channel over it, as books on a share are read. */
+    private fun open(file: File, via: Via): ArchiveReader {
         val kind = ArchiveKind.detect(file) ?: throw IllegalArgumentException("not an archive")
-        fun channel() = FileChannel.open(file.toPath(), StandardOpenOption.READ)
-        return when (engine) {
-            Engine.LIBARCHIVE -> if (via == Via.FILE) LibArchiveReader.of(file) else LibArchiveReader.of(channel())
-            Engine.CURRENT -> when (via) {
-                Via.FILE -> ArchiveReader.open(file, "UTF-8", kind) ?: throw IllegalArgumentException("no reader for $kind")
-                Via.CHANNEL -> when (kind) {
-                    ArchiveKind.RAR -> ChannelRar.reader(channel())
-                    ArchiveKind.SEVEN_ZIP -> channel().let { c -> runCatching { SevenZipReader(c) }.getOrElse { c.close(); throw it } }
-                    ArchiveKind.ZIP -> channel().let { c -> runCatching { ChannelZipReader(c, "UTF-8") }.getOrElse { c.close(); throw it } }
-                    else -> throw IllegalArgumentException("no channel reader for $kind")
-                }
+        if (via == Via.FILE) return ArchiveReader.open(file, "UTF-8", kind) ?: throw IllegalArgumentException("no reader for $kind")
+        val channel = FileChannel.open(file.toPath(), StandardOpenOption.READ)
+        return try {
+            when (kind) {
+                ArchiveKind.RAR -> RarReader.of(channel)
+                ArchiveKind.SEVEN_ZIP -> SevenZipReader(channel)
+                ArchiveKind.ZIP -> ChannelZipReader(channel, "UTF-8")
+                else -> throw IllegalArgumentException("no channel reader for $kind")
             }
+        } catch (t: Throwable) {
+            channel.close()
+            throw t
         }
     }
 
@@ -190,15 +160,13 @@ class ArchiveCheckService : Service() {
     // ------------------------------------------------------------------ time
 
     private fun time(file: File, label: String, via: Via, plan: Plan) {
-        if (plan.warmup) for (engine in plan.engines) log(run(engine, file, label, via, plan).put("warmup", true))
-        for ((round, order) in ResampleRuns.interleaved(plan.engines, plan.rounds).withIndex()) {
-            for (engine in order) log(run(engine, file, label, via, plan).put("round", round))
-        }
+        if (plan.warmup) log(run(file, label, via, plan).put("warmup", true))
+        repeat(plan.rounds) { round -> log(run(file, label, via, plan).put("round", round)) }
     }
 
-    /** One timed run of [engine] on [file]; a step that fails ends the run, named in `failed`. */
-    private fun run(engine: Engine, file: File, label: String, via: Via, plan: Plan): JSONObject {
-        val line = JSONObject().put("run", engine.key).put("archive", label).put("via", via.key)
+    /** One timed run on [file]; a step that fails ends the run, named in `failed`. */
+    private fun run(file: File, label: String, via: Via, plan: Plan): JSONObject {
+        val line = JSONObject().put("run", "time").put("archive", label).put("via", via.key)
         val before = conditions()
         System.gc()
         Runtime.getRuntime().gc()
@@ -207,13 +175,12 @@ class ArchiveCheckService : Service() {
             try {
                 val t0 = System.nanoTime()
                 val c0 = Process.getElapsedCpuTime()
-                open(engine, file, via).use { reader ->
+                open(file, via).use { reader ->
                     val openNs = System.nanoTime() - t0
                     val openCpu = Process.getElapsedCpuTime() - c0
                     line.put("reader", reader.javaClass.simpleName).put("entries", reader.entries.size).put("solid", reader.solid ?: JSONObject.NULL)
                         .put("bytes", reader.entries.sumOf { it.size.coerceAtLeast(0) })
                         .put("openMs", ms(openNs)).put("openCpuMs", openCpu)
-                    (reader as? LibArchiveReader)?.let { line.put("format", it.format ?: JSONObject.NULL) }
                     val pages = ArchiveRuns.pages(reader.entries, plan.anyEntry)
                     line.put("pages", pages.size)
                     if (pages.isEmpty()) throw IllegalStateException("no pages")
@@ -236,7 +203,7 @@ class ArchiveCheckService : Service() {
                     )
                 }
                 step = "sequential"
-                open(engine, file, via).use { reader ->
+                open(file, via).use { reader ->
                     val s0 = System.nanoTime()
                     val sc0 = Process.getElapsedCpuTime()
                     var total = 0L
@@ -309,130 +276,46 @@ class ArchiveCheckService : Service() {
 
     // ------------------------------------------------------------------ verify
 
-    private fun verify(file: File, label: String, via: Via) {
+    private fun crc(bytes: ByteArray): Long = CRC32().apply { update(bytes) }.value
+
+    private fun verify(file: File, label: String, via: Via, seed: Long) {
         val line = JSONObject().put("verify", label).put("via", via.key)
         val t0 = System.nanoTime()
         try {
-            open(Engine.CURRENT, file, via).use { a ->
-                open(Engine.LIBARCHIVE, file, via).use { b ->
-                    val diff = ArchiveRuns.compare(a.entries, b.entries)
-                    line.put(
-                        "listing", JSONObject().put("same", diff.same).put("onlyCurrent", diff.onlyA).put("onlyLibarchive", diff.onlyB)
-                            .put("sizeDiffers", diff.sizeDiffers).put("sameOrder", diff.sameOrder)
-                    )
-                    val byPath = b.entries.associateBy { ArchiveRuns.key(it.path) }
-                    var same = 0
-                    var failed = 0
-                    val differs = ArrayList<Int>()
-                    for (entry in a.entries.sortedBy { it.index }) {
-                        val other = byPath[ArchiveRuns.key(entry.path)] ?: continue
-                        val x = runCatching { bytes(a, entry) }.getOrNull()
-                        val y = runCatching { bytes(b, other) }.getOrNull()
-                        when {
-                            x == null || y == null -> failed++
-                            x.contentEquals(y) -> same++
-                            else -> differs += entry.index
-                        }
+            val reference = open(file, Via.FILE).use { r -> r.entries to r.entries.sortedBy { it.index }.associate { it.index to runCatching { crc(bytes(r, it)) }.getOrNull() } }
+            open(file, via).use { reader ->
+                val diff = ArchiveRuns.compare(reference.first, reader.entries)
+                line.put(
+                    "listing", JSONObject().put("same", diff.same).put("onlyFile", diff.onlyA).put("onlyVia", diff.onlyB)
+                        .put("sizeDiffers", diff.sizeDiffers).put("sameOrder", diff.sameOrder)
+                )
+                val byIndex = reader.entries.sortedBy { it.index }
+                val order = byIndex.asReversed() + ArchiveRuns.randomOrder(byIndex.size, byIndex.size, seed).map { byIndex[it] }
+                var same = 0
+                var failed = 0
+                val differs = ArrayList<Int>()
+                for (entry in order) {
+                    val expected = reference.second[entry.index]
+                    val got = runCatching { crc(bytes(reader, entry)) }.getOrNull()
+                    when {
+                        expected == null || got == null -> failed++
+                        expected == got -> same++
+                        else -> differs += entry.index
                     }
-                    line.put("entries", a.entries.size).put("same", same).put("differ", differs.size).put("failed", failed)
-                        .put("firstDiffers", JSONArray(differs.take(5))).put("ok", diff.same && failed == 0 && differs.isEmpty())
                 }
+                line.put("reads", order.size).put("same", same).put("differ", differs.size).put("failed", failed)
+                    .put("firstDiffers", JSONArray(differs.distinct().take(5)))
+                var spliceOk = true
+                (reader as? RarReader)?.let {
+                    line.put("spliced", it.spliced).put("unspliced", it.unspliced)
+                    spliceOk = it.unspliced == 0
+                }
+                line.put("ok", diff.same && failed == 0 && differs.isEmpty() && spliceOk)
             }
         } catch (t: Throwable) {
             line.put("ok", false).put("error", "${t.javaClass.simpleName}: ${t.message}")
         }
         log(line.put("ms", ms(System.nanoTime() - t0)))
-    }
-
-    // ------------------------------------------------------------------ sustain
-
-    private fun sustain(file: File, label: String, plan: Plan) {
-        val energy = plan.energy
-        val meter = EnergyMeter(this)
-        val via = plan.vias.first()
-        val runs = plan.engines.associateWith { EnergyRuns.Rounds() }
-        for ((round, order) in ResampleRuns.interleaved(plan.engines, energy.rounds).withIndex()) {
-            for (engine in order) {
-                SystemClock.sleep(energy.cooldown * 1000L)
-                val before = conditions()
-                val heat = ResampleRuns.Heat().apply { see(meter.thermal()) }
-                var error: String? = null
-                val run = meter.measure(energy.idle, energy.seconds, heat) { until ->
-                    var pages = 0
-                    var made = EnergyMeter.Made(0)
-                    try {
-                        while (SystemClock.elapsedRealtime() < until) {
-                            open(engine, file, via).use { reader ->
-                                for (entry in reader.entries.sortedBy { it.index }) {
-                                    if (SystemClock.elapsedRealtime() >= until) break
-                                    bytes(reader, entry)
-                                    pages++
-                                    made = EnergyMeter.Made(pages)
-                                }
-                            }
-                        }
-                    } catch (t: Throwable) {
-                        error = "${t.javaClass.simpleName}: ${t.message}"
-                    }
-                    made
-                }
-                val after = conditions()
-                heat.see(meter.thermal())
-                val valid = error == null && before.getBoolean("valid") && after.getBoolean("valid") && heat.cool
-                runs.getValue(engine).add(run, valid)
-                val line = JSONObject().put("sustain", engine.key).put("archive", label).put("via", via.key).put("round", round)
-                meter.json(run, energy.idle).let { m -> m.keys().forEach { line.put(it, m.get(it)) } }
-                log(
-                    line.put("failed", error ?: JSONObject.NULL).put("before", before).put("after", after).put("thermalPeak", heat.peak)
-                        .put("valid", valid)
-                )
-            }
-        }
-        for (engine in plan.engines) log(meter.summary(engine.key, runs.getValue(engine)).put("archive", label))
-    }
-
-    // ------------------------------------------------------------------ selftest
-
-    private fun selftest() {
-        if (!LibArchive.available) {
-            log(JSONObject().put("selftest", "all").put("ok", false).put("error", "libarchive not loaded"))
-            return
-        }
-        val dir = File(cacheDir, "archive-check").apply { mkdirs() }
-        val entries = ArchiveRuns.selfTestEntries()
-        val comment = "Emanata archive check"
-        val zip = File(dir, "check.zip").also { ArchiveRuns.writeZip(it, entries, comment) }
-        val sevenZ = File(dir, "check.7z").also { ArchiveRuns.write7z(it, entries) }
-        // Whether libarchive read the commented ZIP whole by every route.
-        var zipRead = true
-        for (archive in listOf(zip, sevenZ)) {
-            for (via in Via.entries) {
-                val line = JSONObject().put("selftest", archive.extension).put("via", via.key)
-                try {
-                    open(Engine.LIBARCHIVE, archive, via).use { reader ->
-                        reader as LibArchiveReader
-                        val byPath = reader.entries.associateBy { it.path }
-                        var same = 0
-                        // Backward too: each read before the last one read reopens the archive.
-                        for ((name, expected) in entries.asReversed() + entries) {
-                            val entry = byPath[name] ?: continue
-                            if (bytes(reader, entry).contentEquals(expected) && reader.bytes(entry).contentEquals(expected)) same++
-                        }
-                        line.put("format", reader.format ?: JSONObject.NULL).put("entries", reader.entries.size).put("same", same)
-                            .put("ok", reader.entries.size == entries.size && same == entries.size * 2)
-                    }
-                } catch (t: Throwable) {
-                    line.put("ok", false).put("error", "${t.javaClass.simpleName}: ${t.message}")
-                }
-                if (archive == zip && !line.optBoolean("ok")) zipRead = false
-                log(line)
-            }
-        }
-        val javaComment = runCatching { ZipFile(zip).use { it.comment } }.getOrNull()
-        log(
-            JSONObject().put("zipComment", JSONObject().put("written", javaComment == comment).put("libarchiveReadsArchive", zipRead)
-                .put("libarchiveApi", false).put("note", "libarchive has no call that returns or writes a ZIP archive comment"))
-        )
     }
 
     // ------------------------------------------------------------------ scan

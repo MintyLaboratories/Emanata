@@ -7,7 +7,9 @@ import com.infinity.comicreader.reader.ArchiveSource
 import com.infinity.comicreader.reader.Fixtures
 import com.infinity.comicreader.reader.Fixtures.entry
 import com.infinity.comicreader.reader.PageSources
+import com.infinity.comicreader.reader.RarReader
 import org.junit.After
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
@@ -140,6 +142,23 @@ class RemoteBooksTest {
         }
         assertEquals(0, copies())
         assertEquals(0, RemoteCache.pagesIn(cacheDir).list()?.size ?: 0)
+    }
+
+    @Test
+    fun aRarPageReadBackFetchesItsOwnEntryAlone() {
+        val big = bigPages(12, 17)
+        File(share, "b.cbr").writeBytes(Fixtures.rar4Bytes(*big))
+        (ArchiveReader.open(remote("b.cbr"), "UTF-8") as RarReader).use { r ->
+            r.read(r.entries[11]) { it.readBytes() }
+            val before = fake.bytesRead
+            assertArrayEquals(big[3].second, r.read(r.entries[3]) { it.readBytes() })
+            val read = fake.bytesRead - before
+            // Straight to its header: its data and a little around it, no walk past the headers before it.
+            assertTrue("read $read bytes", read < 2L * 256 * 1024)
+            assertEquals(2, r.spliced)
+            assertEquals(0, r.unspliced)
+        }
+        assertEquals(0, copies())
     }
 
     @Test

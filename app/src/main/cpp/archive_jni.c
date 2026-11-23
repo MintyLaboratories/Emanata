@@ -1,6 +1,6 @@
-// Archive reading through libarchive for LibArchive.kt: RAR (4 and 5), 7z and ZIP, from a
-// file descriptor or from a Java source called back for reads and seeks. A reader walks the
-// archive's headers in order; the caller reopens it to go back. One thread at a time per reader.
+// RAR reading (4 and 5) through libarchive for LibArchive.kt, from a Java source called back for
+// reads, seeks and skips. A reader walks the archive's headers in order; the caller reopens it
+// to go back. One thread at a time per reader.
 
 #include <archive.h>
 #include <archive_entry.h>
@@ -10,18 +10,15 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 
-// Bytes per read from an fd or a source.
+// Bytes the source may fill per read.
 #define BLOCK_BYTES (256 * 1024)
-// The most a byte array holds.
-#define MAX_ENTRY_BYTES 0x7FFFFFF0LL
 
 typedef struct {
     struct archive *a;
     struct archive_entry *entry;  // the current header, owned by a; NULL before the first and at the end
     JNIEnv *env;                  // the calling thread's, set by each call before libarchive may read
-    jobject source;               // global reference, or NULL when reading an fd
+    jobject source;               // global reference
     jmethodID read, seek, skip;
     void *buffer;                 // memory the source's reads fill
     jobject buffer_ref;           // global reference to a direct ByteBuffer over buffer
@@ -93,16 +90,6 @@ static la_int64_t source_skip(struct archive *a, void *data, la_int64_t request)
     return skipped;
 }
 
-static struct archive *new_archive(void) {
-    struct archive *a = archive_read_new();
-    if (!a) return NULL;
-    archive_read_support_format_rar(a);
-    archive_read_support_format_rar5(a);
-    archive_read_support_format_7zip(a);
-    archive_read_support_format_zip(a);
-    return a;
-}
-
 static void free_reader(JNIEnv *env, Reader *r) {
     if (r->a) archive_read_free(r->a);
     if (r->source) (*env)->DeleteGlobalRef(env, r->source);
@@ -117,34 +104,9 @@ Java_com_infinity_comicreader_reader_LibArchive_nVersion(JNIEnv *env, jclass c) 
     return (*env)->NewStringUTF(env, archive_version_details());
 }
 
+// A reader of the RAR the source holds, from the source's current position (its start).
 JNIEXPORT jlong JNICALL
-Java_com_infinity_comicreader_reader_LibArchive_nOpenFd(JNIEnv *env, jclass c, jint fd) {
-    (void) c;
-    Reader *r = calloc(1, sizeof(Reader));
-    if (!r) {
-        throw_io(env, "out of memory");
-        return 0;
-    }
-    r->env = env;
-    // From the start, also when this fd was read before.
-    if (lseek(fd, 0, SEEK_SET) != 0 || !(r->a = new_archive())) {
-        free_reader(env, r);
-        throw_io(env, "cannot open the archive");
-        return 0;
-    }
-    locale_t old = enter();
-    int rc = archive_read_open_fd(r->a, fd, BLOCK_BYTES);
-    leave(old);
-    if (rc != ARCHIVE_OK) {
-        throw_archive(env, r);
-        free_reader(env, r);
-        return 0;
-    }
-    return (jlong) (intptr_t) r;
-}
-
-JNIEXPORT jlong JNICALL
-Java_com_infinity_comicreader_reader_LibArchive_nOpenSource(JNIEnv *env, jclass c, jobject source) {
+Java_com_infinity_comicreader_reader_LibArchive_nOpen(JNIEnv *env, jclass c, jobject source) {
     (void) c;
     Reader *r = calloc(1, sizeof(Reader));
     if (!r) {
@@ -170,11 +132,13 @@ Java_com_infinity_comicreader_reader_LibArchive_nOpenSource(JNIEnv *env, jclass 
             (*env)->DeleteLocalRef(env, local);
         }
     }
-    if (!r->source || !r->buffer_ref || !(r->a = new_archive())) {
+    if (!r->source || !r->buffer_ref || !(r->a = archive_read_new())) {
         free_reader(env, r);
         throw_io(env, "cannot open the archive");
         return 0;
     }
+    archive_read_support_format_rar(r->a);
+    archive_read_support_format_rar5(r->a);
     archive_read_set_read_callback(r->a, source_read);
     archive_read_set_seek_callback(r->a, source_seek);
     archive_read_set_skip_callback(r->a, source_skip);
@@ -191,7 +155,7 @@ Java_com_infinity_comicreader_reader_LibArchive_nOpenSource(JNIEnv *env, jclass 
 }
 
 // The next header: its name as UTF-8 bytes, with meta = {size or -1, file type, header
-// position}; null at the end of the archive.
+// position, 1 when its data or the header itself is encrypted}; null at the end of the archive.
 JNIEXPORT jbyteArray JNICALL
 Java_com_infinity_comicreader_reader_LibArchive_nNext(JNIEnv *env, jclass c, jlong handle, jlongArray meta) {
     (void) c;
@@ -211,12 +175,13 @@ Java_com_infinity_comicreader_reader_LibArchive_nNext(JNIEnv *env, jclass c, jlo
     const char *name = archive_entry_pathname_utf8(r->entry);
     if (!name) name = archive_entry_pathname(r->entry);
     leave(old);
-    jlong values[3] = {
+    jlong values[4] = {
         archive_entry_size_is_set(r->entry) ? archive_entry_size(r->entry) : -1,
         archive_entry_filetype(r->entry),
-        archive_read_header_position(r->a)
+        archive_read_header_position(r->a),
+        archive_entry_is_encrypted(r->entry) ? 1 : 0
     };
-    (*env)->SetLongArrayRegion(env, meta, 0, 3, values);
+    (*env)->SetLongArrayRegion(env, meta, 0, 4, values);
     size_t length = name ? strlen(name) : 0;
     jbyteArray out = (*env)->NewByteArray(env, (jsize) length);
     if (out && length) (*env)->SetByteArrayRegion(env, out, 0, (jsize) length, (const jbyte *) name);
@@ -264,97 +229,6 @@ Java_com_infinity_comicreader_reader_LibArchive_nRead(JNIEnv *env, jclass c, jlo
     r->block += n;
     r->block_left -= n;
     return (jint) n;
-}
-
-// The rest of the current entry when it holds size bytes; null (thrown) when it holds another count.
-static jbyteArray read_sized(JNIEnv *env, Reader *r, jlong size) {
-    // Straight into the array: one copy.
-    jbyteArray out = (*env)->NewByteArray(env, (jsize) size);
-    if (!out) return NULL;
-    jlong used = 0;
-    int got;
-    while ((got = next_block(env, r)) > 0) {
-        if (used + (jlong) r->block_left > size) {
-            throw_io(env, "entry longer than its header says");
-            return NULL;
-        }
-        (*env)->SetByteArrayRegion(env, out, (jsize) used, (jsize) r->block_left, (const jbyte *) r->block);
-        used += (jlong) r->block_left;
-        r->block_left = 0;
-    }
-    if (got < 0) return NULL;
-    if (used != size) {
-        throw_io(env, "entry shorter than its header says");
-        return NULL;
-    }
-    return out;
-}
-
-// The rest of the current entry, of a size not known ahead.
-static jbyteArray read_unsized(JNIEnv *env, Reader *r) {
-    size_t capacity = 1 << 20, used = 0;
-    char *all = malloc(capacity);
-    if (!all) {
-        throw_io(env, "out of memory");
-        return NULL;
-    }
-    int got;
-    while ((got = next_block(env, r)) > 0) {
-        if ((jlong) (used + r->block_left) > MAX_ENTRY_BYTES) {
-            free(all);
-            throw_io(env, "entry too large");
-            return NULL;
-        }
-        if (used + r->block_left > capacity) {
-            size_t grown = capacity * 2;
-            while (grown < used + r->block_left) grown *= 2;
-            char *more = realloc(all, grown);
-            if (!more) {
-                free(all);
-                throw_io(env, "out of memory");
-                return NULL;
-            }
-            all = more;
-            capacity = grown;
-        }
-        memcpy(all + used, r->block, r->block_left);
-        used += r->block_left;
-        r->block_left = 0;
-    }
-    if (got < 0) {
-        free(all);
-        return NULL;
-    }
-    jbyteArray out = (*env)->NewByteArray(env, (jsize) used);
-    if (out && used) (*env)->SetByteArrayRegion(env, out, 0, (jsize) used, (const jbyte *) all);
-    free(all);
-    return out;
-}
-
-// The rest of the current entry, which holds size bytes (-1 when unknown).
-JNIEXPORT jbyteArray JNICALL
-Java_com_infinity_comicreader_reader_LibArchive_nReadAll(JNIEnv *env, jclass c, jlong handle, jlong size) {
-    (void) c;
-    Reader *r = (Reader *) (intptr_t) handle;
-    r->env = env;
-    if (!r->entry) {
-        throw_io(env, "no entry");
-        return NULL;
-    }
-    if (size > MAX_ENTRY_BYTES) {
-        throw_io(env, "entry too large");
-        return NULL;
-    }
-    return size >= 0 ? read_sized(env, r, size) : read_unsized(env, r);
-}
-
-// The archive's format as libarchive names it ("RAR5", "7-Zip", ...), once a header was read.
-JNIEXPORT jstring JNICALL
-Java_com_infinity_comicreader_reader_LibArchive_nFormat(JNIEnv *env, jclass c, jlong handle) {
-    (void) c;
-    Reader *r = (Reader *) (intptr_t) handle;
-    const char *name = archive_format_name(r->a);
-    return name ? (*env)->NewStringUTF(env, name) : NULL;
 }
 
 JNIEXPORT void JNICALL

@@ -58,9 +58,8 @@ class SolidArchivesTest {
         }
         assertEquals(true, solidOf(file("a.cbr", Fixtures.rar4Bytes(*pages, solid = true))))
         assertEquals(false, solidOf(file("a.cbr", Fixtures.rar4Bytes(*pages))))
-        // junrar tells nothing of RAR 5: its headers are read for it ([SolidArchives.isSolid]).
-        assertNull(solidOf(file("a.cbr", Fixtures.rar5Bytes(*pages, solid = true))))
-        assertNull(solidOf(file("a.cbr", Fixtures.rar5Bytes(*pages))))
+        assertEquals(true, solidOf(file("a.cbr", Fixtures.rar5Bytes(*pages, solid = true))))
+        assertEquals(false, solidOf(file("a.cbr", Fixtures.rar5Bytes(*pages))))
         assertEquals(true, solidOf(Fixtures.solidSevenZip(File(tmp.root, "solid.cb7"), *pages)))
         assertEquals(false, solidOf(Fixtures.sevenZip(File(tmp.root, "plain.cb7"), *pages)))
         assertNull("no reader tells for a ZIP", solidOf(Fixtures.zip(File(tmp.root, "a.cbz"), *pages)))

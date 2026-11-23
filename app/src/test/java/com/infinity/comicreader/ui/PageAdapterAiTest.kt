@@ -19,6 +19,7 @@ import com.infinity.comicreader.testing.Waits
 import com.infinity.comicreader.testing.idleUntil
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.asCoroutineDispatcher
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -34,6 +35,7 @@ import java.time.Duration
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.CoroutineContext
@@ -67,6 +69,9 @@ class PageAdapterAiTest {
     ) : PageEnhancer {
         val asked: MutableList<Int> = Collections.synchronizedList(ArrayList())
 
+        /** What each page's work was told to stop on, by page, as last asked. */
+        val canceled = ConcurrentHashMap<Int, () -> Boolean>()
+
         /** Runs as each page is processed, before it is done. */
         @Volatile
         var onEnhance: (Int) -> Unit = {}
@@ -95,6 +100,7 @@ class PageAdapterAiTest {
             source: PageSource, index: Int, target: Target, width: Int, height: Int, held: () -> Boolean, models: () -> Unit, canceled: () -> Boolean
         ): AiOutcome {
             asked += index
+            this.canceled[index] = canceled
             if (!on || unneeded) return AiOutcome.Skipped(Fallback.UNNEEDED)
             if (index !in kept) models()
             onEnhance(index)
@@ -288,6 +294,46 @@ class PageAdapterAiTest {
         idleUntil("page 0 shown processed") { colorAt(rv, 0) == processed }
         assertEquals(processed, colorAt(rv, 0))
         adapter.release()
+    }
+
+    @Test
+    fun aReplanRedoesOnlyThePagesPickedThePageUnderWayGoingOn() {
+        val worker = Executors.newSingleThreadExecutor()
+        try {
+            val enhancer = Enhancer(processed, worker.asCoroutineDispatcher())
+            val going = CountDownLatch(1)
+            enhancer.onEnhance = { if (it == 1) going.await(Waits.LIVENESS_MS, TimeUnit.MILLISECONDS) }
+            val source = Source(4, plain)
+            val adapter = PageAdapter(
+                source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false, preload = 1, enhancer = enhancer
+            )
+            val rv = RecyclerView(context).apply {
+                layoutManager = LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false)
+                this.adapter = adapter
+                layOut(600, 900)
+            }
+            idleUntil("page 0 shown plain") { colorAt(rv, 0) == plain }
+            settled(adapter)
+            adapter.reading(0)
+            idleUntil("page 0 processed, page 1 under way") { colorAt(rv, 0) == processed && enhancer.asked.toList() == listOf(0, 1) }
+            val judged = ArrayList<Int>()
+            adapter.aiReplanned { _, index, _, _, _ -> judged += index; false }
+            assertEquals("the page processed and the one under way judged", setOf(0, 1), judged.toSet())
+            assertFalse("the page under way goes on", enhancer.canceled.getValue(1)())
+            assertEquals(processed, colorAt(rv, 0))
+            going.countDown()
+            idleUntil("page 1 processed") { adapter.processedOf(adapter.decoded(source)).size == 2 }
+            assertEquals(listOf(0, 1), enhancer.asked.toList())
+
+            // Picked, page 0 shows plain and is processed anew; page 1 stays.
+            adapter.aiReplanned { _, index, _, _, _ -> index == 0 }
+            rv.layOut(600, 900)
+            idleUntil("page 0 processed anew") { enhancer.asked.toList() == listOf(0, 1, 0) && colorAt(rv, 0) == processed }
+            assertEquals(2, adapter.processedOf(adapter.decoded(source)).size)
+            adapter.release()
+        } finally {
+            worker.shutdownNow()
+        }
     }
 
     @Test

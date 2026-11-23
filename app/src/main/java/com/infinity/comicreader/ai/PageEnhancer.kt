@@ -170,10 +170,46 @@ class ReaderAi internal constructor(
     /** The default chain the book keyed [key] runs without picks of its own, as last told ([kind]). */
     fun kindOf(key: String?): ChainKind = kinds[key.orEmpty()] ?: ChainKind.OTHER
 
-    /** Says the pages of the book keyed [key] are of [shape]; true when that replaced another shape told before: pages may need other models now. */
-    fun shape(key: String?, shape: BookShape): Boolean {
-        val was = shapes.put(key.orEmpty(), shape)
-        return was != null && was != shape
+    /**
+     * Says the pages of the book keyed [key] are of [shape]; the shape they were read by before
+     * ([BookShape.UNKNOWN] untold) when it was another, else null. Pages planned under it may
+     * need other models now ([replanned]).
+     */
+    fun shape(key: String?, shape: BookShape): BookShape? {
+        val was = shapes.put(key.orEmpty(), shape) ?: BookShape.UNKNOWN
+        return was.takeIf { it != shape }
+    }
+
+    /**
+     * Says the [sizes] of [source]'s pages, by index, found by the reader (null: unknown), so
+     * [replanned] and [stored] judge those pages without reading them.
+     */
+    fun knowSizes(source: PageSource, sizes: Array<IntArray?>) {
+        if (source.bookKey == null) return
+        for ((i, s) in sizes.withIndex()) if (s != null && i < source.pageCount) this.sizes.putIfAbsent(placeOf(source, i), s)
+    }
+
+    /**
+     * True when page [index] of [source], shown as [target] lays it out at [width] x [height],
+     * is read otherwise now than under the shape [was] its book had: of another class, by
+     * other models, or, its size unknown, kept under another key. Main thread; reads nothing.
+     */
+    fun replanned(source: PageSource, index: Int, target: Target, width: Int, height: Int, was: BookShape): Boolean {
+        val chain = chainFor(source.bookKey)
+        if (chain.isEmpty() || source.isVector) return false
+        val now = readSize(source.bookKey) ?: return false
+        if (now.shape == was) return false
+        if (now.shape.pageClass != was.pageClass) return true
+        val before = ReadSize(was, now.ppi)
+        val thresholds = thresholds()
+        val size = sizes[placeOf(source, index)]
+        if (size != null) {
+            val old = runKeyOf(chain, target, size, width, height, thresholds, before)
+            val new = runKeyOf(chain, target, size, width, height, thresholds, now)
+            if (old != null || new != null) return old != new
+        }
+        val models = chain.map(ChainModel::of)
+        return AiPages.handles(models, thresholds, before) != AiPages.handles(models, thresholds, now)
     }
 
     /** The size the pages of the book keyed [book] are read at; null while the screen's ppi is unknown: as they show. */

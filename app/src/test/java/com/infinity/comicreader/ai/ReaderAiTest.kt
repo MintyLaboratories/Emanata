@@ -332,14 +332,41 @@ class ReaderAiTest {
         ai.close()
         ppi = 254.0
         ai = reader()
-        assertFalse("told first", ai.shape(b.bookKey, BookShape(PageClass.WEB)))
+        assertEquals("told first: read as a US comic before", BookShape.UNKNOWN, ai.shape(b.bookKey, BookShape(PageClass.WEB)))
         assertTrue((ai.enhance(b, 0, target, 40, 60) { false } is AiOutcome.Done))
         val note = ai.note(b, 0)!!
         // Its pixels at 96 dpi on a 254 ppi screen: 265 % of its side.
         assertEquals(254.0 / 96 * 100, note.percent!!, 1e-6)
         assertEquals(AiNote(note.percent, true, PageClass.WEB, emptyList(), null), note)
-        assertTrue("another shape", ai.shape(b.bookKey, BookShape.UNKNOWN))
-        assertFalse("the same again", ai.shape(b.bookKey, BookShape.UNKNOWN))
+        assertEquals("another shape", BookShape(PageClass.WEB), ai.shape(b.bookKey, BookShape.UNKNOWN))
+        assertNull("the same again", ai.shape(b.bookKey, BookShape.UNKNOWN))
+    }
+
+    @Test
+    fun aNewShapeReplansOnlyPagesReadByOtherModelsOrOfAnotherClass() {
+        ppi = 500.0
+        ai.close()
+        ai = reader()
+        val b = bookOf()
+        fun replanned(index: Int, size: IntArray, was: BookShape): Boolean {
+            val shown = phone.plan(size[0].toDouble(), size[1].toDouble())
+            return ai.replanned(b, index, phone, shown.width, shown.height, was)
+        }
+        val page = intArrayOf(1988, 3056)
+        // A spread under 8 MP: printed 16.8 cm wide at 97 % of its pixels, at a page's printed height at 218 %.
+        val spread = intArrayOf(3400, 2300)
+        ai.knowSizes(b, arrayOf(page, spread, null))
+        val first = BookShape(PageClass.US, null)
+        val us = BookShape(PageClass.US, 0.65)
+        assertEquals(BookShape.UNKNOWN, ai.shape(b.bookKey, us))
+        assertFalse("the page prints alike", replanned(0, page, first))
+        assertTrue("the spread prints at the pages' height: upscaled now", replanned(1, spread, first))
+        assertEquals(us, ai.shape(b.bookKey, BookShape(PageClass.US, 0.66)))
+        assertFalse("0.01 on: the same models", replanned(0, page, us))
+        assertFalse(replanned(1, spread, us))
+        assertTrue("size unknown: kept under another key", replanned(2, page, us))
+        assertTrue("another class", replanned(0, page, BookShape(PageClass.MANGA, 0.66)))
+        assertFalse("the shape it has", replanned(0, page, BookShape(PageClass.US, 0.66)))
     }
 
     @Test

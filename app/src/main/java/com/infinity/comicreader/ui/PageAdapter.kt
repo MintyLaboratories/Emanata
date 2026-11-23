@@ -1609,6 +1609,29 @@ class PageAdapter(
         wantAi()
     }
 
+    /**
+     * Processes anew only the pages [replanned] picks, given each page's source, index, target
+     * and size as shown: those shown processed show plain again, those done, skipped or under
+     * way are worked on again; the rest, the page under way included, are left as they are.
+     * After the shape of a book's pages changed.
+     */
+    fun aiReplanned(replanned: (source: PageSource, index: Int, target: Target, width: Int, height: Int) -> Boolean) {
+        if (enhancer == null || released) return
+        fun picked(key: PageKey): Boolean {
+            if (key != keyFor(key.part)) return false
+            val bitmap = cache.get(key) ?: return false
+            val chapter = strip.chapterOf(key.page)
+            return replanned(chapter.value.source, key.page - chapter.first, key.target, bitmap.width, bitmap.height)
+        }
+        val dropped = processed.filter(::picked)
+        // Asked while the processed bitmaps are still cached, as their pages were judged by their size.
+        ai?.again(::picked)
+        for (key in dropped) cache.remove(key)
+        processed -= dropped.toSet()
+        if (dropped.isNotEmpty()) notifyItemRangeChanged(0, itemCount, RESIZE)
+        wantAi()
+    }
+
     /** Ends a wait for AI ([AiOutcome.Later]): a model downloaded, battery saver turned off. */
     fun aiWake() {
         ai?.wake()

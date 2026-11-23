@@ -2084,7 +2084,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         keepVisits = !known.seen.isEmpty || known.seams.anyChecked
         shownVisits = 0
         tallPages = findTallPages()
-        syncAiShape()
+        syncAiSizes()
     }
 
     /**
@@ -2130,7 +2130,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
             updateTallPages()
             relayout()
             judgeTall()
-            syncAiShape()
+            syncAiSizes()
         }
     }
 
@@ -2179,7 +2179,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
             updateTallPages()
             relayout()
             judgeTall()
-            syncAiShape()
+            syncAiSizes()
         }
     }
 
@@ -4322,8 +4322,8 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
 
     /**
      * Reads the books' AI chains again; the pages shown go through the new chain when this
-     * book's or the next chapter's changed, the AI thresholds moved, or the shape of the
-     * book's pages changed ([aiShapes]).
+     * book's or the next chapter's changed or the AI thresholds moved, else those the shape of
+     * the book's pages changed ([aiShapes]) through the models they need now ([replan]).
      */
     private fun aiChanged() {
         val books = listOfNotNull(source, stripAhead).map { it.bookKey }
@@ -4332,7 +4332,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         aiKinds()
         val reshaped = aiShapes()
         val moved = readerAi.thresholdsMoved()
-        if (books.map { readerAi.chainFor(it) } != before || moved || reshaped) adapter?.aiChanged()
+        if (books.map { readerAi.chainFor(it) } != before || moved) adapter?.aiChanged() else replan(reshaped)
         aiBooks()
         syncSheet()
     }
@@ -4342,13 +4342,23 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
 
     /**
      * Tells the reader's AI the shape of each open book's pages ([aiShape]; the chapter laid in
-     * behind this one reads alike); true when that changed the shape told before of one whose
-     * pages go through AI.
+     * behind this one reads alike); the shape told before, by book key ("" for none), of each
+     * whose shape changed and whose pages go through AI.
      */
-    private fun aiShapes(): Boolean {
+    private fun aiShapes(): Map<String, BookShape> {
         val shape = aiShape()
+        val was = HashMap<String, BookShape>()
         // Every book is told; only a change on one AI processes matters.
-        return listOfNotNull(source, stripAhead).map { readerAi.shape(it.bookKey, shape) && readerAi.enhances(it) }.any { it }
+        for (s in listOfNotNull(source, stripAhead)) readerAi.shape(s.bookKey, shape)?.let { if (readerAi.enhances(s)) was[s.bookKey.orEmpty()] = it }
+        return was
+    }
+
+    /** Processes anew the pages shown of the books whose shape was [was] (by book key) that are read otherwise now ([ReaderAi.replanned]). */
+    private fun replan(was: Map<String, BookShape>) {
+        if (was.isEmpty()) return
+        adapter?.aiReplanned { src, index, target, width, height ->
+            was[src.bookKey.orEmpty()]?.let { readerAi.replanned(src, index, target, width, height, it) } == true
+        }
     }
 
     /** The shape of the open book's pages the reader's AI reads them by; null without a book or while the screen's ppi is unknown. */
@@ -4374,7 +4384,13 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
 
     /** Shows the open books' pages through the models their read size calls for when the shape of their pages changed ([aiShapes]). */
     private fun syncAiShape() {
-        if (aiShapes()) adapter?.aiChanged()
+        replan(aiShapes())
+    }
+
+    /** Tells the reader's AI the open book's page sizes found ([pageSizes]), then its shape ([syncAiShape]). Once they are the open book's. */
+    private fun syncAiSizes() {
+        source?.let { readerAi.knowSizes(it, pageSizes) }
+        syncAiShape()
     }
 
     /**

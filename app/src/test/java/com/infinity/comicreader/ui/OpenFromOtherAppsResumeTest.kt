@@ -130,6 +130,19 @@ class OpenFromOtherAppsResumeTest {
     }
 
     @Test
+    fun aBookmarkOnAHandedInCopyKeepsTheBookWhereItIs() {
+        savePosition(5)
+        val reader = read(handIn(contentUri("copy.cbz")))
+        shadowOf(reader.get()).clickMenuItem(R.id.menu_bookmark)
+        reader.pause().stop()
+        val id = bookId(book)
+        assertEquals(book.absolutePath, library.pathOf(id))
+        assertEquals(book.absolutePath, library.bookmarksFor(id).single().path)
+        assertEquals(book.absolutePath, library.historyFor(id)!!.path)
+        reader.destroy()
+    }
+
+    @Test
     fun aBookSeenNowhereElseResumesWhenHandedInAgain() {
         val id = bookId(book)
         book.delete()

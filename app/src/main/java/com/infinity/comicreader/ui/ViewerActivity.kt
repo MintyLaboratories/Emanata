@@ -5179,13 +5179,12 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
 
     /** Bookmarks [page], or removes its bookmark. */
     private fun toggleBookmark(page: Int = currentIndex) {
-        val f = file ?: return
-        val id = keptBook()?.id ?: return
-        if (library.isBookmarked(id, page)) {
-            library.removeBookmark(id, page)
+        val ref = keptBook() ?: return
+        if (library.isBookmarked(ref.id, page)) {
+            library.removeBookmark(ref.id, page)
             toast(R.string.bookmark_removed)
         } else {
-            library.addBookmark(Bookmark(f.absolutePath, f.name, page, "", System.currentTimeMillis(), id))
+            library.addBookmark(Bookmark(ref.path, File(ref.path).name, page, "", System.currentTimeMillis(), ref.id))
             toast(R.string.bookmark_saved)
         }
         invalidateOptionsMenu()

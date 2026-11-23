@@ -168,6 +168,32 @@ class AiQueueTest {
     }
 
     @Test
+    fun againWorksOnlyOnThePagesPickedTheOneRunningGoingOnUnlessPicked() {
+        val w = Work()
+        w.outcomes["b"] = { AiOutcome.Skipped(Fallback.UNNEEDED) }
+        w.held["c"] = CountDownLatch(1)
+        val q = w.queue()
+        q.want(listOf("a", "b", "c"))
+        idleUntil("a and b worked on, c running") { w.started.size == 3 && q.current == "c" }
+        q.again { it == "b" }
+        // c goes on, unpicked (a page stopped gives way to b at once); b is worked on again once c ends.
+        assertEquals("c", q.current)
+        w.held.getValue("c").countDown()
+        idleUntil("c delivered, b worked on again") { w.delivered.contains("c") && w.started.toList().count { it == "b" } == 2 }
+        assertEquals(listOf("a", "b", "c", "b"), w.started)
+        assertTrue(w.canceled.isEmpty())
+
+        w.held["d"] = CountDownLatch(1)
+        q.want(listOf("d"))
+        idleUntil("d running") { q.current == "d" }
+        q.again { it == "d" }
+        idleUntil("d stopped") { w.canceled == listOf("d") }
+        w.held.getValue("d").countDown()
+        idleUntil("d worked on again and delivered") { w.delivered.contains("d") }
+        assertEquals(2, w.started.toList().count { it == "d" })
+    }
+
+    @Test
     fun failingWorkSkipsThePage() {
         val w = Work()
         w.outcomes["a"] = { throw IllegalStateException("boom") }

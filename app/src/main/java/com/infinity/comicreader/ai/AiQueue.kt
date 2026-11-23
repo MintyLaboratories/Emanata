@@ -135,6 +135,17 @@ internal class AiQueue<K : Any>(
         tell()
     }
 
+    /**
+     * Works on the pages [picked] picks again when wanted, among those done, skipped and the one
+     * running, as when the models they need changed: the page running stops only when picked.
+     */
+    fun again(picked: (K) -> Boolean) {
+        finished.removeAll { picked(it).also { p -> if (p) unopened -= it } }
+        running?.let { if (picked(it)) stop() }
+        next()
+        tell()
+    }
+
     /** Works on [key] again when wanted, as when its page was decoded afresh after leaving the cache. */
     fun forget(key: K) {
         finished -= key

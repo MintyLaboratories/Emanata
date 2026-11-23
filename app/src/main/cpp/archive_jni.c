@@ -146,7 +146,8 @@ Java_com_infinity_comicreader_reader_LibArchive_nOpen(JNIEnv *env, jclass c, job
     locale_t old = enter();
     int rc = archive_read_open1(r->a);
     leave(old);
-    if (rc != ARCHIVE_OK) {
+    // A source callback that threw fails the call even when libarchive carried on.
+    if (rc != ARCHIVE_OK || (*env)->ExceptionCheck(env)) {
         throw_archive(env, r);
         free_reader(env, r);
         return 0;
@@ -166,7 +167,8 @@ Java_com_infinity_comicreader_reader_LibArchive_nNext(JNIEnv *env, jclass c, jlo
     r->ended = 0;
     locale_t old = enter();
     int rc = archive_read_next_header(r->a, &r->entry);
-    if (rc == ARCHIVE_EOF || rc < ARCHIVE_WARN) {
+    // A source callback that threw fails the call even when libarchive carried on.
+    if (rc == ARCHIVE_EOF || rc < ARCHIVE_WARN || (*env)->ExceptionCheck(env)) {
         leave(old);
         r->entry = NULL;
         if (rc != ARCHIVE_EOF) throw_archive(env, r);
@@ -198,6 +200,7 @@ static int next_block(JNIEnv *env, Reader *r) {
         locale_t old = enter();
         int rc = archive_read_data_block(r->a, &buff, &size, &offset);
         leave(old);
+        if ((*env)->ExceptionCheck(env)) return -1;  // a source callback threw
         if (rc == ARCHIVE_EOF) {
             r->ended = 1;
             return 0;

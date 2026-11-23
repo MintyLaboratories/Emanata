@@ -140,7 +140,7 @@ Java_com_infinity_comicreader_reader_LibArchive_nOpen(JNIEnv *env, jclass c, job
     }
     archive_read_support_format_rar(r->a);
     archive_read_support_format_rar5(r->a);
-    if (listing && archive_read_set_format_option(r->a, "rar", "solid-skip", "consume") != ARCHIVE_OK) {
+    if (listing && archive_read_set_format_option(r->a, "rar", "solid-fast-skip", "1") != ARCHIVE_OK) {
         throw_archive(env, r);
         free_reader(env, r);
         return 0;

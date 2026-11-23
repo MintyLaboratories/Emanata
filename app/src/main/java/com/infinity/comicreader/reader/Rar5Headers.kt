@@ -68,6 +68,7 @@ internal object Rar5Headers {
             val flags = r.need()
             val extraSize = if (flags and EXTRA != 0L) r.need() else 0L
             val dataSize = if (flags and DATA != 0L) r.need() else 0L
+            if (extraSize > sized.size - r.at) throw IOException("Bad RAR extra area size")
             when (type) {
                 HEAD_CRYPT -> throw RefusedRar("Encrypted archive")
                 HEAD_END -> return found
@@ -79,13 +80,13 @@ internal object Rar5Headers {
                     if (fileFlags and CRC != 0L) r.skip(4)
                     val dict = dictOf(r.need())
                     r.need() // host OS
-                    val nameLength = r.need().toInt()
-                    val name = r.bytes(nameLength)
+                    val name = r.bytes(r.need())
                     var link = false
                     if (extraSize > 0) {
                         val records = Vints(sized, sized.size - extraSize.toInt())
                         while (records.at < sized.size) {
                             val recordSize = records.need()
+                            if (recordSize < 1 || recordSize > sized.size - records.at) throw IOException("Bad RAR extra record size")
                             val next = records.at + recordSize.toInt()
                             when (records.need()) {
                                 RECORD_CRYPT -> throw RefusedRar("Encrypted archive")
@@ -99,7 +100,9 @@ internal object Rar5Headers {
                     found += Header(name, if (fileFlags and SIZE_UNKNOWN != 0L) -1 else unpacked, !folder && !link, at, if (folder) 0 else dict)
                 }
             }
-            at += 4 + sized.size + dataSize
+            // A data area running past the end: the archive is cut short and this header is its last.
+            val after = at + 4 + sized.size
+            at = if (dataSize > size - after) size else after + dataSize
         }
         return found
     }
@@ -141,9 +144,9 @@ internal object Rar5Headers {
             at += n
         }
 
-        fun bytes(n: Int): ByteArray {
-            if (n < 0 || at + n > b.size) throw IOException("Bad RAR header")
-            return b.copyOfRange(at, at + n).also { at += n }
+        fun bytes(n: Long): ByteArray {
+            if (n < 0 || n > b.size - at) throw IOException("Bad RAR header")
+            return b.copyOfRange(at, at + n.toInt()).also { at += n.toInt() }
         }
     }
 }

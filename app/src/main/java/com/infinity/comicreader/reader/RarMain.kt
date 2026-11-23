@@ -10,6 +10,9 @@ internal data class RarMain(val version: Int, val solid: Boolean, val end: Long)
         /** Bytes enough for the signature and the main header's fields read here. */
         const val HEAD_BYTES = 64
 
+        /** The longest RAR 5 header the format allows. */
+        private const val MAX_RAR5_HEADER_BYTES = 2L * 1024 * 1024
+
         private val RAR4 = byteArrayOf(0x52, 0x61, 0x72, 0x21, 0x1A, 0x07, 0x00)
         private val RAR5 = byteArrayOf(0x52, 0x61, 0x72, 0x21, 0x1A, 0x07, 0x01, 0x00)
 
@@ -55,8 +58,9 @@ internal data class RarMain(val version: Int, val solid: Boolean, val end: Long)
             if (flags and 0x0001L != 0L) r.next() ?: return null
             val data = if (flags and 0x0002L != 0L) r.next() ?: return null else 0L
             val archive = r.next() ?: return null
-            if (size < 0 || data < 0) return null
-            return RarMain(5, archive and 0x0004L != 0L, body + size + data)
+            if (size !in 1..MAX_RAR5_HEADER_BYTES || data < 0) return null
+            val end = runCatching { Math.addExact(body + size, data) }.getOrNull() ?: return null
+            return RarMain(5, archive and 0x0004L != 0L, end)
         }
     }
 

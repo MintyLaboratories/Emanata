@@ -46,6 +46,18 @@ class RarMainTest {
     }
 
     @Test
+    fun aRar5MainHeaderOutOfBoundsIsNotRead() {
+        // Header size 0, or over the format's 2 MiB.
+        assertNull(RarMain.of(rar5 + bytes(1, 2, 3, 4, 0x00, 0x01, 0x00, 0x04)))
+        assertNull(RarMain.of(rar5 + bytes(1, 2, 3, 4, 0x81, 0x80, 0x80, 0x01, 0x01, 0x00, 0x04)))
+        // A data size whose end overflows: 2^63 - 1, then archive flags.
+        val huge = IntArray(8) { 0xFF } + 0x7F
+        assertNull(RarMain.of(rar5 + bytes(1, 2, 3, 4, 0x0D, 0x01, 0x02, *huge, 0x04)))
+        // 2^63 - 1 as the header size.
+        assertNull(RarMain.of(rar5 + bytes(1, 2, 3, 4, *huge, 0x01, 0x00, 0x04)))
+    }
+
+    @Test
     fun otherDataIsNoRar() {
         assertNull(RarMain.of(ByteArray(0)))
         assertNull(RarMain.of(bytes(0x50, 0x4B, 0x03, 0x04)))

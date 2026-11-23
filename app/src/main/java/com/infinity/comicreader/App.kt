@@ -3,6 +3,7 @@ package com.infinity.comicreader
 import android.app.Application
 import android.content.ComponentCallbacks2
 import android.content.pm.ApplicationInfo
+import androidx.annotation.VisibleForTesting
 import androidx.appcompat.app.AppCompatDelegate
 import com.infinity.comicreader.ai.ModelImports
 import com.infinity.comicreader.ai.ModelStore
@@ -70,13 +71,15 @@ class App : Application() {
         cleanCaches()
     }
 
-    /** Waits for each piece of work [onCreate] started in the background to end. */
-    private val startWork = ArrayList<() -> Unit>()
+    /** The threads of the work [onCreate] started in the background. */
+    private val startWork = ArrayList<Thread>()
 
-    /** Runs [block] on a daemon thread named [name], as start work. */
+    /** Runs [block] on a daemon thread named [name], as start work, after [startGate]. */
     private fun background(name: String, block: () -> Unit) {
-        val t = thread(name = name, isDaemon = true, block = block)
-        startWork += t::join
+        startWork += thread(name = name, isDaemon = true) {
+            startGate(name)
+            block()
+        }
     }
 
     /**
@@ -85,7 +88,7 @@ class App : Application() {
      * connections outlives it into the next.
      */
     override fun onTerminate() {
-        startWork.forEach { it() }
+        startWork.forEach { it.join() }
         BookIds.close()
         BookFactsCache.reset()
         LikenessStore.reset()
@@ -109,7 +112,7 @@ class App : Application() {
      * the cover, page-preview, page-size, seam, nested-archive and network caches bounded.
      */
     private fun cleanCaches() {
-        runCatching { ModelImports.tidyAtStart(ModelStore.of(this)) }.onSuccess { job -> startWork += { runBlocking { job.join() } } }
+        runCatching { ModelImports.tidyAtStart(ModelStore.of(this)) }.onSuccess { job -> background("model-tidy") { runBlocking { job.join() } } }
         background("cache-cleanup") {
             runCatching {
                 // Only files that are clearly stale: a document another app just handed us
@@ -132,9 +135,14 @@ class App : Application() {
         }
     }
 
-    private companion object {
+    internal companion object {
+        /** Runs first on each start work's thread, given its name; tests hold start work there. */
+        @VisibleForTesting
+        @Volatile
+        internal var startGate: (String) -> Unit = {}
+
         /** Files shared out of the reader and documents copied in from other apps. */
-        val TEMP_DIRS = listOf("shared", "incoming", "pictures", "cropped")
-        const val STALE_MS = 10L * 60 * 1000
+        private val TEMP_DIRS = listOf("shared", "incoming", "pictures", "cropped")
+        private const val STALE_MS = 10L * 60 * 1000
     }
 }

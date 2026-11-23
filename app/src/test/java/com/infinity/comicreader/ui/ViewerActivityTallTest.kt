@@ -284,6 +284,29 @@ class ViewerActivityTallTest {
         assertEquals(bottom, top, 1f)
     }
 
+    @Test
+    fun atFitWidthATallPageScrolledUpStaysPutWhenAnotherPageIsFoundTall() {
+        prefs.volumeKeys = true
+        prefs.fit = "width"
+        val viewer = launch(book("Mixed 08.cbz", listOf(140, 1000, 140)), page = 2)
+        val pager = viewer.findViewById<ViewPager2>(R.id.viewer_pager)
+        idleUntil("the third page shown, no question") { asked() == null && pager.currentItem == 2 && viewer.shownImage().drawable != null }
+        viewer.back()
+        assertEquals(1, pager.currentItem)
+        idleUntil("the page shown") { viewer.shownImage().drawable != null }
+        val (landed, bottom) = viewer.shownTop()
+        assertEquals(bottom, landed, 1f)
+        viewer.back()
+        assertEquals(1, pager.currentItem)
+        val top = viewer.shownTop().first
+        assertTrue("scrolled up: $top", top > bottom + 1f)
+        // Another page found tall, as one whose size is learned only as it loads.
+        val adapter = pager.adapter as PageAdapter
+        adapter.tallPages = adapter.tallPages + 0
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(400))
+        assertEquals(top, viewer.shownTop().first, 0.5f)
+    }
+
     // File decodes run on API 27, where the host decodes them (through BitmapFactory).
     @Test
     @Config(sdk = [27])

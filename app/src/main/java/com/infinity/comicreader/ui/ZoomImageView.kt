@@ -405,7 +405,8 @@ class ZoomImageView @JvmOverloads constructor(
      * bottom (or right) end keeps showing it, though the stand-in's shape differs by a few
      * pixels. Unzoomed, it lands at
      * its fitted scale, 1:1 for a bitmap decoded for the view. [detail] serves its settled
-     * zooms; a detail tile already drawn stays until the next settle replaces it.
+     * zooms; a detail tile already drawn stays until the next settle renders it from [detail],
+     * also where the view has not moved (a processed page arriving replaces a plain tile).
      */
     fun swapBitmap(bitmap: Bitmap, detail: DetailSource?) {
         leader?.let {
@@ -438,7 +439,7 @@ class ZoomImageView @JvmOverloads constructor(
         } finally {
             keepGeometry = false
         }
-        details = detail
+        swapDetail(detail)
         val w = contentW()
         val h = contentH()
         val scaleX: Float
@@ -570,7 +571,7 @@ class ZoomImageView @JvmOverloads constructor(
         } finally {
             keepGeometry = false
         }
-        details = detail
+        swapDetail(detail)
         // The tile follows the page's new pixels.
         val next = Matrix()
         if (followMatrix(lead, next) > 0f) {
@@ -677,6 +678,15 @@ class ZoomImageView @JvmOverloads constructor(
         }
     private var details: DetailSource? = null
 
+    /** True once the detail tile shown came from a source swapped out since ([swapDetail]): the next settle renders it again. */
+    private var tileStale = false
+
+    /** Takes [detail] as the source of settled zooms, the tile shown kept until the next settle renders it from [detail]. */
+    private fun swapDetail(detail: DetailSource?) {
+        if (details !== detail) tileStale = true
+        details = detail
+    }
+
     /** True while [swapBitmap] sets the bitmap, whose geometry it places itself. */
     private var keepGeometry = false
 
@@ -748,6 +758,7 @@ class ZoomImageView @JvmOverloads constructor(
         cancelDetailRender()
         settler.removeCallbacks(settle)
         clearShaders(detailShaders)
+        tileStale = false
         if (detail != null) {
             detail = null
             invalidate()
@@ -770,7 +781,7 @@ class ZoomImageView @JvmOverloads constructor(
         if (!drawMatrix.invert(toBitmap)) return
         toBitmap.preTranslate(tile.left.toFloat(), tile.top.toFloat())
         val current = detail
-        if (current != null && current.width == tile.width && current.height == tile.height && toBitmap == detailMatrix) return
+        if (!tileStale && current != null && current.width == tile.width && current.height == tile.height && toBitmap == detailMatrix) return
 
         cancelDetailRender()
         val request = detailRequest
@@ -779,6 +790,7 @@ class ZoomImageView @JvmOverloads constructor(
             delivered = true
             if (request != detailRequest) return@render
             detailCancel = null
+            tileStale = false
             // The shaders that drew the old tile would keep it alive.
             clearShaders(detailShaders)
             detail = result

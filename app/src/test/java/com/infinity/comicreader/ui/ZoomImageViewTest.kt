@@ -479,6 +479,27 @@ class ZoomImageViewTest {
     }
 
     @Test
+    fun aSwapToAnotherDetailRendersTheTileAgainWhereTheViewIs() {
+        val (v, detail) = zoomedWithDetail()
+        pass(160)
+        val tile = detail.deliver()
+
+        // The processed page in place of the plain one, at the same size: the view does not move.
+        val next = RecordingDetail()
+        v.swapBitmap(Bitmap.createBitmap(1848, 2772, Bitmap.Config.ARGB_8888), next)
+        assertTrue("the old tile shows until the new one is in", v.detailShown === tile)
+        pass(160)
+        assertEquals(1, next.requests.size)
+        assertEquals(detail.requests[0].region, next.requests[0].region)
+        val fresh = next.deliver()
+        assertTrue(v.detailShown === fresh)
+        // Settled where it is, with the tile from the new detail, nothing more is asked for.
+        pass(200)
+        assertEquals(1, next.requests.size)
+        assertEquals(1, detail.requests.size)
+    }
+
+    @Test
     fun zoomedViewReattachedFromACacheRendersItsDetailAgain() {
         val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
         val frame = FrameLayout(activity)

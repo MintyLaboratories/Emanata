@@ -4920,7 +4920,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         if (progressHolds == 0 && !opening) progress.visibility = View.GONE
     }
 
-    /** Page info: [page]'s name in the book, pixel size, format and size in bytes, read in the background. */
+    /** Page info: [page]'s name in the book, pixel size, format and size in bytes, read in the background, and what AI last did with it. */
     private fun showPageInfo(page: Int) {
         val src = source ?: return
         holdProgress()
@@ -4950,6 +4950,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
             if (!src.isVector) size?.let { row(R.string.page_info_pixels, getString(R.string.page_info_pixels_value, it[0], it[1])) }
             row(R.string.page_info_format, if (src.isVector) getString(R.string.page_format_pdf) else PageInfoText.format(this@ViewerActivity, format))
             bytes?.let { row(R.string.page_info_bytes, FileUtils.formatSize(this@ViewerActivity, it)) }
+            if (readerAi.enhances(src)) readerAi.note(src, page)?.let { row(R.string.page_info_ai, PageInfoText.ai(this@ViewerActivity, it)) }
             AlertDialog.Builder(this@ViewerActivity)
                 .setTitle(getString(R.string.page_actions_title, page + 1))
                 .setMessage(text)

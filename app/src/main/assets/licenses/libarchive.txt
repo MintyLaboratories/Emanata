@@ -1,4 +1,4 @@
-libarchive, the parts built into the app: its read core and its RAR 4 and RAR 5 readers (the RAR 4 reader modified to read solid archives).
+libarchive, the parts built into the app: its read core and its RAR 4 and RAR 5 readers. The RAR 4 reader is modified to read solid archives: the modified file is app/src/main/cpp/libarchive_rar/archive_read_support_format_rar.c in the app's source, and its header says what changed.
 
 Copyright (c) 2002 Thomas Moestl <tmm@FreeBSD.org>
 Copyright (c) 2003-2011 Tim Kientzle

@@ -29,6 +29,9 @@
  * entry's data continues the decoder state (window, tables, PPMd model,
  * filter programs) the entries before it left, and skipping an entry of a
  * solid archive unpacks it unless the option rar:solid-skip=consume is set.
+ * Also changed for all archives: the PPMd model's memory size no longer
+ * replaces the window size, and an entry that is not solid also resets the
+ * filter programs and the repeat distances.
  */
 
 #include "archive_platform.h"

@@ -1708,7 +1708,7 @@ app shows each license and NOTICE text under Settings → About (files in
 | [libavif](https://github.com/AOMediaCodec/libavif), with parts of libyuv | BSD-2-Clause (libyuv: BSD-3-Clause) |
 | [dav1d](https://code.videolan.org/videolan/dav1d) | BSD-2-Clause |
 | [xxHash](https://github.com/Cyan4973/xxHash) | BSD-2-Clause |
-| [libarchive](https://github.com/libarchive/libarchive) (its read core and RAR readers) | BSD-2-Clause; parts BSD-3-Clause, CC0, public domain |
+| [libarchive](https://github.com/libarchive/libarchive) (its read core and RAR readers; the RAR 4 reader modified to read solid archives, in `app/src/main/cpp/libarchive_rar/`) | BSD-2-Clause; parts BSD-3-Clause, CC0, public domain |
 | [ncnn](https://github.com/Tencent/ncnn), with parts under zlib and BSD-2-Clause, and ruapu (MIT) | BSD-3-Clause |
 | [glslang](https://github.com/KhronosGroup/glslang) (in the ncnn library) | BSD-3-Clause, BSD-2-Clause, MIT, Apache-2.0; parser GPL-3.0 with the Bison exception; preprocessor also NVIDIA's license |
 | Rust standard library; crates addr2line, gimli, libc, miniz_oxide, rustc-demangle (in jxl-coder) | MIT or Apache-2.0 |

@@ -163,7 +163,8 @@ object Notices {
         ),
         Notice(
             "libarchive", BSD_2, "https://github.com/libarchive/libarchive", listOf("libarchive.txt"),
-            note = "Built from source; reads RAR archives (RAR 4 and 5) with its own code. Parts under the " +
+            note = "Built from source; reads RAR archives (RAR 4 and 5) with its own code. Its RAR 4 reader is " +
+                "modified to read solid archives. Parts under the " +
                 "BSD 3-Clause License, CC0 and in the public domain, in the same text."
         ),
         Notice(

@@ -25,9 +25,8 @@ import java.util.concurrent.atomic.AtomicInteger
 @Config(sdk = [34], application = Application::class)
 class DetailStoreTest {
 
-    private class FakeDetail(val name: String) : PageDetail {
+    private class FakeDetail(val name: String, override val byteCount: Long = 0L) : PageDetail {
         @Volatile var released = false
-        override val byteCount = 0L
         override fun render(region: Region, width: Int, height: Int, linear: Boolean, scaling: Scaling): Bitmap = throw UnsupportedOperationException()
         override fun release() {
             released = true
@@ -220,6 +219,136 @@ class DetailStoreTest {
         // The callbacks run within the render's job: none can come once it ended.
         idleUntil("the canceled render ended") { job.isCompleted }
         assertEquals(0, calls)
+    }
+
+    /** How near each page is, as [DetailStore.rank] reads it; pages not named are too far. */
+    private val ranks = HashMap<String, Int>()
+
+    private fun madeStore(budget: Long) = DetailStore<String>(scope, Dispatchers.IO).also { s ->
+        s.budget = budget
+        s.rank = { ranks[it] }
+    }
+
+    @Test
+    fun aMadeDetailServesRendersWithoutALoad() {
+        ranks["a"] = 0
+        val s = madeStore(1_000)
+        s.offer("a", FakeDetail("model"))
+        assertTrue(s.made("a"))
+        assertTrue(s.loaded("a"))
+        var got: String? = null
+        s.render("a", listOf("a"), loader("a"), { (it as FakeDetail).name }) { got = it }
+        idleUntil("a rendered") { got != null }
+        assertEquals("model", got)
+        assertEquals(0, loads.get())
+    }
+
+    @Test
+    fun aMadeDetailTakesTheLoadedOnesPlaceAndFreesIt() {
+        ranks["a"] = 0
+        val s = madeStore(1_000)
+        var done = 0
+        s.render("a", listOf("a"), loader("a"), { it }) { done++ }
+        idleUntil("a rendered") { done == 1 }
+        val model = FakeDetail("model")
+        s.offer("a", model)
+        assertTrue(detail("a").released)
+        assertFalse(model.released)
+        assertTrue(s.made("a"))
+    }
+
+    @Test
+    fun madeDetailsFillTheBudgetNearestFirstAndNoFurther() {
+        val s = madeStore(100)
+        val made = (0 until 5).map { FakeDetail("p$it", 40) }
+        made.forEachIndexed { i, d ->
+            ranks["p$i"] = i
+            s.offer("p$i", d)
+            assertTrue("within the budget after page $i", s.heldBytes <= 100)
+        }
+        assertEquals(setOf("p0", "p1"), s.keys)
+        assertEquals(80L, s.heldBytes)
+        assertEquals(listOf(false, false, true, true, true), made.map { it.released })
+        // A nearer page coming in sends the farthest out.
+        ranks["q"] = 0
+        ranks["p0"] = 1
+        ranks["p1"] = 2
+        val q = FakeDetail("q", 40)
+        s.offer("q", q)
+        assertEquals(setOf("q", "p0"), s.keys)
+        assertTrue(made[1].released)
+        assertFalse(q.released)
+    }
+
+    @Test
+    fun madeDetailsCountBesideTheLoadedOnesOfTheItemZoomed() {
+        val s = madeStore(100)
+        ranks["next"] = 1
+        s.offer("next", FakeDetail("next", 40))
+        var done = 0
+        s.render("shown", listOf("shown"), { FakeDetail("shown", 80) }, { it }) { done++ }
+        idleUntil("shown rendered") { done == 1 }
+        // The zoomed page's own detail stays; the next page's goes to keep within the budget.
+        idleUntil("within the budget") { s.keys == setOf("shown") }
+        assertTrue(s.heldBytes <= 100)
+    }
+
+    @Test
+    fun madeDetailsOfPagesNoLongerNearAreLetGoOf() {
+        val s = madeStore(1_000)
+        ranks["a"] = 0
+        ranks["b"] = 1
+        val a = FakeDetail("a")
+        val b = FakeDetail("b")
+        s.offer("a", a)
+        s.offer("b", b)
+        // The reader turned on: a is behind, out of reach.
+        ranks.remove("a")
+        ranks["b"] = 0
+        s.trim()
+        assertTrue(a.released)
+        assertFalse(b.released)
+        assertEquals(setOf("b"), s.keys)
+    }
+
+    @Test
+    fun aMadeDetailOfTheItemZoomedStaysThoughFar() {
+        val s = madeStore(1_000)
+        val a = FakeDetail("a")
+        ranks["a"] = 0
+        s.offer("a", a)
+        var done = 0
+        s.render("a", listOf("a"), loader("a"), { it }) { done++ }
+        idleUntil("a rendered") { done == 1 }
+        ranks.remove("a")
+        s.trim()
+        assertFalse(a.released)
+        assertEquals(0, loads.get())
+        // Its view gone, it is a far page like any other.
+        s.drop(listOf("a"))
+        assertTrue(a.released)
+    }
+
+    @Test
+    fun anotherItemOrADetachedViewKeepsMadeDetailsWhileChangedOnesAndClearFreeThem() {
+        val s = madeStore(1_000)
+        ranks["next"] = 1
+        val next = FakeDetail("next")
+        s.offer("next", next)
+        var done = 0
+        s.render("a", listOf("a"), loader("a"), { it }) { done++ }
+        idleUntil("a rendered") { done == 1 }
+        assertEquals(setOf("a", "next"), s.keys)
+        s.drop(listOf("a", "next"))
+        assertTrue(detail("a").released)
+        assertFalse(next.released)
+        s.dropMade()
+        assertTrue(next.released)
+        assertTrue(s.keys.isEmpty())
+        val again = FakeDetail("again")
+        s.offer("next", again)
+        s.clear()
+        assertTrue(again.released)
     }
 
     @Test

@@ -208,17 +208,27 @@ class PageAdapterAiDetailTest {
 
     @Test
     fun turningOnLetsGoOfTheProcessedPagesLeftBehind() {
+        // RAM enough for the largest budget: room for 10 outputs, so the budget lets none go.
+        shadowOf(context.getSystemService(ActivityManager::class.java)).setMemoryInfo(ActivityManager.MemoryInfo().apply { totalMem = 8L shl 30 })
+        assertTrue(budget >= 10 * 1200L * 1800 * 4)
         val source = Source(8)
         val enhancer = Enhancer(processed)
         val (adapter, rv) = reader(source, enhancer)
         idleUntil("page 0 shown plain") { shownColor(rv, 0) == plain }
         adapter.reading(0)
         idleUntil("page 0 shown processed") { shownColor(rv, 0)?.let { near(it, processed) } == true }
+        idleUntil("item 1 processed") { enhancer.outputs.any { it.page == 1 && !it.released } }
+        fun held() = enhancer.outputs.filter { !it.released }.map { it.page }.toSet()
         for (item in 1..5) {
+            // The next page put off: no new output lets go of anything, only the turn itself.
+            enhancer.later = true
             turnTo(adapter, rv, item)
+            assertEquals("turned to item $item", setOf(item - 1, item), held())
+            enhancer.later = false
+            adapter.aiWake()
+            idleUntil("item ${item + 1} processed") { enhancer.outputs.any { it.page == item + 1 && !it.released } }
             // Kept: the page before, the page read and what AI work reaches after it.
-            val held = enhancer.outputs.filter { !it.released }.map { it.page }.toSet()
-            assertTrue("at item $item, held $held", held.all { it in item - 1..item + 1 })
+            assertEquals("at item $item", setOf(item - 1, item, item + 1), held())
         }
         assertTrue((0..3).all { p -> enhancer.outputs.filter { it.page == p }.all { it.released } })
         adapter.release()

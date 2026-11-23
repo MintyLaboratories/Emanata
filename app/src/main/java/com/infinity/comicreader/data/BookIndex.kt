@@ -4,6 +4,7 @@ import android.content.ContentValues
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
+import androidx.annotation.VisibleForTesting
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -138,7 +139,9 @@ class BookIndex(context: Context) {
         synchronized(store) {
             store.loaded?.let { return it }
             val map = ConcurrentHashMap<String, Row>()
-            store.helper.readableDatabase.query(TABLE, arrayOf(PATH, SIZE, MODIFIED, ID), null, null, null, null, null).use { c ->
+            val db = store.helper.readableDatabase
+            reading()
+            db.query(TABLE, arrayOf(PATH, SIZE, MODIFIED, ID), null, null, null, null, null).use { c ->
                 while (c.moveToNext()) map[c.getString(0)] = Row(c.getLong(1), c.getLong(2), c.getLong(3))
             }
             store.loaded = map
@@ -172,6 +175,11 @@ class BookIndex(context: Context) {
         private const val ID = "id"
         private const val VERSION = 1
         private val LOCK = Any()
+
+        /** Runs while a [load] has the database open, before it reads; tests hold a load there. */
+        @VisibleForTesting
+        @Volatile
+        internal var reading: () -> Unit = {}
 
         /** True when [path] is [root] or below it. */
         internal fun under(path: String, root: String) =

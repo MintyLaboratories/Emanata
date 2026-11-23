@@ -2853,6 +2853,10 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         // Its spreads are read on the next paged layout; its shape for AI waits for its own pages.
         sizesJob?.cancel()
         analysis = null
+        // Its ComicInfo's manga mark, read as it was laid in, goes with it.
+        markedJob?.cancel()
+        markedJob = null
+        bookMarked = next to stripAheadMarked
         aiBooks()
         val fresh = bookId?.let { !library.mayHaveData(it) } == true
         noteLikeness(nextFile, next, bookId, fresh)

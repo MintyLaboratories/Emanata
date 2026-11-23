@@ -3,6 +3,8 @@ package com.infinity.comicreader.ui
 import android.app.Application
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.Color
+import android.graphics.drawable.BitmapDrawable
 import android.os.Looper
 import android.view.View
 import androidx.preference.PreferenceManager
@@ -31,6 +33,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -69,6 +72,9 @@ class ViewerActivityAiShapeTest {
     /** Pages asked for, in order, by every adapter the reader made. */
     private val asked: MutableList<Int> = Collections.synchronizedList(ArrayList())
 
+    /** Pages asked for, in order, each with its book's page count. */
+    private val askedIn: MutableList<Pair<Int, Int>> = Collections.synchronizedList(ArrayList())
+
     /** What each page's work was told to stop on, by page, as last asked. */
     private val canceled = ConcurrentHashMap<Int, () -> Boolean>()
 
@@ -83,10 +89,11 @@ class ViewerActivityAiShapeTest {
             source: PageSource, index: Int, target: Target, width: Int, height: Int, held: () -> Boolean, models: () -> Unit, canceled: () -> Boolean
         ): AiOutcome {
             asked += index
+            askedIn += source.pageCount to index
             this@ViewerActivityAiShapeTest.canceled[index] = canceled
             models()
             this@ViewerActivityAiShapeTest.held[index]?.await(Waits.LIVENESS_MS, TimeUnit.MILLISECONDS)
-            return AiOutcome.Done(Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888))
+            return AiOutcome.Done(Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).apply { eraseColor(PROCESSED) })
         }
     }
 
@@ -117,6 +124,11 @@ class ViewerActivityAiShapeTest {
         idleUntil("the book open") { progress.visibility != View.VISIBLE }
         return viewer
     }
+
+    /** The strip's page at [position] shows as processed: in [PROCESSED]. */
+    private fun shownProcessed(strip: RecyclerView, position: Int): Boolean =
+        ((strip.findViewHolderForAdapterPosition(position) as? PageAdapter.PageHolder)?.images?.get(0)?.drawable as? BitmapDrawable)?.bitmap
+            ?.let { it.getPixel(it.width / 2, it.height / 2) == PROCESSED } == true
 
     private fun pages(vararg widths: Int) = widths.mapIndexed { i, w -> Fixtures.entry("p%02d.png".format(i), TestImages.png(w, 1000)) }.toTypedArray()
 
@@ -163,5 +175,42 @@ class ViewerActivityAiShapeTest {
         assertEquals("read at B6", PageClass.MANGA, viewer.aiShapeRun()?.pageClass)
         idleUntil("page 0 processed anew") { asked.toList().count { it == 0 } > before }
         idle()
+    }
+
+    @Test
+    fun rollingIntoAChapterMarkedMangaReadsItAtB6WithoutProcessingItAnew() {
+        // A strip, which lays the next chapter in behind this one.
+        prefs.pageMode = "continuous"
+        prefs.readingDir = "ttb"
+        prefs.autoNext = true
+        val dir = tmp.newFolder()
+        val first = Fixtures.zip(File(dir, "Sample v01.cbz"), *pages(650, 650, 650))
+        val info = Fixtures.entry("ComicInfo.xml", "<?xml version=\"1.0\"?><ComicInfo><Manga>Yes</Manga></ComicInfo>".toByteArray())
+        // Four pages, told apart from the first chapter's by that, of their own aspect, 0.70: told once it is the open book.
+        val second = Fixtures.zip(File(dir, "Sample v02.cbz"), *pages(700, 700, 700, 700), info)
+        val viewer = open(first)
+        val strip = viewer.findViewById<RecyclerView>(R.id.viewer_vertical)
+        fun openPath() = viewer.intent.getStringExtra(ViewerActivity.EXTRA_PATH)
+        val scroll = { strip.scrollBy(0, strip.height / 2); idle() }
+        idleUntil("the second chapter laid in behind") { (strip.adapter?.itemCount ?: 0) >= 7 }
+        assertEquals(PageClass.WEB, viewer.aiShapeRun()?.pageClass)
+
+        // Its first page, item 3, is processed while the first chapter is still the open book.
+        idleUntil("its first page asked for", step = scroll) { (4 to 0) in askedIn }
+        assertEquals(first.absolutePath, openPath())
+        idleUntil("its first page shown processed") { shownProcessed(strip, 3) }
+        val rebinds = Rebinds(strip.adapter!!).also { strip.adapter!!.registerAdapterDataObserver(it) }
+
+        idleUntil("the second chapter open", step = scroll) { openPath() == second.absolutePath }
+        idleUntil("its own pages' shape told") { viewer.aiShapeRun()?.aspect == 0.70 }
+        assertEquals("read at B6", PageClass.MANGA, viewer.aiShapeRun()?.pageClass)
+        // Its pages already processed for B6 stay so: none shown plain again.
+        assertEquals(0, rebinds.count)
+        assertTrue("its first page still shown processed", shownProcessed(strip, 0))
+    }
+
+    private companion object {
+        /** The color of a page processed in the reader's place. */
+        val PROCESSED = Color.rgb(10, 120, 30)
     }
 }

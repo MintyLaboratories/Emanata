@@ -2988,11 +2988,14 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
         startActivity(intent)
     }
 
-    /** Opens a book at [file]; returns a folder there for the caller to browse. Both by canonical path. */
+    /**
+     * Opens a book at [file] where its history says, as from the library; returns a folder
+     * there for the caller to browse. Both by canonical path.
+     */
     private fun handleIncomingFile(file: File): File? {
         val real = runCatching { file.canonicalFile }.getOrNull() ?: return null
         if (!isUnderStorage(real.path)) return null
-        if (real.isFile && Formats.isOpenable(real.name)) openViewer(real, 0)
+        if (real.isFile && Formats.isOpenable(real.name)) openViewer(real, -1)
         return real.takeIf { it.isDirectory }
     }
 
@@ -3030,13 +3033,16 @@ class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.
         return null
     }
 
-    /** Another app handed us a content:// URI: copy it into the cache and open the copy. */
+    /**
+     * Another app handed us a content:// URI: copy it into the cache and open the copy where
+     * its book's history says (the copy has the book's ID).
+     */
     private fun openSharedContent(uri: Uri) {
         showProgress(true)
         lifecycleScope.launch {
             val copy = withContext(AppDispatchers.io) { copyToCache(uri) }
             progress.visibility = View.GONE
-            if (copy != null) openViewer(copy, 0) else toast(R.string.error_open)
+            if (copy != null) openViewer(copy, -1) else toast(R.string.error_open)
         }
     }
 

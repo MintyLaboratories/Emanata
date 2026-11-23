@@ -14,7 +14,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-/** The sentence under the AI size slider, for typical handle positions. */
+/** The sentence under the AI size slider, for typical handle positions: reading sizes as a share of a page's pixel size. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = Application::class)
 class AiSizeTextTest {
@@ -27,7 +27,7 @@ class AiSizeTextTest {
     @Test
     fun defaults() {
         assertEquals(
-            "Upscale pages shown larger than their pixels. Clean up pages shown larger than half size. Descreen, when chosen, runs at every size.",
+            "Upscale pages whose reading size is over 100% of their pixel size. Clean up pages whose reading size is over 50% of their pixel size. Descreen, when chosen, runs at every size.",
             sentence(100, 50)
         )
     }
@@ -35,7 +35,7 @@ class AiSizeTextTest {
     @Test
     fun upscaleAtTheFloorAndCleanupAlways() {
         assertEquals(
-            "Upscale pages shown larger than half size. Clean up pages at every size. Descreen, when chosen, runs at every size.",
+            "Upscale pages whose reading size is over 50% of their pixel size. Clean up pages at every size. Descreen, when chosen, runs at every size.",
             sentence(50, AiThresholds.ALWAYS)
         )
     }
@@ -43,7 +43,7 @@ class AiSizeTextTest {
     @Test
     fun crossedHandles() {
         assertEquals(
-            "Upscale pages shown larger than 60% size. Clean up pages shown larger than 150% size. Descreen, when chosen, runs at every size.",
+            "Upscale pages whose reading size is over 60% of their pixel size. Clean up pages whose reading size is over 150% of their pixel size. Descreen, when chosen, runs at every size.",
             sentence(60, 150)
         )
     }
@@ -51,7 +51,7 @@ class AiSizeTextTest {
     @Test
     fun theEnds() {
         assertEquals(
-            "Upscale pages shown larger than twice their size. Clean up pages shown larger than quarter size. Descreen, when chosen, runs at every size.",
+            "Upscale pages whose reading size is over 200% of their pixel size. Clean up pages whose reading size is over 25% of their pixel size. Descreen, when chosen, runs at every size.",
             sentence(200, 25)
         )
     }
@@ -74,10 +74,10 @@ class AiSizeTextTest {
     @Test
     fun changedNamesOnlyTheHandlesOffTheirDefaults() {
         assertNull(AiSizeText.changed(context, AiThresholds()))
-        assertEquals("Models by page size: Upscale pages shown larger than 60% size.", AiSizeText.changed(context, AiThresholds(60, 50)))
-        assertEquals("Models by page size: Clean up pages at every size.", AiSizeText.changed(context, AiThresholds(100, AiThresholds.ALWAYS)))
+        assertEquals("Models by reading size: Upscale pages whose reading size is over 60% of their pixel size.", AiSizeText.changed(context, AiThresholds(60, 50)))
+        assertEquals("Models by reading size: Clean up pages at every size.", AiSizeText.changed(context, AiThresholds(100, AiThresholds.ALWAYS)))
         assertEquals(
-            "Models by page size: Upscale pages shown larger than twice their size. Clean up pages shown larger than quarter size.",
+            "Models by reading size: Upscale pages whose reading size is over 200% of their pixel size. Clean up pages whose reading size is over 25% of their pixel size.",
             AiSizeText.changed(context, AiThresholds(200, 25))
         )
     }

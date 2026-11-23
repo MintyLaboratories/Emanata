@@ -421,6 +421,7 @@
         <com.infinity.comicreader.ui.AiSizePreference
             app:dependency="pref_ai"
             app:key="pref_ai_sizes"
+            app:summary="@string/pref_ai_sizes_desc"
             app:title="@string/pref_ai_sizes">
             <extra
                 android:name="advanced"

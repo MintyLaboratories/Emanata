@@ -7,17 +7,11 @@ import android.text.style.ForegroundColorSpan
 import com.infinity.comicreader.R
 import com.infinity.comicreader.ai.AiThresholds
 
-/** The AI size setting in words: the sentence under its slider, and its handles' values. */
+/**
+ * The AI size setting in words: the sentence under its slider, and its handles' values. Sizes are
+ * reading sizes ([com.infinity.comicreader.ai.ReadSize]) as a percentage of a page's pixel size.
+ */
 object AiSizeText {
-
-    /** [pct] of a page's side as a size: "their pixels" at 100, "half size" at 50, else "N% size". */
-    fun size(context: Context, pct: Int): String = when (pct) {
-        25 -> context.getString(R.string.ai_size_quarter)
-        50 -> context.getString(R.string.ai_size_half)
-        100 -> context.getString(R.string.ai_size_own)
-        200 -> context.getString(R.string.ai_size_double)
-        else -> context.getString(R.string.ai_size_percent, pct)
-    }
 
     /** A handle's value as its bubble and the axis show it: "Always" or "N%". */
     fun value(context: Context, pct: Int): String =
@@ -25,12 +19,12 @@ object AiSizeText {
         else context.getString(R.string.ai_size_value, pct)
 
     /** When upscaling models run under [t]. */
-    fun upscale(context: Context, t: AiThresholds): String = context.getString(R.string.ai_sizes_upscale, size(context, t.upscalePct))
+    fun upscale(context: Context, t: AiThresholds): String = context.getString(R.string.ai_sizes_upscale, t.upscalePct)
 
     /** When cleanup models other than descreen run under [t]. */
     fun cleanup(context: Context, t: AiThresholds): String =
         if (t.cleanupPct == AiThresholds.ALWAYS) context.getString(R.string.ai_sizes_cleanup_always)
-        else context.getString(R.string.ai_sizes_cleanup, size(context, t.cleanupPct))
+        else context.getString(R.string.ai_sizes_cleanup, t.cleanupPct)
 
     /** The clauses of [t] that differ from the defaults, for where the slider is hidden; null at the defaults. */
     fun changed(context: Context, t: AiThresholds): String? {

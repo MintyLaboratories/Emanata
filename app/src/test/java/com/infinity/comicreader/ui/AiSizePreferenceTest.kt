@@ -32,7 +32,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
-/** Settings › AI processing › Models by page size: follows AI processing, stored when a handle is let go, its sentence live. */
+/** Settings › AI processing › Models by reading size: follows AI processing, says what a reading size is, stored when a handle is let go, its sentence live. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class AiSizePreferenceTest {
@@ -113,6 +113,7 @@ class AiSizePreferenceTest {
     fun showsTheStoredHandlesAndTheirSentence() {
         Prefs(context).aiThresholds = AiThresholds(60, 150)
         val view = bind(settings())
+        assertEquals(context.getString(R.string.pref_ai_sizes_desc), view.findViewById<TextView>(android.R.id.summary).text.toString())
         assertEquals(AiThresholds(60, 150), view.findViewById<AiSizeSlider>(R.id.ai_sizes_slider).thresholds)
         assertEquals(
             AiSizeText.sentence(context, AiThresholds(60, 150), 0, 0).toString(),

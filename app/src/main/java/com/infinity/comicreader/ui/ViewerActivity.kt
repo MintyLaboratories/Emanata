@@ -40,6 +40,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.VisibleForTesting
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
@@ -74,6 +75,7 @@ import com.infinity.comicreader.ai.ModelDownloads
 import com.infinity.comicreader.ai.ModelRefusal
 import com.infinity.comicreader.ai.ModelStore
 import com.infinity.comicreader.ai.Models
+import com.infinity.comicreader.ai.PageEnhancer
 import com.infinity.comicreader.ai.PageTimes
 import com.infinity.comicreader.ai.ReaderAi
 import com.infinity.comicreader.data.BookFactsCache
@@ -2671,7 +2673,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
             onLongPress = { page -> showPageActions(if (page >= 0) page else currentIndex) },
             pageLayout = layout,
             bounds = pageBounds,
-            enhancer = readerAi,
+            enhancer = enhancerOf(readerAi),
             onLoaded = {
                 learnSize(it)
                 if (!scansReleased) afterNextDraw(src) { startScans() }
@@ -5234,6 +5236,10 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         private const val STATE_CHARSET = "state_charset"
         private const val STATE_ROTATION = "state_rotation"
         private const val STATE_IMAGE_TURN = "state_image_turn"
+
+        /** What processes the reader's pages, given its AI: that AI; tests put work they control in its place. */
+        @VisibleForTesting
+        internal var enhancerOf: (ReaderAi) -> PageEnhancer = { it }
 
         /** How long [learnSize] gathers sizes before laying the book out again. */
         private const val LEARN_DELAY_MS = 300L

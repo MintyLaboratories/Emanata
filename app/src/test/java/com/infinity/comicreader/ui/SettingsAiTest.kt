@@ -2,7 +2,9 @@ package com.infinity.comicreader.ui
 
 import android.app.Application
 import android.content.Context
+import android.content.Intent
 import android.os.Looper
+import android.view.View
 import androidx.appcompat.app.AlertDialog
 import androidx.preference.ListPreference
 import androidx.preference.Preference
@@ -27,7 +29,9 @@ import com.infinity.comicreader.ai.Models
 import com.infinity.comicreader.ai.OfflineDownloads
 import com.infinity.comicreader.ai.PageTimes
 import com.infinity.comicreader.data.Prefs
+import com.infinity.comicreader.data.ResumeMode
 import com.infinity.comicreader.data.Thrift
+import com.infinity.comicreader.reader.Fixtures
 import com.infinity.comicreader.testing.idleUntil
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -37,6 +41,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
@@ -53,6 +58,9 @@ class SettingsAiTest {
     /** Picking a model starts its download: kept off the network and ended with the test. */
     @get:Rule
     val downloads = OfflineDownloads()
+
+    @get:Rule
+    val tmp = TemporaryFolder()
 
     private lateinit var context: Context
     private lateinit var store: ModelStore
@@ -235,6 +243,57 @@ class SettingsAiTest {
         idle()
         assertEquals("anime4k-a-l", Prefs(context).aiModel(AiStep.UPSCALE))
         assertTrue(asked("anime4k-a-l"))
+        assertFalse(asked("anime4k-a-m"))
+    }
+
+    /** Opens a book of three pages and waits until everything its open started is done. */
+    private fun openBook(): ViewerActivity {
+        Prefs(context).resumeMode = ResumeMode.NO
+        val pages = (0 until 3).map { Fixtures.entry("p%02d.png".format(it), byteArrayOf(0)) }
+        val book = Fixtures.zip(java.io.File(tmp.newFolder(), "Sample v01.cbz"), *pages.toTypedArray())
+        val intent = Intent(context, ViewerActivity::class.java).putExtra(ViewerActivity.EXTRA_PATH, book.absolutePath)
+        val viewer = Robolectric.buildActivity(ViewerActivity::class.java, intent).setup().get()
+        val progress = viewer.findViewById<View>(R.id.viewer_progress)
+        idleUntil("the book open and all its open started done") { progress.visibility != View.VISIBLE && viewer.openSettled() }
+        return viewer
+    }
+
+    @Test
+    fun aFamilyKeepsItsLevelWhenAnotherRowIsPickedInSettingsAndTheReader() {
+        Prefs(context).aiEnabled = true
+        val fragment = settings()
+        val name = "Anime4K A (sharp) 2×"
+        fun family(dialog: android.app.Dialog) = ModelPickerTest.rows(dialog).first { ModelPickerTest.name(it) == name }
+        fun asked(id: String) = ModelDownloads.state.value.states.containsKey(id)
+        var dialog = openUpscalePicker(fragment)
+        ModelPickerTest.slide(family(dialog), 1)
+        idle()
+        assertEquals("anime4k-a-m", Prefs(context).aiModel(AiStep.UPSCALE))
+        // Then waifu2x: picked, closed, downloading.
+        ModelPickerTest.tap(ModelPickerTest.rows(dialog)[1])
+        idle()
+        assertFalse(dialog.isShowing)
+        assertEquals(ModelCatalog.DEFAULT_UPSCALE, Prefs(context).aiModel(AiStep.UPSCALE))
+        assertTrue(asked(ModelCatalog.DEFAULT_UPSCALE))
+        // Opened again, Anime4K A stands at M, unpicked.
+        dialog = openUpscalePicker(fragment)
+        assertEquals(1f, ModelPickerTest.slider(family(dialog)).value)
+        assertFalse(ModelPickerTest.checked(family(dialog)))
+        assertTrue(ModelPickerTest.checked(ModelPickerTest.rows(dialog)[1]))
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE).performClick()
+        idle()
+        // Closed without a pick: M neither picked nor downloading.
+        assertEquals(ModelCatalog.DEFAULT_UPSCALE, Prefs(context).aiModel(AiStep.UPSCALE))
+        assertFalse(asked("anime4k-a-m"))
+        // The reader sheet's picker shows the same level, and closed downloads nothing either.
+        val viewer = openBook()
+        ReaderSheet(viewer).tap(R.id.sheet_ai_upscale)
+        val reader = latestDialogOf(viewer) as AlertDialog
+        assertEquals(1f, ModelPickerTest.slider(family(reader)).value)
+        assertFalse(ModelPickerTest.checked(family(reader)))
+        reader.dismiss()
+        idle()
+        assertEquals(ModelCatalog.DEFAULT_UPSCALE, Prefs(context).aiModel(AiStep.UPSCALE))
         assertFalse(asked("anime4k-a-m"))
     }
 

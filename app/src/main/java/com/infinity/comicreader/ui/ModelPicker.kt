@@ -36,12 +36,15 @@ import kotlin.math.roundToInt
  * tap on a row picks it ([onPick], done: the dialog closes); letting go of a slider picks the
  * family at that level ([onPick], not done: the picker stays open, its radio moved). A slider
  * moved by keyboard, switch or screen reader picks once it rests [SETTLE_MS], loses focus, or
- * the picker closes ([flush]), so stepping across levels picks only the last. [openKeys]: the keys
+ * the picker closes ([flush]), so stepping across levels picks only the last. A family's level
+ * picked is remembered for [step] ([PickerLevels]): its slider shows it while another row is
+ * picked, and picks nothing until moved or its row tapped. [openKeys]: the keys
  * ([PickerRow.key]) of the rows whose info shows; [startY]: where the list starts, else at the
  * picked row (both as [expandedKeys] and [scrollY] left them, across a rebuilt dialog).
  */
 class ModelPicker(
     private val context: Context,
+    private val step: AiStep,
     rows: List<PickerRow>,
     current: String?,
     openKeys: Collection<String> = emptySet(),
@@ -53,6 +56,7 @@ class ModelPicker(
         private set
 
     private val fastest = ModelRatings.fastestMs()
+    private val levels = PickerLevels(context)
     private val handler = Handler(Looper.getMainLooper())
     private var pending: Runnable? = null
     private val list = LinearLayout(context).apply {
@@ -84,6 +88,7 @@ class ModelPicker(
     private fun pick(id: String?, done: Boolean) {
         cancelPending()
         picked = id
+        if (id != null) holders.firstOrNull { it.row.family && it.row.indexOf(id) >= 0 }?.let { levels.put(step, it.row.group, id) }
         for (h in holders) h.bindChecked()
         onPick(id, done)
     }
@@ -131,8 +136,10 @@ class ModelPicker(
         private val ratings: TableLayout = item.findViewById(R.id.ai_model_ratings)
         private val description: TextView = item.findViewById(R.id.ai_model_description)
 
-        /** The level shown: the picked one when picked, else the family's first ([PickerRow.firstLevel]). */
-        private var level = row.indexOf(picked).takeIf { it >= 0 } ?: row.firstLevel.coerceAtLeast(0)
+        /** The level shown: the picked one, else the one remembered while still offered ([PickerLevels]), else the family's first ([PickerRow.firstLevel]). */
+        private var level = row.indexOf(picked).takeIf { it >= 0 }
+            ?: levels.get(step, row.group)?.takeIf { row.family }?.let(row::indexOf)?.takeIf { it >= 0 }
+            ?: row.firstLevel.coerceAtLeast(0)
         var expanded = open && row.models.isNotEmpty()
             private set
         private var tracking = false
@@ -295,6 +302,6 @@ class ModelPicker(
             context: Context, step: AiStep, keepSimple: Boolean, current: String?,
             openKeys: Collection<String> = emptySet(), startY: Int? = null,
             onPick: (id: String?, done: Boolean) -> Unit
-        ) = ModelPicker(context, PickerRows.of(step, keepSimple, current, context.getString(R.string.ai_none)), current, openKeys, startY, onPick)
+        ) = ModelPicker(context, step, PickerRows.of(step, keepSimple, current, context.getString(R.string.ai_none)), current, openKeys, startY, onPick)
     }
 }

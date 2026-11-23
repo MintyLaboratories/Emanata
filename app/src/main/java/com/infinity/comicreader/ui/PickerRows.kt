@@ -12,9 +12,16 @@ import com.infinity.comicreader.ai.UserModel
  * family's levels behind one slider, lightest or weakest first, named [levelNames]. [name] is
  * short: without what the step's name already says. [sizes]: the levels are sizes of one
  * network, so the family's ratings are those of its largest level, which it offers "up to";
- * else each level is a strength with ratings of its own.
+ * else each level is a strength with ratings of its own. [group] names the model or family
+ * whatever levels are offered ([PickerLevels]).
  */
-data class PickerRow(val name: String, val models: List<AiModel>, val levelNames: List<String> = emptyList(), val sizes: Boolean = false) {
+data class PickerRow(
+    val name: String,
+    val models: List<AiModel>,
+    val levelNames: List<String> = emptyList(),
+    val sizes: Boolean = false,
+    val group: String = models.firstOrNull()?.id.orEmpty()
+) {
     /** Names the row across rebuilt pickers: its first model's id; empty for none. */
     val key: String get() = models.firstOrNull()?.id.orEmpty()
 
@@ -24,7 +31,7 @@ data class PickerRow(val name: String, val models: List<AiModel>, val levelNames
     /** The level of model [id] (0 for a single model); -1 when it is not this row's. */
     fun indexOf(id: String?): Int = models.indexOfFirst { it.id == id }
 
-    /** The level a family shows until one of its levels is picked: the largest, which its ratings describe. */
+    /** The level a family shows while none of its levels is picked or remembered ([PickerLevels]): the largest, which its ratings describe. */
     val firstLevel: Int get() = models.lastIndex
 
     /** The model whose ratings the row shows at [level]: the largest of sizes, else the level's own. */
@@ -81,18 +88,18 @@ object PickerRows {
             val key = m.level?.let { "size:${it.family}" } ?: strengthsOf(m)?.let { "strength:${it.id}" } ?: "model:${m.id}"
             groups.getOrPut(key) { ArrayList() } += m
         }
-        return listOf(none(noneName)) + groups.values.map(::row)
+        return listOf(none(noneName)) + groups.map { (group, models) -> row(group, models) }
     }
 
-    private fun row(models: List<AiModel>): PickerRow {
+    private fun row(group: String, models: List<AiModel>): PickerRow {
         val m = models[0]
-        if (models.size == 1) return PickerRow(shortName(m), models)
+        if (models.size == 1) return PickerRow(shortName(m), models, group = group)
         m.level?.let { l ->
             val sorted = models.sortedBy { it.level!!.index }
-            return PickerRow(l.familyName, sorted, sorted.map { it.level!!.name }, sizes = true)
+            return PickerRow(l.familyName, sorted, sorted.map { it.level!!.name }, sizes = true, group = group)
         }
         val s = strengthsOf(m)!!
         val sorted = models.sortedBy { s.ids.indexOf(it.id) }
-        return PickerRow(s.name, sorted, sorted.map { s.names[s.ids.indexOf(it.id)] })
+        return PickerRow(s.name, sorted, sorted.map { s.names[s.ids.indexOf(it.id)] }, group = group)
     }
 }

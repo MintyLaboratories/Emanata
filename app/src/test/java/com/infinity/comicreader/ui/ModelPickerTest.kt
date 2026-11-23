@@ -236,6 +236,51 @@ class ModelPickerTest {
     }
 
     @Test
+    fun aFamilyShowsItsLevelPickedLastWhileAnotherRowIsPicked() {
+        val p = picker(AiStep.UPSCALE, current = ModelCatalog.DEFAULT_UPSCALE)
+        slide(rowOf(p, "Anime4K A (sharp) 2×"), 1)
+        tap(rowOf(p, "waifu2x 2× (default)"))
+        picks.clear()
+        // Opened again on waifu2x, Anime4K A's slider stands at M, picking nothing.
+        val again = picker(AiStep.UPSCALE, current = ModelCatalog.DEFAULT_UPSCALE)
+        val a = rowOf(again, "Anime4K A (sharp) 2×")
+        assertEquals(1f, slider(a).value)
+        assertEquals("M", a.findViewById<TextView>(R.id.ai_model_level_name).text.toString())
+        assertFalse(checked(a))
+        assertEquals(ModelCatalog.DEFAULT_UPSCALE, again.picked)
+        rest()
+        assertTrue(picks.isEmpty())
+        // Families never picked show their largest level.
+        assertEquals(4f, slider(rowOf(again, "Anime4K B (clean) 2×")).value)
+        // A tap on the row picks the level shown.
+        tap(a)
+        assertEquals(listOf<Pair<String?, Boolean>>("anime4k-a-m" to true), picks)
+        // A row tap is remembered at the level it picks (here the level picked as the picker opened).
+        tap(rowOf(picker(AiStep.UPSCALE, current = "anime4k-a-l"), "Anime4K A (sharp) 2×"))
+        assertEquals(2f, slider(rowOf(picker(AiStep.UPSCALE, current = null), "Anime4K A (sharp) 2×")).value)
+        // Strengths alike.
+        slide(rowOf(again, "waifu2x denoise 2×"), 1)
+        tap(rowOf(again, "OpenComic 2×"))
+        assertEquals(1f, slider(rowOf(picker(AiStep.UPSCALE, current = null), "waifu2x denoise 2×")).value)
+    }
+
+    @Test
+    fun aRememberedLevelCountsOnlyWhileOfferedAndInItsOwnStep() {
+        val group = PickerRows.of(AiStep.UPSCALE, true, null, "None").first { it.name == "Anime4K A (sharp) 2×" }.group
+        val levels = PickerLevels(context)
+        // A level no longer offered: the largest shows.
+        levels.put(AiStep.UPSCALE, group, "gone")
+        assertEquals(4f, slider(rowOf(picker(AiStep.UPSCALE), "Anime4K A (sharp) 2×")).value)
+        levels.put(AiStep.UPSCALE, group, "anime4k-a-s")
+        assertEquals(0f, slider(rowOf(picker(AiStep.UPSCALE), "Anime4K A (sharp) 2×")).value)
+        assertNull(levels.get(AiStep.DESCREEN, group))
+        // A picked level wins over the one remembered.
+        assertEquals(2f, slider(rowOf(picker(AiStep.UPSCALE, current = "anime4k-a-l"), "Anime4K A (sharp) 2×")).value)
+        // Kept out of backups.
+        assertFalse(com.infinity.comicreader.util.Backup.export(app, deviceId = null).contains("anime4k-a-s"))
+    }
+
+    @Test
     fun keyPressesPickOnceTheSliderRests() {
         val p = picker(AiStep.UPSCALE, current = ModelCatalog.DEFAULT_UPSCALE)
         val row = rowOf(p, "Anime4K A (sharp) 2×")

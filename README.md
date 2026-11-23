@@ -1388,7 +1388,10 @@ absent the release build still compiles, just unsigned.
 Release uses `isMinifyEnabled = true` + `isShrinkResources = true` (R8). The
 proguard rules keep commons-compress whole so the reflection paths in the
 archive backends survive minification, and the classes native code calls back
-by name (libarchive's `LibArchive$Source`, among others).
+by name (libarchive's `LibArchive$Source`, among others). Release builds carry
+no trace sections: `BuildConfig.TRACES` is off there and `proguard-release.pro`
+drops the libraries' `android.os.Trace` calls; `assembleRelease` fails if one is
+left (`checkReleaseTraceSections`). Debug and bench builds keep them for Perfetto.
 
 ### Install on a connected device
 
@@ -1610,7 +1613,8 @@ estimated from the tiles run in 60 or 120 s):
   `DetailStore` and `PageSource.loadDetail` re-render the settled view.
 - Fit changes are timed: `adb logcat -s ResizeTiming` prints the ms to the
   first frame and to the last exact bitmap; Perfetto shows the same as the
-  async slices "Resize shown" and "Resize exact" (Android 10+).
+  async slices "Resize shown" and "Resize exact" (Android 10+, debug and bench
+  builds).
 - On a fit change the bitmap on screen stands in at the new size until the
   exact Lanczos3 rendering replaces it: enlarged through the GPU Lanczos3
   shader, shrunk bilinear. Shrinking through the shader at source size would

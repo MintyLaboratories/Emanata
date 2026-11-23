@@ -443,7 +443,8 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
      * the shortest forms overlap does the ring grow: to the smallest radius up to [GROW] times
      * that clears those, where labels then take the fullest forms that still fit. Where none
      * does, the ring stays no larger than asked and its label text shrinks just enough ([shrunk]);
-     * only past that, the ring grows as far as the screen lets it.
+     * where even the floor size does not clear them, the ring takes the radius, up to as large as
+     * the screen lets it, where the labels at that size overlap least.
      */
     private fun lay(items: List<Item>) {
         val root = root ?: return
@@ -494,8 +495,9 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
     }
 
     /**
-     * The labels' text made smaller in [TEXT_STEP]s, never below [textFloor], until [arrange]
-     * lays them out clear; that placement, or null with the text as it was when none does.
+     * The labels' text made smaller in [TEXT_STEP]s, the last step exactly [textFloor], until
+     * [arrange] lays them out clear; that placement, or null with the text at the floor when
+     * none does (or as it was when it is already at or below the floor).
      */
     private fun shrunk(arrange: () -> RingGeometry.Placement): RingGeometry.Placement? {
         val labels = buttons.values.map { it.second }
@@ -503,13 +505,13 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
         val floor = textFloor()
         if (floor >= base) return null
         var step = 1
-        while (base * (1f - step * TEXT_STEP) >= floor - 0.5f) {
-            for (label in labels) label.setTextSize(TypedValue.COMPLEX_UNIT_PX, base * (1f - step * TEXT_STEP))
+        while (true) {
+            val text = maxOf(base * (1f - step * TEXT_STEP), floor)
+            for (label in labels) label.setTextSize(TypedValue.COMPLEX_UNIT_PX, text)
             arrange().takeIf { it.overlap == 0f }?.let { return it }
+            if (text == floor) return null
             step++
         }
-        for (label in labels) label.setTextSize(TypedValue.COMPLEX_UNIT_PX, base)
-        return null
     }
 
     /**

@@ -69,6 +69,7 @@ class ViewRingLabelsTest {
 
     private companion object {
         const val PHONE = "w400dp-h800dp-xxhdpi"
+        const val NARROW = "w360dp-h800dp-xxhdpi"
     }
 
     private fun settle() = repeat(3) {
@@ -86,8 +87,8 @@ class ViewRingLabelsTest {
 
     private fun center(v: View): Triple<Float, Float, Float> = box(v).let { Triple((it.left + it.right) / 2, (it.top + it.bottom) / 2, v.width / 2f) }
 
-    /** Opens the ring on a screen of [qualifiers] at [scale] and checks every label, and that the radius is at most [most] times the one asked for. */
-    private fun check(qualifiers: String, scale: Float, left: Boolean, count: Int = 6, most: Float = 1f) {
+    /** Opens the ring on a screen of [qualifiers] at [scale] and checks every label (clear of the buttons unless not [clear]), and that the radius is at most [most] times the one asked for. */
+    private fun check(qualifiers: String, scale: Float, left: Boolean, count: Int = 6, most: Float = 1f, clear: Boolean = true) {
         val what = "$qualifiers at $scale${if (left) ", left-handed" else ""}"
         RuntimeEnvironment.setQualifiers(qualifiers)
         RuntimeEnvironment.setFontScale(scale)
@@ -114,7 +115,7 @@ class ViewRingLabelsTest {
             assertTrue("$what: $o \"$text\" on ${layout.lineCount} lines", layout.lineCount <= 3)
             val l = box(label)
             assertTrue("$what: $o $l on $screen", l.within(screen))
-            for ((x, y, r) in round) assertEquals("$what: $o \"$text\" on a button at $x, $y", 0f, l.overlap(x, y, r), 0f)
+            if (clear) for ((x, y, r) in round) assertEquals("$what: $o \"$text\" on a button at $x, $y", 0f, l.overlap(x, y, r), 0f)
             for ((p, other) in labels) if (p != o) assertEquals("$what: $o on $p", 0f, l.overlap(box(other)), 0f)
         }
         // A tap changes values in place; the labels still fit, clear of the bars.
@@ -166,9 +167,12 @@ class ViewRingLabelsTest {
         assertEquals(plain13, floor, 0f)
         for (size in six) assertTrue("$size of $plain, floor $plain13", size < plain && size > plain13 + 0.5f)
         assertEquals(1, six.distinct().size)
-        // On a narrower phone not even the floor clears them: the text stays at or above it.
-        val (_, _, narrow) = textSizes(2.0f, "w360dp-h800dp-xxhdpi")
-        for (size in narrow) assertTrue("$size, floor $plain13", size >= plain13 - 0.5f)
+        // On a narrower phone not even the floor clears them: the text stays at the floor, whole, within the screen and
+        // clear of the other labels; one still reaches over a button.
+        val (plainNarrow, _, narrow) = textSizes(2.0f, NARROW)
+        assertTrue("floor $plain13 of $plainNarrow", plain13 < plainNarrow)
+        for (size in narrow) assertEquals("$size of $plainNarrow", plain13, size, 0f)
+        for (left in listOf(false, true)) check(NARROW, 2.0f, left, most = Float.MAX_VALUE, clear = false)
         // The default ring's five at twice the font size: the ring grows instead.
         prefs.ringOptions = RingOptions.DEFAULT
         val (plain5, _, five) = textSizes(2.0f)

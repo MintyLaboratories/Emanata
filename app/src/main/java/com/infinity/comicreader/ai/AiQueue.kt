@@ -1,6 +1,7 @@
 package com.infinity.comicreader.ai
 
 import android.graphics.Bitmap
+import com.infinity.comicreader.reader.PageDetail
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -14,8 +15,12 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /** How a page's AI work ended. */
 sealed class AiOutcome {
-    /** Processed: [bitmap] shows in place of the plain page; [stored] when read back from disk rather than made, in [ms]. */
-    class Done(val bitmap: Bitmap, val stored: Boolean = false, val ms: Long = 0) : AiOutcome()
+    /**
+     * Processed: [bitmap] shows in place of the plain page; [stored] when read back from disk
+     * rather than made, in [ms]. [detail]: the page as the model made it, before it was shrunk
+     * to [bitmap], for zoomed views; whoever takes the outcome frees it.
+     */
+    class Done(val bitmap: Bitmap, val stored: Boolean = false, val ms: Long = 0, val detail: PageDetail? = null) : AiOutcome()
 
     /** Never processed this time ([why]): the plain page stays, and the page is not tried again until [AiQueue.reset]. */
     class Skipped(val why: Fallback) : AiOutcome()
@@ -221,8 +226,11 @@ internal class AiQueue<K : Any>(
             } catch (t: Throwable) {
                 AiOutcome.Skipped(Fallback.FAILED)
             }
-            // A page no longer wanted: its bitmap may still be on its way to disk, so the GC frees it.
-            if (job !== queued) return@launch
+            // A page no longer wanted: its bitmap may still be on its way to disk, so the GC frees it; its detail is freed here.
+            if (job !== queued) {
+                (outcome as? AiOutcome.Done)?.detail?.release()
+                return@launch
+            }
             // Work ending before the report that its models started arrives: told now, so busy hears they ran.
             if (models.get()) modelsStarted(queued)
             job = null

@@ -281,6 +281,14 @@ class RarReaderTest {
             assertArrayEquals(big[2].second, r.bytes(2))
             assertThrows(IOException::class.java) { r.bytes(3) }
         }
+        // A solid RAR 5, listed by its own headers, the same way.
+        val solid = Fixtures.rar5Bytes(*big, solid = true)
+        val fourth = FileChannel.open(file(solid).toPath(), StandardOpenOption.READ).use { Rar5Headers.list(it)[4].start.toInt() }
+        RarReader(file(solid.copyOf(fourth - 500))).use { r ->
+            assertEquals(big.take(4).map { it.first }, r.entries.map { it.path })
+            assertArrayEquals(big[2].second, r.bytes(2))
+            assertThrows(IOException::class.java) { r.bytes(3) }
+        }
     }
 
     @Test

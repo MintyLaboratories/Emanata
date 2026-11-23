@@ -71,6 +71,9 @@ class ReaderAiTest {
     /** Milliseconds on the clock of a reader made by [reader]. */
     private var now = 0L
 
+    /** The screen's ppi a reader made by [reader] reads; 0: unknown, pages judged as they show. */
+    private var ppi = 0.0
+
     /** The store of every reader [reader] makes. */
     private val store by lazy { ProcessedStore(tmp.newFolder(), PngPageCodec, Executor { it.run() }) }
 
@@ -79,7 +82,7 @@ class ReaderAiTest {
 
     private fun reader(): ReaderAi = ReaderAi(
         prefs, { own[it] }, models, store, runtime,
-        { stop }, { downloads += it.id }, threads = 2, clock = { now }, thresholds = { thresholds }, shaders = shaders
+        { stop }, { downloads += it.id }, threads = 2, clock = { now }, thresholds = { thresholds }, shaders = shaders, ppi = { ppi }
     )
 
     /** Installs [m] with each file a synthetic upscaler at the size the catalog says. */
@@ -281,6 +284,64 @@ class ReaderAiTest {
         assertTrue("55 % of the source, 95 % of the input", ReaderAi.unneeded(upscales, Target(2200, 3300), size, 2200, 3300))
     }
 
+    /** True when [upscales] run on a [size] page of [shape] fit to [screen] at [ppi]. */
+    private fun upscalesOn(shape: BookShape, size: IntArray, screen: Target, ppi: Double, read: Boolean = true): Boolean {
+        val shown = screen.plan(size[0].toDouble(), size[1].toDouble())
+        return !ReaderAi.unneeded(upscales, screen, size, shown.width, shown.height, AiThresholds(), ReadSize(shape, ppi).takeIf { read })
+    }
+
+    /** A large tablet's screen, read at 240 ppi. */
+    private val tablet = Target(1848, 2960)
+
+    /** A large phone's screen, read at 500 ppi. */
+    private val phone = Target(1440, 3120)
+
+    @Test
+    fun eachPageClassIsJudgedAtItsPrintedSizeWhereThePhoneMustZoom() {
+        val us = BookShape(PageClass.US, 0.65)
+        val usPage = intArrayOf(1988, 3056)
+        assertFalse("tablet: fit at 93 %, print size smaller", upscalesOn(us, usPage, tablet, 240.0))
+        assertFalse("phone as it fits: 72 %", upscalesOn(us, usPage, phone, 500.0, read = false))
+        assertTrue("phone: 2.3x zoom to 16.8 cm, read at 166 %", upscalesOn(us, usPage, phone, 500.0))
+
+        val manga = BookShape(PageClass.MANGA, 0.71)
+        val mangaPage = intArrayOf(2000, 2800)
+        assertFalse("tablet: fit at 92 %, B6 smaller", upscalesOn(manga, mangaPage, tablet, 240.0))
+        assertTrue("phone: 1.8x zoom to 12.8 cm, read at 127 %", upscalesOn(manga, mangaPage, phone, 500.0))
+
+        val album = BookShape(PageClass.FRANCO_BELGIAN, 0.74)
+        val albumPage = intArrayOf(2400, 3240)
+        assertFalse("tablet: 21.5 cm is a 1.10x zoom, read as it fits at 77 %", upscalesOn(album, albumPage, tablet, 240.0))
+        assertTrue("phone: 2.9x zoom, read at 177 %", upscalesOn(album, albumPage, phone, 500.0))
+
+        val web = BookShape(PageClass.WEB, 0.67)
+        val webPage = intArrayOf(2000, 3000)
+        assertFalse("tablet as it fits: 92 %", upscalesOn(web, webPage, tablet, 240.0, read = false))
+        assertTrue("tablet: its pixels at 96 dpi, read at 250 %", upscalesOn(web, webPage, tablet, 240.0))
+    }
+
+    @Test
+    fun aPageIsReadAtItsBooksPrintedSizeAndSaysWhy() {
+        install(upscale)
+        val b = bookOf(60, 90)
+        // As it shows: 67 % of its side.
+        assertEquals(Fallback.UNNEEDED, (ai.enhance(b, 0, target, 40, 60) { false } as AiOutcome.Skipped).why)
+        val plain = ai.note(b, 0)!!
+        assertEquals(400.0 / 6, plain.percent!!, 1e-9)
+        assertEquals(AiNote(plain.percent, false, null, listOf(upscale.name), Fallback.UNNEEDED), plain)
+        ai.close()
+        ppi = 254.0
+        ai = reader()
+        assertFalse("told first", ai.shape(b.bookKey, BookShape(PageClass.WEB)))
+        assertTrue((ai.enhance(b, 0, target, 40, 60) { false } is AiOutcome.Done))
+        val note = ai.note(b, 0)!!
+        // Its pixels at 96 dpi on a 254 ppi screen: 265 % of its side.
+        assertEquals(254.0 / 96 * 100, note.percent!!, 1e-6)
+        assertEquals(AiNote(note.percent, true, PageClass.WEB, emptyList(), null), note)
+        assertTrue("another shape", ai.shape(b.bookKey, BookShape.UNKNOWN))
+        assertFalse("the same again", ai.shape(b.bookKey, BookShape.UNKNOWN))
+    }
+
     @Test
     fun theRenderSizeChangesWhichModelsRun() {
         val size = intArrayOf(80, 120)
@@ -373,15 +434,16 @@ class ReaderAiTest {
         shadowOf(context.getSystemService(PowerManager::class.java)).setIsPowerSaveMode(true)
         val app = ReaderAi.of(context)
         try {
-            // Shown at 67 % of its side: under the default upscale handle.
-            val b = bookOf(60, 90)
-            assertEquals(Fallback.UNNEEDED, (app.enhance(b, 0, target, 40, 60) { false } as AiOutcome.Skipped).why)
+            // Shown at 67 % of its side, under the default upscale handle; larger than its printed size on this screen.
+            val b = bookOf(2100, 3150)
+            val big = Target(1400, 2100)
+            assertEquals(Fallback.UNNEEDED, (app.enhance(b, 0, big, 1400, 2100) { false } as AiOutcome.Skipped).why)
             assertFalse(app.thresholdsMoved())
             prefs.aiThresholds = AiThresholds(upscalePct = 60)
             assertTrue(app.thresholdsMoved())
-            assertEquals("the upscale runs: put off", AiOutcome.Later, app.enhance(b, 0, target, 40, 60) { false })
+            assertEquals("the upscale runs: put off", AiOutcome.Later, app.enhance(b, 0, big, 1400, 2100) { false })
             prefs.aiThresholds = AiThresholds(upscalePct = 70)
-            assertEquals(Fallback.UNNEEDED, (app.enhance(b, 0, target, 40, 60) { false } as AiOutcome.Skipped).why)
+            assertEquals(Fallback.UNNEEDED, (app.enhance(b, 0, big, 1400, 2100) { false } as AiOutcome.Skipped).why)
             assertEquals(0, b.loads.get())
         } finally {
             app.close()

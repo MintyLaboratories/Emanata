@@ -13,8 +13,9 @@ import com.infinity.comicreader.reader.Plan
  * - [cleanupPct]: cleanup (1x) models other than descreen run while the page is shown above it,
  *   or at every size when [ALWAYS]. Default 50. Descreen models run at every size.
  *
- * Thresholds apply to each render at the size it lays the page out at; a zoom's detail renders
- * are not processed by AI.
+ * Thresholds judge each page at the size it is read at ([ReadSize]): the size it is laid out
+ * at, or its printed size where reading it takes zooming in; a zoom's detail renders are not
+ * processed by AI.
  */
 data class AiThresholds(val upscalePct: Int = UPSCALE_DEFAULT, val cleanupPct: Int = CLEANUP_DEFAULT) {
 

@@ -65,6 +65,7 @@ import com.infinity.comicreader.ai.AiLoad
 import com.infinity.comicreader.ai.AiModel
 import com.infinity.comicreader.ai.AiPicks
 import com.infinity.comicreader.ai.AiStep
+import com.infinity.comicreader.ai.BookShape
 import com.infinity.comicreader.ai.ChainKind
 import com.infinity.comicreader.ai.DownloadState
 import com.infinity.comicreader.ai.Downloads
@@ -2083,6 +2084,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         keepVisits = !known.seen.isEmpty || known.seams.anyChecked
         shownVisits = 0
         tallPages = findTallPages()
+        syncAiShape()
     }
 
     /**
@@ -2128,6 +2130,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
             updateTallPages()
             relayout()
             judgeTall()
+            syncAiShape()
         }
     }
 
@@ -2176,6 +2179,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
             updateTallPages()
             relayout()
             judgeTall()
+            syncAiShape()
         }
     }
 
@@ -4318,18 +4322,37 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
 
     /**
      * Reads the books' AI chains again; the pages shown go through the new chain when this
-     * book's or the next chapter's changed, or the AI thresholds moved.
+     * book's or the next chapter's changed, the AI thresholds moved, or the shape of the
+     * book's pages changed ([aiShapes]).
      */
     private fun aiChanged() {
         val books = listOfNotNull(source, stripAhead).map { it.bookKey }
         val before = books.map { readerAi.chainFor(it) }
         readerAi.refresh()
         aiKinds()
+        val reshaped = aiShapes()
         val moved = readerAi.thresholdsMoved()
-        if (books.map { readerAi.chainFor(it) } != before || moved) adapter?.aiChanged()
+        if (books.map { readerAi.chainFor(it) } != before || moved || reshaped) adapter?.aiChanged()
         aiBooks()
         syncSheet()
     }
+
+    /** The shape of the open book's pages, which sets the size they are read at for AI: by its direction and the pages' shapes found. */
+    private fun aiShape(): BookShape = BookShape.of(readingDir == "rtl", topToBottom(), analysis)
+
+    /**
+     * Tells the reader's AI the shape of each open book's pages ([aiShape]; the chapter laid in
+     * behind this one reads alike); true when that changed the shape told before of one whose
+     * pages go through AI.
+     */
+    private fun aiShapes(): Boolean {
+        val shape = aiShape()
+        // Every book is told; only a change on one AI processes matters.
+        return listOfNotNull(source, stripAhead).map { readerAi.shape(it.bookKey, shape) && readerAi.enhances(it) }.any { it }
+    }
+
+    /** The shape of the open book's pages the reader's AI reads them by; null without a book or while the screen's ppi is unknown. */
+    internal fun aiShapeRun(): BookShape? = source?.let { readerAi.readSize(it.bookKey)?.shape }
 
     /** The default chain the reader's AI runs for the open book, or with [ahead] the chapter laid in behind it; null without one. */
     internal fun aiKindRun(ahead: Boolean = false): ChainKind? = (if (ahead) stripAhead else source)?.let { readerAi.kindOf(it.bookKey) }
@@ -4340,10 +4363,18 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         stripAhead?.let { readerAi.kind(it.bookKey, stripAheadKind()) }
     }
 
-    /** Shows the open book through the other default chain when the one it runs changed with its direction. */
+    /**
+     * Shows the open book through the other default chain when the one it runs changed with its
+     * direction, and its pages through the models their read size calls for when its shape changed.
+     */
     private fun syncAiKind() {
         val src = source ?: return
-        if (readerAi.kindOf(src.bookKey) != aiKind()) aiChanged()
+        if (readerAi.kindOf(src.bookKey) != aiKind()) aiChanged() else syncAiShape()
+    }
+
+    /** Shows the open books' pages through the models their read size calls for when the shape of their pages changed ([aiShapes]). */
+    private fun syncAiShape() {
+        if (aiShapes()) adapter?.aiChanged()
     }
 
     /**
@@ -4354,6 +4385,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
         readerAi.know(source?.bookKey, bookId)
         readerAi.know(stripAhead?.bookKey, stripAheadId)
         aiKinds()
+        syncAiShape()
         val keep = listOfNotNull(source, stripAhead).flatMapTo(HashSet()) { s -> readerAi.chainFor(s.bookKey).map { it.id } }
         readerAi.closeModels(keep)
         followModels(keep.isNotEmpty())

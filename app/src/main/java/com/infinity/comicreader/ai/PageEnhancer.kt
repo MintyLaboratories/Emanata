@@ -14,6 +14,7 @@ import com.infinity.comicreader.reader.Cancellation
 import com.infinity.comicreader.reader.HiddenPages
 import com.infinity.comicreader.reader.NativeResampler
 import com.infinity.comicreader.reader.PageSource
+import com.infinity.comicreader.reader.Plan
 import com.infinity.comicreader.reader.Target
 import com.infinity.comicreader.reader.Urgency
 import kotlinx.coroutines.CoroutineDispatcher
@@ -58,8 +59,9 @@ interface PageEnhancer {
  * a jump. Puts pages off ([AiOutcome.Later]) while [gate] says stop (heat, battery saver) or a
  * model is still downloading ([download] starts one missing, unless its download failed: a pick
  * or Settings starts that again); skips pages of vector books,
- * pages drawn in bands, and pages shown at a size where no model of the chain runs
- * ([thresholds], read for each page: [AiPages.steps]).
+ * pages drawn in bands, and pages read at a size where no model of the chain runs
+ * ([thresholds], read for each page: [AiPages.steps]): the size a page shows at, or its printed
+ * size where reading it takes zooming in ([ReadSize], from each book's [shape] and [ppi]).
  */
 class ReaderAi internal constructor(
     private val prefs: Prefs,
@@ -84,7 +86,9 @@ class ReaderAi internal constructor(
     /** Where this device's tile sizes for catalog models are kept ([TileTuning]); null: [TileSizing.DEFAULT_MAX] at most. */
     private val tiles: TileChoices? = null,
     /** Where the page times measured here are kept for the AI settings' load estimate ([AiLoad]); null: nowhere. */
-    private val times: PageTimes? = null
+    private val times: PageTimes? = null,
+    /** The screen's physical pixels per inch ([ReadSize.ppiOf]); 0 or less: unknown, pages judged at the size they show at. */
+    private val ppi: () -> Double = { 0.0 }
 ) : PageEnhancer, AutoCloseable {
 
     override val worker: CoroutineDispatcher get() = WORKER
@@ -140,6 +144,12 @@ class ReaderAi internal constructor(
     /** The default chain each book runs without picks of its own, by its key ("" for none) as [kind] told it; [ChainKind.OTHER] untold. */
     private val kinds = ConcurrentHashMap<String, ChainKind>()
 
+    /** Each book's shape by its key ("" for none) as [shape] told it; [BookShape.UNKNOWN] untold. */
+    private val shapes = ConcurrentHashMap<String, BookShape>()
+
+    /** What AI last did with each page made, read back or skipped, by [placeOf]. */
+    private val notes = ConcurrentHashMap<String, AiNote>()
+
     /** Reads every book's chain again: after the global or a book's own picks changed. */
     fun refresh() {
         generation.incrementAndGet()
@@ -159,6 +169,22 @@ class ReaderAi internal constructor(
 
     /** The default chain the book keyed [key] runs without picks of its own, as last told ([kind]). */
     fun kindOf(key: String?): ChainKind = kinds[key.orEmpty()] ?: ChainKind.OTHER
+
+    /** Says the pages of the book keyed [key] are of [shape]; true when that replaced another shape told before: pages may need other models now. */
+    fun shape(key: String?, shape: BookShape): Boolean {
+        val was = shapes.put(key.orEmpty(), shape)
+        return was != null && was != shape
+    }
+
+    /** The size the pages of the book keyed [book] are read at; null while the screen's ppi is unknown: as they show. */
+    internal fun readSize(book: String?): ReadSize? {
+        val p = ppi()
+        if (p <= 0) return null
+        return ReadSize(shapes[book.orEmpty()] ?: BookShape.UNKNOWN, p)
+    }
+
+    /** What AI last did with page [index] of [source]; null when it never got to it. Any thread. */
+    fun note(source: PageSource, index: Int): AiNote? = notes[placeOf(source, index)]
 
     /**
      * The chain the pages of the book keyed [book] go through. Kept with what it was read
@@ -203,12 +229,13 @@ class ReaderAi internal constructor(
         val chain = chainFor(source.bookKey)
         if (chain.isEmpty() || source.isVector || source.bookKey == null) return false
         val thresholds = thresholds()
+        val read = readSize(source.bookKey)
         // Called on the main thread: a page size not read yet is not read here.
         val size = sizes[placeOf(source, index)]
-        if (size != null) return runKeyOf(chain, target, size, width, height, thresholds)?.let { stored(source, index, target, width, height, chain, it) } == true
+        if (size != null) return runKeyOf(chain, target, size, width, height, thresholds, read)?.let { stored(source, index, target, width, height, chain, it) } == true
         // Any copy the chain's models may have made: the run is not known without the page's size.
         return runKeys(chain.size).any { stored(source, index, target, width, height, chain, it) } ||
-            stored(source, index, target, width, height, chain, AiPages.handles(chain.map(ChainModel::of), thresholds))
+            stored(source, index, target, width, height, chain, AiPages.handles(chain.map(ChainModel::of), thresholds, read))
     }
 
     private fun stored(source: PageSource, index: Int, target: Target, width: Int, height: Int, chain: List<AiModel>, run: String): Boolean =
@@ -240,12 +267,14 @@ class ReaderAi internal constructor(
     ): AiOutcome {
         val t0 = SystemClock.elapsedRealtime()
         var started = false
-        val outcome = enhanceNow(source, index, target, width, height, held, canceled) {
+        val judged = Judgment()
+        val outcome = enhanceNow(source, index, target, width, height, held, canceled, judged) {
             if (!started) {
                 started = true
                 models()
             }
         }
+        noteOf(chainFor(source.bookKey), judged, outcome)?.let { notes[placeOf(source, index)] = it }
         val ms = SystemClock.elapsedRealtime() - t0
         when (outcome) {
             is AiOutcome.Done -> Log.d(TAG, "page $index: ${if (outcome.stored) "read back" else "made"} in $ms ms")
@@ -255,9 +284,30 @@ class ReaderAi internal constructor(
         return outcome
     }
 
-    /** [enhance], calling [onModels] once models are sure to run, as each opens, and before the chain runs. */
+    /** What [enhanceNow] judged of a page: its sizes as the thresholds see them, and the models that run; null each while unknown. */
+    private class Judgment {
+        var sizes: Judged? = null
+        var steps: List<ChainStep>? = null
+    }
+
+    /** What [outcome] of a page [judged] says for its Page info, [chain] running on it; null when there is nothing new to say (put off). */
+    private fun noteOf(chain: List<AiModel>, judged: Judgment, outcome: AiOutcome): AiNote? {
+        val why = when (outcome) {
+            AiOutcome.Later -> return null
+            is AiOutcome.Done -> null
+            is AiOutcome.Skipped -> outcome.why
+        }
+        if (chain.isEmpty()) return null
+        val sizes = judged.sizes
+        val ran = judged.steps?.mapTo(HashSet()) { it.index }
+        val small = if (ran == null) emptyList() else chain.filterIndexed { i, _ -> i !in ran }.map { it.name }
+        return AiNote(sizes?.percent, sizes?.printed == true, sizes?.read?.shape?.pageClass, small, why)
+    }
+
+    /** [enhance], calling [onModels] once models are sure to run, as each opens, and before the chain runs; what it judged goes to [judged]. */
     private fun enhanceNow(
-        source: PageSource, index: Int, pageTarget: Target, width: Int, height: Int, held: () -> Boolean, canceled: () -> Boolean, onModels: () -> Unit
+        source: PageSource, index: Int, pageTarget: Target, width: Int, height: Int, held: () -> Boolean, canceled: () -> Boolean,
+        judged: Judgment, onModels: () -> Unit
     ): AiOutcome {
         // Models see and make pages unsharpened: sharpening is for plain pages, so its strength keys no processed page.
         val target = pageTarget.copy(scaling = pageTarget.scaling.unsharpened)
@@ -265,12 +315,15 @@ class ReaderAi internal constructor(
         if (chain.isEmpty() || source.isVector) return AiOutcome.Skipped(Fallback.UNNEEDED)
         val t0 = clock()
         val thresholds = thresholds()
+        val read = readSize(source.bookKey)
         val chainModels = chain.map(ChainModel::of)
         val size = sizeOf(source, index)
         // Decided before the decode, from the page's size, so the key names the models that run: thresholds that run the same ones share it.
-        val planned = size?.let { planned(chain, target, it, width, height, thresholds) }
+        judged.sizes = size?.let { judge(target, it, width, height, read) }
+        val planned = judged.sizes?.steps(chainModels, thresholds)
+        judged.steps = planned
         if (planned != null && planned.isEmpty()) return AiOutcome.Skipped(Fallback.UNNEEDED)
-        val runKey = planned?.let { p -> AiPages.runKey(p.map { it.index }) } ?: AiPages.handles(chainModels, thresholds)
+        val runKey = planned?.let { p -> AiPages.runKey(p.map { it.index }) } ?: AiPages.handles(chainModels, thresholds, read)
         val key = keyOf(source, index, target, width, height, chain, runKey)
         // Kept pages show even while paused, as those processed in memory do: a read costs about a plain decode, no GPU.
         key?.let { store.get(it, width, height) }?.let { return AiOutcome.Done(it, stored = true, ms = clock() - t0) }
@@ -295,7 +348,11 @@ class ReaderAi internal constructor(
             try {
                 val shownPlan = plan.copy(width = width, height = height)
                 val steps = planned?.let { p -> AiPages.stepsOf(p.map { it.index }, chainModels, readable.width, readable.height) }
-                    ?: AiPages.steps(chainModels, readable.width, readable.height, shownPlan, thresholds)
+                    ?: decoded(readable.width, readable.height, shownPlan, inputScale(target, size), read).let { j ->
+                        judged.sizes = j
+                        j.steps(chainModels, thresholds)
+                    }
+                judged.steps = steps
                 if (steps.isNotEmpty()) onModels()
                 val run = Urgency.later {
                     AiPages.chain(
@@ -491,15 +548,13 @@ class ReaderAi internal constructor(
         const val MAX_INPUT_PIXELS = 8_000_000L
 
         /**
-         * The models of [chain] that run ([AiPages.steps] under [thresholds]) on a [size] page
-         * shown as [target] lays it out at [width] x [height], each with its input's pixels;
-         * null when unknown: before an auto-crop finds its box (the crop changes the size), or
-         * for a size that tells nothing. Measured against the chain's input, the page reduced
-         * to [MAX_INPUT_PIXELS] as [enhance] decodes it.
+         * The sizes the thresholds judge a [size] page shown as [target] lays it out at [width] x
+         * [height] by, read as [read] says (null: as it shows); null when unknown: before an
+         * auto-crop finds its box (the crop changes the size), or for a size that tells nothing.
+         * Measured against the chain's input, the page reduced to [MAX_INPUT_PIXELS] as
+         * [enhance] decodes it.
          */
-        internal fun planned(
-            chain: List<AiModel>, target: Target, size: IntArray, width: Int, height: Int, thresholds: AiThresholds = AiThresholds()
-        ): List<ChainStep>? {
+        internal fun judge(target: Target, size: IntArray, width: Int, height: Int, read: ReadSize? = null): Judged? {
             if ((target.autoCrop && target.box == null) || size[0] <= 0 || size[1] <= 0 || width <= 0 || height <= 0) return null
             val a = target.area(size[0], size[1])
             val w = (a[2] - a[0]).toDouble()
@@ -507,17 +562,46 @@ class ReaderAi internal constructor(
             if (w <= 0 || h <= 0) return null
             val input = target.detail(size, MAX_INPUT_PIXELS * 4).plan(w, h)
             val shown = target.plan(input.width.toDouble(), input.height.toDouble()).copy(width = width, height = height)
-            return AiPages.steps(chain.map(ChainModel::of), input.width, input.height, shown, thresholds)
+            return Judged.of(input.width, input.height, shown, w, h, read)
         }
+
+        /**
+         * [judge] for a page decoded to a [w] x [h] input shown as [shown] (in its pixels), its
+         * size not known before: [scale] is the input's pixels per source pixel ([inputScale]).
+         */
+        internal fun decoded(w: Int, h: Int, shown: Plan, scale: Double, read: ReadSize?): Judged =
+            Judged.of(w, h, shown, w / scale, h / scale, read)
+
+        /**
+         * The input's pixels per source pixel of a [size] page decoded for [target] at full
+         * detail ([Target.detail]): its even reduction to [MAX_INPUT_PIXELS], 1 when unknown.
+         * A crop shrinks less, so this may be below the real scale: the source then seems
+         * larger, which only ever reads a page larger.
+         */
+        internal fun inputScale(target: Target, size: IntArray?): Double {
+            if (size == null || size[0] <= 0) return 1.0
+            val d = target.detail(size, MAX_INPUT_PIXELS * 4)
+            return if (d.width <= 0) 1.0 else minOf(1.0, d.width.toDouble() / size[0])
+        }
+
+        /**
+         * The models of [chain] that run ([AiPages.steps] under [thresholds]) on a [size] page
+         * shown as [target] lays it out at [width] x [height], read as [read] says, each with its
+         * input's pixels; null when unknown ([judge]).
+         */
+        internal fun planned(
+            chain: List<AiModel>, target: Target, size: IntArray, width: Int, height: Int, thresholds: AiThresholds = AiThresholds(), read: ReadSize? = null
+        ): List<ChainStep>? = judge(target, size, width, height, read)?.steps(chain.map(ChainModel::of), thresholds)
 
         /** True when no model of [chain] runs on a [size] page shown as [target] lays it out at [width] x [height] ([planned]): nothing to do. */
         internal fun unneeded(
-            chain: List<AiModel>, target: Target, size: IntArray, width: Int, height: Int, thresholds: AiThresholds = AiThresholds()
-        ): Boolean = planned(chain, target, size, width, height, thresholds)?.isEmpty() == true
+            chain: List<AiModel>, target: Target, size: IntArray, width: Int, height: Int, thresholds: AiThresholds = AiThresholds(), read: ReadSize? = null
+        ): Boolean = planned(chain, target, size, width, height, thresholds, read)?.isEmpty() == true
 
         /** The models of [chain] that run on such a page ([planned]) as a processed page's key part ([AiPages.runKey]); null when unknown. */
-        internal fun runKeyOf(chain: List<AiModel>, target: Target, size: IntArray, width: Int, height: Int, thresholds: AiThresholds): String? =
-            planned(chain, target, size, width, height, thresholds)?.let { p -> AiPages.runKey(p.map { it.index }) }
+        internal fun runKeyOf(
+            chain: List<AiModel>, target: Target, size: IntArray, width: Int, height: Int, thresholds: AiThresholds, read: ReadSize? = null
+        ): String? = planned(chain, target, size, width, height, thresholds, read)?.let { p -> AiPages.runKey(p.map { it.index }) }
 
         /** The key parts ([AiPages.runKey]) of every set of models a chain of [n] may run, none aside. */
         internal fun runKeys(n: Int): List<String> =
@@ -548,7 +632,8 @@ class ReaderAi internal constructor(
                 thresholds = { prefs.aiThresholds },
                 programs = programsIn(app),
                 tiles = TileChoices(TileChoices.dirIn(app)),
-                times = PageTimes.of(app)
+                times = PageTimes.of(app),
+                ppi = { app.resources.displayMetrics.let { ReadSize.ppiOf(it.xdpi, it.ydpi, it.densityDpi) } }
             )
         }
     }

@@ -15,6 +15,7 @@ import com.infinity.comicreader.R
 import com.infinity.comicreader.ai.AiLoad
 import com.infinity.comicreader.ai.AiStep
 import com.infinity.comicreader.ai.ChainKind
+import com.infinity.comicreader.ai.PageClass
 import com.infinity.comicreader.ai.DownloadState
 import com.infinity.comicreader.ai.FileSet
 import com.infinity.comicreader.ai.ModelCatalog
@@ -32,6 +33,7 @@ import com.infinity.comicreader.testing.idleUntil
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -335,9 +337,13 @@ class ViewerActivityAiChoicesTest {
         val sheet = ReaderSheet(viewer)
         assertEquals(R.id.btn_ai_other, kindShown(sheet))
         assertEquals(ChainKind.OTHER, viewer.aiKindRun())
+        assertNotEquals(PageClass.MANGA, viewer.aiShapeRun()?.pageClass)
         sheet.tap(R.id.btn_dir_rtl)
         assertEquals(R.id.btn_ai_manga, kindShown(sheet))
         assertEquals("the reader runs it too", ChainKind.MANGA, viewer.aiKindRun())
+        assertEquals("read at B6", PageClass.MANGA, viewer.aiShapeRun()?.pageClass)
+        sheet.tap(R.id.btn_dir_ttb)
+        assertEquals("top to bottom reads as web", PageClass.WEB, viewer.aiShapeRun()?.pageClass)
     }
 
     @Test

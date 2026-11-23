@@ -120,6 +120,10 @@ class ReadSizeTest {
         assertEquals("1.149x zoom", 1.0, read.factor(print / 1.149, 1000.0, 1500.0), 0.0)
         assertEquals("1.151x zoom", 1.151, read.factor(print / 1.151, 1000.0, 1500.0), 1e-9)
         assertEquals("2.3x zoom", 2.3, read.factor(print / 2.3, 1000.0, 1500.0), 1e-9)
+        // Exactly at the cutoff, and the next value above it.
+        assertEquals("1.15x zoom", 1.0, ReadSize.factorAt(ReadSize.ZOOM_FREE), 0.0)
+        val above = Math.nextUp(ReadSize.ZOOM_FREE)
+        assertEquals(above, ReadSize.factorAt(above), 0.0)
     }
 
     @Test

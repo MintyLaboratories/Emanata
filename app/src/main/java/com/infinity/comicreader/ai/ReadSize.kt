@@ -131,8 +131,7 @@ data class ReadSize(val shape: BookShape, val ppi: Double) {
      */
     fun factor(fit: Double, srcW: Double, srcH: Double): Double {
         if (fit <= 0 || srcW <= 0 || srcH <= 0) return 1.0
-        val z = zoom(fit, srcW, srcH)
-        return if (z <= ZOOM_FREE) 1.0 else z
+        return factorAt(zoom(fit, srcW, srcH))
     }
 
     /** What decides [factor], as part of a processed page's key: the class, the median aspect and the ppi. */
@@ -146,6 +145,9 @@ data class ReadSize(val shape: BookShape, val ppi: Double) {
     companion object {
         /** The zoom up to which a page is taken to be read as it fits. */
         const val ZOOM_FREE = 1.15
+
+        /** [factor] for a page needing zoom [z] to reach its printed size: 1 up to [ZOOM_FREE], else [z]. */
+        fun factorAt(z: Double): Double = if (z <= ZOOM_FREE) 1.0 else z
 
         /** The pixels per inch web comics are drawn for. */
         const val WEB_DPI = 96.0

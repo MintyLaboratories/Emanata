@@ -1207,9 +1207,11 @@ archive_read_format_rar_read_data_skip(struct archive_read *a)
    * In a solid archive, the entries after this one may need its data in
    * the decoder: unpack what is left of it, dropping the result. Should
    * that fail, a solid entry after it cannot be read (solid_ready).
+   * This reader cannot decrypt, so an encrypted entry is not unpacked and
+   * the solid entries after it stay unreadable.
    */
   if ((rar->main_flags & MHD_SOLID) && !rar->solid_unreadable &&
-      !rar->solid_skip_consume &&
+      !rar->solid_skip_consume && !(rar->file_flags & FHD_PASSWORD) &&
       rar->compression_method != COMPRESS_METHOD_STORE &&
       rar->packed_size > 0 && !rar->entry_eof && rar->valid)
   {

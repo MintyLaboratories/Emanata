@@ -8,8 +8,10 @@ import com.infinity.comicreader.ai.ModelImports
 import com.infinity.comicreader.ai.ModelStore
 import com.infinity.comicreader.ai.ProcessedStore
 import com.infinity.comicreader.ai.UserModels
+import com.infinity.comicreader.data.BookFactsCache
 import com.infinity.comicreader.data.BookIds
 import com.infinity.comicreader.data.Library
+import com.infinity.comicreader.data.LikenessStore
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.data.Thumbs
 import com.infinity.comicreader.files.ConvertRates
@@ -79,12 +81,14 @@ class App : Application() {
 
     /**
      * Called only where the process is emulated, as in tests, never on a device: waits for
-     * the start work, then closes the Book ID index, so none of this app's work or open
-     * database outlives it into the next.
+     * the start work, then closes the app's databases, so none of this app's work or open
+     * connections outlives it into the next.
      */
     override fun onTerminate() {
         startWork.forEach { it() }
         BookIds.close()
+        BookFactsCache.reset()
+        LikenessStore.reset()
         super.onTerminate()
     }
 

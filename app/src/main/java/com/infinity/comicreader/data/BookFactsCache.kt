@@ -169,7 +169,7 @@ class BookFactsCache(context: Context) {
             }
         }
 
-        /** Forgets the in-memory copy and closes the database; tests start each case from disk. */
+        /** Forgets the in-memory copy and closes the database: at an emulated process end ([android.app.Application.onTerminate]), and in tests to start a case from disk. */
         internal fun reset() {
             synchronized(LOCK) {
                 shared?.helper?.close()

@@ -116,5 +116,13 @@ class LikenessStore(context: Context) {
                 return Store(file, Helper(context)).also { shared = it }
             }
         }
+
+        /** Closes the database; the next instance opens it again. For an emulated process end ([android.app.Application.onTerminate]). */
+        internal fun reset() {
+            synchronized(LOCK) {
+                shared?.helper?.close()
+                shared = null
+            }
+        }
     }
 }

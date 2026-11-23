@@ -1602,7 +1602,7 @@ estimated from the tiles run in 60 or 120 s):
 | NMKD Siax 4x | WTFPL | [OpenModelDB](https://openmodeldb.info/models/4x-NMKD-Siax-CX) | not run: as large as x4plus Anime |
 | Remacri, UltraSharp, UniScale Restore, AnimeSharp V4, SaiyaJin DeJpeg | CC BY-NC-SA 4.0 | [OpenModelDB](https://openmodeldb.info/) | left out: non-commercial terms |
 | Int-RemAnime, UltraMix Balanced (merged from such models) | CC BY-NC-SA 4.0 | [OpenComic AI's models](https://github.com/ollm/opencomic-ai-models) | left out: non-commercial terms |
-| JPEG Destroyer V2 | GPL-3.0 | [OpenModelDB](https://openmodeldb.info/models/1x-JPEGDestroyer) | left out: GPL |
+| JPEG Destroyer V2 | GPL-3.0 | [OpenModelDB](https://openmodeldb.info/models/1x-JPEGDestroyer) | too slow: an estimated 110 to 145 s (about 25 times OpenComic AI Artifact Removal Fast v2's work), and below that model in PSNR |
 | WTP DescreenTon Compact | none stated | [OpenModelDB](https://openmodeldb.info/models/1x-wtp-descreentone-compact) | left out: no license |
 | Halftone Patch 060000 G, Unknown 2.0.1 | none stated | [OpenComic AI's models](https://github.com/ollm/opencomic-ai-models) | left out: no license |
 

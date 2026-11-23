@@ -124,6 +124,8 @@ internal class DetailStore<K>(private val scope: CoroutineScope, private val io:
         entries.keys.filter { it != key && it !in keep }.forEach { drop(it) }
         entries[key]?.let { return it }
         val entry = Entry()
+        // Held before the load starts: a load that fails at once is forgotten by the handler below, which may run within this call.
+        entries[key] = entry
         entry.deferred = scope.async(io) {
             gate.withPermit {
                 val job = coroutineContext.job
@@ -148,7 +150,6 @@ internal class DetailStore<K>(private val scope: CoroutineScope, private val io:
                 if (failed && entries[key] === entry) entries.remove(key)
             }
         }
-        entries[key] = entry
         return entry
     }
 

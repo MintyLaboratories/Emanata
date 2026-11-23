@@ -148,6 +148,16 @@ class DetailStoreTest {
     }
 
     @Test
+    fun aLoadFailingBeforeTheStoreHoldsItIsStillForgotten() {
+        // Loads run in the caller's thread: the load fails, and its completion is heard, before the store's call returns.
+        val now = DetailStore<String>(scope, Dispatchers.Unconfined)
+        var failed = 0
+        now.render("a", listOf("a"), { throw OutOfMemoryError("synthetic") }, { it }, failed = { failed++ }) { }
+        idleUntil("a's load failed") { failed == 1 }
+        assertTrue(now.keys.isEmpty())
+    }
+
+    @Test
     fun failedLoadOrRenderCallsFailedInstead() {
         var failed = 0
         var done = 0

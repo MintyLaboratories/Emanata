@@ -237,16 +237,19 @@ object BitmapUtils {
      * Where [window] lies inside [src], [fill] draws the one-pixel strip just past that edge
      * ([rimWindows]) at the same scale, which serves as the edge's neighbors, so a region
      * rendered alone (a zoomed detail, a band) matches the whole page rendered at once; at
-     * the source's own edges, the edge pixels repeat. Every strip is freed, also on failure.
+     * the source's own edges, the edge pixels repeat. [newStrip] makes each strip, a blank
+     * width x height bitmap. Every strip is freed once native sharpening has ended, also on
+     * cancellation or failure.
      */
-    private fun sharpen(
+    internal fun sharpen(
         src: Bitmap, out: Bitmap, window: Resampler.Window, amount: Float, canceled: () -> Boolean,
+        newStrip: (Int, Int) -> Bitmap = { w, h -> Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888, src.hasAlpha()) },
         fill: (Resampler.Window, Bitmap) -> Unit
     ) {
         val made = ArrayList<Bitmap>(4)
         try {
             val strips = rimWindows(src.width, src.height, window, out.width, out.height).map { (win, size) ->
-                Bitmap.createBitmap(size[0], size[1], Bitmap.Config.ARGB_8888, src.hasAlpha()).also { strip ->
+                newStrip(size[0], size[1]).also { strip ->
                     made += strip
                     fill(win, strip)
                 }

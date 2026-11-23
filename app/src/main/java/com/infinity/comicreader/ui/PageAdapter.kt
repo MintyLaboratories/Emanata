@@ -1623,7 +1623,9 @@ class PageAdapter(
             val chapter = strip.chapterOf(key.page)
             // A page of a chapter trimmed from the strip is none of the chapters left.
             if (key.page < chapter.first) return false
-            return replanned(chapter.value.source, key.page - chapter.first, key.target, bitmap.width, bitmap.height)
+            // Judged at the size AI was given it, else at the size cached.
+            val page = aiPages[key]
+            return replanned(chapter.value.source, key.page - chapter.first, key.target, page?.width ?: bitmap.width, page?.height ?: bitmap.height)
         }
         val dropped = processed.filter(::picked)
         // Asked while the processed bitmaps are still cached, as their pages were judged by their size.

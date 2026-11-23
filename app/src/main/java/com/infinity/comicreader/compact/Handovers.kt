@@ -1,5 +1,6 @@
 package com.infinity.comicreader.compact
 
+import com.infinity.comicreader.data.BookCaches
 import com.infinity.comicreader.data.BookId
 import org.json.JSONArray
 import org.json.JSONObject
@@ -14,7 +15,8 @@ import java.io.FileOutputStream
 class Handovers(private val dir: File) {
     /**
      * The data of book [old] at [book] to hand to [new], its rebuilt file at [target]; the
-     * book's file [removed] or not; book page `i` is now page [moves]`[i]` of [pageCount].
+     * book's file [removed] or not; book page `i` is now page [moves]`[i]` of [pageCount];
+     * the pages byte-identical in the new file, whose caches follow them ([same]), none when null.
      */
     class Entry(
         val old: BookId,
@@ -24,6 +26,7 @@ class Handovers(private val dir: File) {
         val removed: Boolean,
         val moves: IntArray,
         val pageCount: Int,
+        val same: BookCaches.SamePages? = null,
         internal val file: File? = null
     )
 
@@ -38,6 +41,15 @@ class Handovers(private val dir: File) {
             .put("removed", entry.removed)
             .put("moves", JSONArray(entry.moves.toList()))
             .put("pageCount", entry.pageCount)
+        entry.same?.let { same ->
+            json.put(
+                "same",
+                JSONObject()
+                    .put("pages", JSONArray(same.pages.toList()))
+                    .put("oldNames", JSONArray(same.oldNames))
+                    .put("newNames", JSONArray(same.newNames))
+            )
+        }
         val name = "${System.nanoTime()}$SUFFIX"
         val temp = File(dir, "$name.tmp")
         FileOutputStream(temp).use { out ->
@@ -46,7 +58,7 @@ class Handovers(private val dir: File) {
         }
         val file = File(dir, name)
         if (!temp.renameTo(file)) throw java.io.IOException("Cannot keep ${file.name}")
-        return Entry(entry.old, entry.new, entry.book, entry.target, entry.removed, entry.moves, entry.pageCount, file)
+        return Entry(entry.old, entry.new, entry.book, entry.target, entry.removed, entry.moves, entry.pageCount, entry.same, file)
     }
 
     fun remove(entry: Entry) {
@@ -63,7 +75,8 @@ class Handovers(private val dir: File) {
                 val moves = o.getJSONArray("moves")
                 Entry(
                     BookId.parse(o.getString("old"))!!, BookId.parse(o.getString("new"))!!, o.getString("book"), o.getString("target"),
-                    o.getBoolean("removed"), IntArray(moves.length()) { moves.getInt(it) }, o.getInt("pageCount"), file
+                    o.getBoolean("removed"), IntArray(moves.length()) { moves.getInt(it) }, o.getInt("pageCount"),
+                    o.optJSONObject("same")?.let(::samePages), file
                 )
             }.getOrNull()
             if (entry == null) file.delete()
@@ -73,5 +86,12 @@ class Handovers(private val dir: File) {
 
     private companion object {
         const val SUFFIX = ".json"
+
+        fun samePages(o: JSONObject): BookCaches.SamePages {
+            val pages = o.getJSONArray("pages")
+            return BookCaches.SamePages(IntArray(pages.length()) { pages.getInt(it) }, strings(o.getJSONArray("oldNames")), strings(o.getJSONArray("newNames")))
+        }
+
+        fun strings(a: JSONArray): List<String> = List(a.length()) { a.getString(it) }
     }
 }

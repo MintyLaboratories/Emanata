@@ -714,7 +714,11 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
     undoes it. A hidden cover page gives way to the first page shown. Kept per
     book, backed up, cleared by Clear library data.
   - **Page info:** its name in the book, pixel size, format (lossless or lossy,
-    progressive JPEG, animated, layered AVIF with its layer count) and file size.
+    progressive JPEG, animated, layered AVIF with its layer count) and file size;
+    for a book AI processes, what AI last did with the page: its reading size
+    (see *Models by reading size*) and whether as it fits or at print size, the
+    models not needed at that size, and why it shows without AI (too slow,
+    results over 32 MP, a model that would not open, and so on).
   - **Show alone / Pair with next** (two pages a screen, or spreads merged): for
     when seams or Shift pair pages wrongly. A page shown alone breaks its run; a
     page paired with the next shares its screen whatever it is, and the pages
@@ -922,15 +926,25 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   the same note when it is red. Processed pages are
   kept on disk (up to 1 GB and a tenth of the free space, cleared by Clear
   cache).
-- **Models by page size** (Settings → AI processing, advanced): one slider
-  with two handles on the size a page is shown at, as a share of its side
-  after the 8 MP reduction. Upscaling models run on pages shown above the
-  upscale handle (100% by default, never below 50%, where an upscale is
-  always resampled away); artifact removal runs above the cleanup handle
-  (50% by default, down to Always). The handles may cross; a sentence under
-  the slider says what they do. Descreen, when chosen, runs at every size.
-  With Keep it simple on, sizes set away from the defaults show in the AI
-  processing switch's summary.
+- **Models by reading size** (Settings → AI processing, advanced): one slider
+  with two handles on a page's reading size, as a share of its pixel size
+  (its side, after the 8 MP reduction). The reading size is the size a page
+  shows at as it fits, unless reaching its printed size takes more than a
+  1.15x zoom: then it is that printed size, as a phone is zoomed and a large
+  tablet rarely is. The printed size comes from the screen's physical pixels
+  per inch (never from DPI stored in image files) and the book's class,
+  decided from its direction and median page shape (covers, spreads and wide
+  pages left out): manga (read right to left) at B6, 12.8 cm wide; web (read
+  top to bottom, or a median aspect outside 0.60-0.78) at its pixels / 96
+  inches; Franco-Belgian (median aspect 0.73-0.755) at 21.5 cm; US comics
+  (the rest) at 16.8 cm. A spread prints at the height of the book's pages.
+  Upscaling models run on pages read above the upscale handle (100% by
+  default, never below 50%, where an upscale is always resampled away);
+  artifact removal runs above the cleanup handle (50% by default, down to
+  Always). The handles may cross; a sentence under the slider says what they
+  do. Descreen, when chosen, runs at every size. With Keep it simple on,
+  sizes set away from the defaults show in the AI processing switch's
+  summary.
 - **AI indicator** (Settings → AI processing, advanced; off by default): a
   small teal dot outlined in magenta in the reader's bottom right corner
   while models work on a page of the open book, read-ahead included. It
@@ -1239,10 +1253,14 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   (up to 8 MP), run through the models its display size calls for, in turn
   (`AiPages.steps`, `AiPages.chain`), and resampled to exactly the
   plain page's size and crop, so it swaps in without a jump; it replaces the
-  plain page in the page cache. The display size is the shown side over the
-  side of the model's input (after the 8 MP reduction and any model before
-  it), decided for each render at its size: an upscaler runs above the upscale
-  threshold (100 % by default, never below 50 %), an artifact-removal model
+  plain page in the page cache. The display size is the reading size's side
+  (`ReadSize`: the shown size, or the printed size of the book's `PageClass`
+  past a 1.15x zoom) over the side of the model's input (after the 8 MP
+  reduction and any model before it), decided for each render at its size;
+  the reader tells each open book's class (`BookShape`) as its direction and
+  page sizes become known, and shows its pages anew when it changes. An
+  upscaler runs above the upscale threshold (100 % by default, never below
+  50 %), an artifact-removal model
   above the cleanup threshold (50 % by default, or always), and a descreen
   model at every size (`AiThresholds`). On a page whose source is gray (every
   pixel's red, green and blue within a code), each model's output is collapsed
@@ -1275,7 +1293,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   where libjxl is missing), keyed by Book ID, page, size, crop, the chain with
   its models' checksums and which of its models ran (decided from the page's
   size before its decode, so thresholds that run the same models share a
-  page), trimmed least recently read first to 1 GB and a tenth of the free
+  page; where the size is not known before, the handles, book class and ppi
+  instead), trimmed least recently read first to 1 GB and a tenth of the free
   space; they show even while AI is paused. When the thresholds move, the
   reader shows its pages again through the models their sizes call for.
 - AI models are downloaded on demand, never bundled, all fetched unchanged

@@ -94,7 +94,7 @@ class RarReader private constructor(
             val head = readAt(0, RarMain.HEAD_BYTES)
             val main = RarMain.of(head)
             solid = main?.solid
-            randomAccess = solid != true
+            randomAccess = solid == false
             prefix = main?.takeIf { !it.solid && it.end <= MAX_PREFIX_BYTES }?.let { m ->
                 if (m.end <= head.size) head.copyOf(m.end.toInt()) else readAt(0, m.end.toInt()).takeIf { it.size.toLong() == m.end }
             }

@@ -19,6 +19,7 @@ import java.nio.file.StandardOpenOption
 import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicReference
+import java.util.zip.CRC32
 import kotlin.random.Random
 
 /** The RAR reader over libarchive's calls, as [StoredRarEngine] answers them on the JVM. */
@@ -168,6 +169,21 @@ class RarReaderTest {
         RarReader(file(Fixtures.rar4Bytes(*big, solid = true))).use { r ->
             assertEquals(true, r.solid)
             for (i in listOf(0, 2, 5, 1)) assertArrayEquals("entry $i", big[i].second, r.bytes(i))
+        }
+    }
+
+    @Test
+    fun anArchiveWhoseMainHeaderIsNotReadIsReadForward() {
+        // An empty RAR 4 block of another type before the main header: the solid flag is unknown.
+        val block = byteArrayOf(0x7A, 0, 0, 7, 0)
+        val crc = CRC32().apply { update(block) }.value.toInt()
+        val plain = Fixtures.rar4Bytes(*big)
+        val bytes = plain.copyOf(7) + byteArrayOf(crc.toByte(), (crc ushr 8).toByte()) + block + plain.copyOfRange(7, plain.size)
+        RarReader(file(bytes)).use { r ->
+            assertEquals(null, r.solid)
+            assertFalse(r.randomAccess)
+            for (i in listOf(4, 1, 5)) assertArrayEquals("entry $i", big[i].second, r.bytes(i))
+            assertEquals(0, r.spliced)
         }
     }
 

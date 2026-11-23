@@ -970,13 +970,18 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 | jxl | `ImageSource` | libjxl as jxl-coder ships it, through our JNI binding (`jxl_page.c`); jxl-coder itself for images without an sRGB rendering |
 | tif/tiff | `ImageSource` | built-in `Tiff` (strips/tiles; none, PackBits, LZW, Deflate; JPEG via the platform) |
 | zip / cbz | `ArchiveSource` + `ZipReader` | `java.util.zip` |
-| rar / cbr | `ArchiveSource` + `RarReader` | libarchive 3.8, built from source (RAR 4 and 5; not solid RAR 4, not encrypted) |
+| rar / cbr | `ArchiveSource` + `RarReader` | libarchive 3.8, built from source (RAR 4 and 5; see RAR limits below) |
 | 7z / cb7 | `ArchiveSource` + `SevenZipReader` | Apache Commons Compress |
 | tar / cbt | `ArchiveSource` + `TarReader` | Apache Commons Compress |
 | pdf | `PdfSource` | platform `PdfRenderer` |
 
 - The backend is picked from the file's magic bytes (`ArchiveKind`), the
   extension only when they match nothing.
+- RAR limits: these do not open ("Cannot open this file"):
+  - solid RAR 4: libarchive 3.8.11 cannot read it past its first entry;
+  - RAR 5 with a dictionary over 64 MiB (libarchive's limit; WinRAR's default
+    is 32 MB), told from the headers for a solid archive;
+  - encrypted RAR (entries or headers).
 - Every image, in an archive or not, decodes through `Decoders`, which picks the
   decoder from the magic bytes (`ImageKind`). PNG, JPEG XL and TIFF sizes come
   from the header alone (`ImageHeaders`, `Tiff`).

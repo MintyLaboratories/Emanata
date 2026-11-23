@@ -16,6 +16,7 @@ import android.os.Build
 import android.os.Debug
 import android.os.IBinder
 import android.os.PowerManager
+import android.os.Process
 import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -92,8 +93,9 @@ import kotlin.math.max
  *   whole of a `small` page on the CPU in fp32 (seams, plus fp16 rounding on the GPU), and the
  *   GPU's against the CPU's.
  * - time: per engine and tile size, `reps` pages of `size` after one warm-up: time per tile
- *   and per page, peak resident and graphics memory, thermal status and headroom. Given
- *   `cool`, first waits for the thermal headroom to fall below it, up to [COOL_TIME_MAX_S].
+ *   and per page, peak resident and graphics memory, thermal status and headroom, and the
+ *   clocks sampled every 100 ms through the timed pages (`sysRun`: [DeviceClocks.summary]).
+ *   Given `cool`, first waits for the thermal headroom to fall below it, up to [COOL_TIME_MAX_S].
  * - limits: a page whose time runs out falls back to exactly the Lanczos3 page; a page
  *   canceled after three tiles stops within one; a sample of each output saved as PNG.
  * - sustain (not part of all): per engine, `rounds` runs, each after a `cooldown` s pause,
@@ -157,7 +159,10 @@ import kotlin.math.max
  *   should have them. With `save`, both as PNG.
  *
  * Results go to the log under "AiCheck", one JSON object per line, ending with "done", and
- * to `files/bench/ai.jsonl` in the app's external files (samples beside it).
+ * to `files/bench/ai.jsonl` in the app's external files (samples beside it). Every line
+ * carries `sys` ([DeviceClocks.Snapshot]) as it is written: the cpuset and allowed CPUs of
+ * the thread running the models (ncnn's worker; the check's own thread for shader chains),
+ * the GPU's clock and busy figure, and each CPU cluster's clock; null where unreadable.
  */
 class AiCheckService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
@@ -183,6 +188,8 @@ class AiCheckService : Service() {
         val timeCool = if (intent?.hasExtra("cool") == true) cool else null
         val tune = intent?.getBooleanExtra("tune", false) ?: false
         thread(name = "ai-check") { Calibrator.hold {
+            checkTid = Process.myTid()
+            shaderRun = what == "shaders" || what == "shaderref"
             try {
                 out.parentFile?.mkdirs()
                 if (what == "download") {
@@ -338,12 +345,14 @@ class AiCheckService : Service() {
             var peakRss = 0L
             var peakGraphics = 0L
             var tiles = 0
+            val clocks = ArrayList<DeviceClocks.Snapshot>()
             for (r in 0 until reps) {
                 val running = AtomicBoolean(true)
                 val sampler = thread(name = "ai-memory") {
                     var n = 0
                     while (running.get()) {
                         peakRss = max(peakRss, rssKb())
+                        if (n % 5 == 0) clocks += clocksNow()
                         if (n++ % 10 == 0) peakGraphics = max(peakGraphics, graphicsKb())
                         Thread.sleep(20)
                     }
@@ -362,7 +371,7 @@ class AiCheckService : Service() {
                     .put("warmUpMs", warmMs).put("pageMs", Stats.summary(pages)).put("tileMs", Stats.summary(tileMs))
                     .put("rssMb", JSONObject().put("before", rssBefore / 1024).put("peak", peakRss / 1024).put("after", rssKb() / 1024))
                     .put("graphicsPeakMb", peakGraphics / 1024).put("graphicsAfterMb", graphicsKb() / 1024)
-                    .put("before", before).put("after", state())
+                    .put("sysRun", DeviceClocks.summary(clocks)).put("before", before).put("after", state())
             )
         }
         page.recycle()
@@ -936,7 +945,23 @@ class AiCheckService : Service() {
             .build()
     }
 
+    /** The check's own thread. */
+    @Volatile private var checkTid = 0
+
+    /** Whether the models run on the check's own thread (shader chains run on their caller), not ncnn's worker. */
+    @Volatile private var shaderRun = false
+
+    @Volatile private var ncnnTid: Int? = null
+
+    /** The thread running the models: ncnn's worker, else (shader chains, or before the worker starts) the check's own. */
+    private fun runnerTid(): Int =
+        if (shaderRun) checkTid else DeviceClocks.threadNamed(ROOT, NCNN_THREAD, ncnnTid)?.also { ncnnTid = it } ?: checkTid
+
+    private fun clocksNow(): DeviceClocks.Snapshot = DeviceClocks.read(ROOT, runnerTid())
+
+    /** [o], with the running thread's cpuset and the clocks now (`sys`), to the log and the results file. */
     private fun log(o: JSONObject) {
+        o.put("sys", clocksNow().toJson())
         Log.i(TAG, o.toString())
         runCatching { out.appendText(o.toString() + "\n") }
     }
@@ -955,5 +980,11 @@ class AiCheckService : Service() {
 
         /** Limits no timed page reaches. */
         val UNLIMITED = PageLimits(timeoutMs = 3_600_000L)
+
+        /** Where procfs and sysfs are. */
+        val ROOT = File("/")
+
+        /** The name of [LibNcnn]'s worker thread, which runs every ncnn call. */
+        const val NCNN_THREAD = "ai-ncnn"
     }
 }

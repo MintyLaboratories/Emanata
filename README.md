@@ -1483,7 +1483,9 @@ supplies power.
 on synthetic pages: how it opens (measuring, checks, tile size, precision), seams
 against one tile covering a whole page on the CPU in fp32, GPU against CPU, time per
 tile and page with memory and thermal state, the timeout and cancel paths, and pages
-back to back until the heat gate stops them. See its KDoc for the extras. On a
+back to back until the heat gate stops them. See its KDoc for the extras. Each
+line it writes carries the cpuset of the thread running the model and the GPU and
+CPU clocks where the system shows them. On a
 Snapdragon 8 Gen 1 (Adreno 730, Android 16, debug build in the foreground, plugged
 in but not charging), a 2x compact upscaler (OpenComic AI upscale 2x compact v2)
 took a synthetic 1000x1500 page to 2000x3000 (medians of 5 pages):

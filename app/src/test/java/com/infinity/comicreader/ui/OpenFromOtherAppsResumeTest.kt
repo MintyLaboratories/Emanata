@@ -111,7 +111,7 @@ class OpenFromOtherAppsResumeTest {
     }
 
     @Test
-    fun aBookOpenedByContentUriResumes() {
+    fun aBookOpenedByContentUriResumesAndStaysWhereItIs() {
         savePosition(5)
         val intent = handIn(contentUri("copy.cbz"))
         val copy = File(intent.getStringExtra(ViewerActivity.EXTRA_PATH)!!)
@@ -119,11 +119,13 @@ class OpenFromOtherAppsResumeTest {
         val reader = read(intent)
         assertEquals(5, reader.page())
 
-        // Reading the copy moves the book's position.
+        // Reading the copy moves the book's position, never where the library keeps it.
         reader.get().findViewById<ViewPager2>(R.id.viewer_pager).setCurrentItem(6, false)
         reader.pause().stop()
         val id = bookId(book)
         assertEquals(6, library.pageFor(id))
+        assertEquals(book.absolutePath, library.pathOf(id))
+        assertEquals(book.absolutePath, library.historyFor(id)!!.path)
         reader.destroy()
     }
 

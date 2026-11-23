@@ -304,8 +304,8 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
     /** Takes the open book's likeness and offers a book it may be a copy of ([noteLikeness]). */
     private var likenessJob: Job? = null
 
-    /** The open book as the library keeps it; null while its ID is unknown. */
-    private fun book(): BookRef? = bookId?.let { id -> file?.let { BookRef(id, it.absolutePath) } }
+    /** The open book as the library keeps it ([keptPath]); null while its ID is unknown. */
+    private fun book(): BookRef? = bookId?.let { id -> file?.let { BookRef(id, keptPath(id, it)) } }
 
     /** [book], or null, saying nothing can be kept for it, while its ID is unknown. */
     private fun keptBook(): BookRef? = book() ?: run {
@@ -1636,7 +1636,7 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
             } ?: return@launch
             if (source !== src || file != book || bookId != id) return@launch
             val (store, match, mine) = found
-            askCarryOver(store, match, BookRef(id, book.absolutePath), mine.first, mine.second, mine.third)
+            askCarryOver(store, match, BookRef(id, keptPath(id, book)), mine.first, mine.second, mine.third)
         }
     }
 
@@ -3209,10 +3209,10 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
 
     private fun saveHistory() {
         val f = file ?: return
-        val id = bookId ?: return
+        val book = book() ?: return
         val count = source?.pageCount ?: return
         library.addHistory(
-            HistoryItem(f.absolutePath, f.name, currentIndex, count, System.currentTimeMillis(), id)
+            HistoryItem(book.path, f.name, currentIndex, count, System.currentTimeMillis(), book.id)
         )
     }
 
@@ -3703,8 +3703,18 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
     }
 
     /** The open comic, unless it is a copy in the cache of a document another app handed over. */
-    private fun favoriteFile(): File? =
-        file?.takeUnless { it.absolutePath.startsWith(cacheDir.absolutePath + File.separator) }
+    private fun favoriteFile(): File? = file?.takeUnless { handedIn(it) }
+
+    /** True for [f] in the cache: a copy of a document another app handed over. */
+    private fun handedIn(f: File): Boolean = f.absolutePath.startsWith(cacheDir.absolutePath + File.separator)
+
+    /**
+     * The path the library keeps book [id], open as [f], at: a copy another app handed over
+     * keeps the path its book was last seen at, so the library never points at the copy;
+     * a book seen nowhere else is kept at the copy.
+     */
+    private fun keptPath(id: BookId, f: File): String =
+        if (handedIn(f)) library.pathOf(id) ?: f.absolutePath else f.absolutePath
 
     /** Reads whether the open comic and its folder are favorites. */
     private fun refreshFavorites() {

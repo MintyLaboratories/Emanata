@@ -570,8 +570,12 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   read badge. **Continue reading** jumps to the next unfinished book in a folder,
   and a whole folder can be marked read or unread.
 - **Search subfolders** (menu) looks below the current folder, not just in it.
-- Opening a book resumes at the last page unless it was already finished.
-- Files opened from other apps (`content://`) are copied to the cache and opened.
+- Opening a book resumes at the last page unless it was already finished, however
+  it is opened: from the library, or from another app by path or `content://`.
+- Files opened from other apps (`content://`) are copied to the cache and opened;
+  the copy has its book's Book ID, so it shares the book's position, and the
+  library keeps the book where it was last seen. A book seen nowhere else is
+  kept at the copy, which goes when the next file comes in.
 - Housekeeping: **duplicate file finder** (bit-identical copies, SHA-256
   verified, shown as one cover with every place a copy is; spread two fingers
   on it to peek; below them, **similar books** in other files, such as a CBZ

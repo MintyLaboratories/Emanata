@@ -154,10 +154,7 @@ object Calibrator : CalibrationControl {
 
     private val listeners = CopyOnWriteArraySet<() -> Unit>()
 
-    /**
-     * Applies the kept tuning, or else the [Tuning.defaults], and tracks which of the app's
-     * screens are in front. What is kept is read off the main thread; until then nothing is due.
-     */
+    /** Tracks which of [app]'s screens are in front; [load] then reads what is kept. */
     fun start(app: Application) {
         this.app = app
         app.registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
@@ -178,16 +175,22 @@ object Calibrator : CalibrationControl {
             override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
             override fun onActivityDestroyed(activity: Activity) {}
         })
-        thread(name = "calibration-load", isDaemon = true) {
-            kept = runCatching { JSONObject(file(app).readText()) }.getOrNull()
-            tuning = (Tuning.of(kept?.optJSONObject("tuning")) ?: Tuning.defaults(CpuCores.device, Runtime.getRuntime().availableProcessors()))
-                .also { it.apply() }
-            skippedFor = runCatching { skipFile(app).readText().trim() }.getOrNull()
-            pageFingerprint = Calibration.pageFingerprint(appVersion(app), Build.FINGERPRINT)
-            fingerprint = Calibration.fingerprint(Calibration.VERSION, Build.FINGERPRINT)
-            loaded = true
-            changed()
-        }
+    }
+
+    /**
+     * Reads what is kept for the app given to [start] and applies its tuning, or else the
+     * [Tuning.defaults]. Blocking: the app runs it off the main thread at start; until then
+     * nothing is due.
+     */
+    fun load() {
+        kept = runCatching { JSONObject(file(app).readText()) }.getOrNull()
+        tuning = (Tuning.of(kept?.optJSONObject("tuning")) ?: Tuning.defaults(CpuCores.device, Runtime.getRuntime().availableProcessors()))
+            .also { it.apply() }
+        skippedFor = runCatching { skipFile(app).readText().trim() }.getOrNull()
+        pageFingerprint = Calibration.pageFingerprint(appVersion(app), Build.FINGERPRINT)
+        fingerprint = Calibration.fingerprint(Calibration.VERSION, Build.FINGERPRINT)
+        loaded = true
+        changed()
     }
 
     /** True when this system build and calibration version have no calibration yet, or only one made under battery saver; false until what is kept is read. */

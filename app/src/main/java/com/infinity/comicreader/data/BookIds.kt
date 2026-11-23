@@ -58,6 +58,12 @@ object BookIds {
         if (index == null) index = BookIndex(context.applicationContext)
     }
 
+    /** Lets go of the index and closes its database; the next [init] opens it again. For an emulated process end ([android.app.Application.onTerminate]). */
+    fun close() {
+        index = null
+        BookIndex.reset()
+    }
+
     /** Forgets the context, the hasher and what was kept by ID this session; tests start each case anew. */
     @VisibleForTesting
     fun reset() {

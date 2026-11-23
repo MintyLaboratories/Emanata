@@ -301,10 +301,8 @@ object ModelImports {
         store.prune()
     }
 
-    /** [tidy], queued with the imports' work: it never deletes the files of an import under way. */
-    fun tidyAtStart(store: ModelStore) {
-        scope.launch { runCatching { tidy(store) } }
-    }
+    /** [tidy], queued with the imports' work: it never deletes the files of an import under way. Returns its job. */
+    fun tidyAtStart(store: ModelStore): Job = scope.launch { runCatching { tidy(store) } }
 
     /** Waits for the work queued so far: [tidyAtStart], imports, saves and deletes. Blocking; for tests. */
     internal fun settle() = runBlocking(serial) {}

@@ -32,6 +32,7 @@ import com.infinity.comicreader.ui.FileJobs
 import com.infinity.comicreader.util.FileUtils
 import com.infinity.comicreader.util.Locales
 import com.infinity.comicreader.util.Timing
+import kotlinx.coroutines.runBlocking
 import java.io.File
 import kotlin.concurrent.thread
 
@@ -53,17 +54,38 @@ class App : Application() {
         FileWork.slowdown = ConvertRates::slowdown
         RemoteCache.limitBytes = prefs.networkCacheBytes
         Calibrator.start(this)
+        background("calibration-load") { Calibrator.load() }
         // Before any chain is read: a pick of an imported model needs it known.
         runCatching { UserModels.load(ModelStore.of(this)) }
         // Off the main thread: lookups by ID never wait on the database.
-        thread(name = "book-index", isDaemon = true) {
+        background("book-index") {
             runCatching { BookIds.load() }
             // A rebuild the app stopped midway hands its book's data over now.
             runCatching { FileJobs(this, Library(this), prefs).recover() }
         }
         // Off the main thread: making the cover detectors reads settings and storage, once, before list binds ask them.
-        thread(name = "cover-detector", isDaemon = true) { runCatching { Thumbs.detector(this).id } }
+        background("cover-detector") { runCatching { Thumbs.detector(this).id } }
         cleanCaches()
+    }
+
+    /** Waits for each piece of work [onCreate] started in the background to end. */
+    private val startWork = ArrayList<() -> Unit>()
+
+    /** Runs [block] on a daemon thread named [name], as start work. */
+    private fun background(name: String, block: () -> Unit) {
+        val t = thread(name = name, isDaemon = true, block = block)
+        startWork += t::join
+    }
+
+    /**
+     * Called only where the process is emulated, as in tests, never on a device: waits for
+     * the start work, then closes the Book ID index, so none of this app's work or open
+     * database outlives it into the next.
+     */
+    override fun onTerminate() {
+        startWork.forEach { it() }
+        BookIds.close()
+        super.onTerminate()
     }
 
     /**
@@ -83,8 +105,8 @@ class App : Application() {
      * the cover, page-preview, page-size, seam, nested-archive and network caches bounded.
      */
     private fun cleanCaches() {
-        runCatching { ModelImports.tidyAtStart(ModelStore.of(this)) }
-        thread(name = "cache-cleanup", isDaemon = true) {
+        runCatching { ModelImports.tidyAtStart(ModelStore.of(this)) }.onSuccess { job -> startWork += { runBlocking { job.join() } } }
+        background("cache-cleanup") {
             runCatching {
                 // Only files that are clearly stale: a document another app just handed us
                 // may be copied into the cache while this thread runs.

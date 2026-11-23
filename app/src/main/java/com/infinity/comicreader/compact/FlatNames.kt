@@ -1,5 +1,6 @@
 package com.infinity.comicreader.compact
 
+import com.infinity.comicreader.reader.ComicInfo
 import com.infinity.comicreader.util.NaturalOrder
 import java.util.Locale
 
@@ -35,22 +36,35 @@ object FlatNames {
      * folders joined by `_`), a name still taken getting ` 2`, ` 3`... after its stem; and
      * should even that change the order, each page also takes its place in it in front
      * (`07_sub_001.jxl`), other files keeping their names (`ComicInfo.xml`) unless a page
-     * took one.
+     * took one. The ComicInfo.xml ([comicInfoOf]) always keeps its bare name, so the reader
+     * still finds it; any other ComicInfo.xml is prefixed like any file.
      */
     fun of(paths: List<String>, names: List<String>, pages: List<Int> = Compactor.pagesOf(paths.map { it to 1L })): List<String> {
         require(paths.size == names.size)
         if (names.map { it.lowercase(Locale.ROOT) }.toSet().size == names.size && keepsOrder(pages, paths, names)) return names
+        val info = comicInfoOf(paths, pages)
+        val bare = setOfNotNull(info)
         val prefixed = paths.indices.map { i ->
             val folders = parts(paths[i]).dropLast(1)
-            if (folders.isEmpty()) names[i] else folders.joinToString("_") + "_" + names[i]
+            if (folders.isEmpty() || i == info) names[i] else folders.joinToString("_") + "_" + names[i]
         }
-        val unique = distinct(prefixed, emptySet())
+        val unique = distinct(prefixed, bare)
         if (keepsOrder(pages, paths, unique)) return unique
         val rank = IntArray(paths.size)
         pages.sortedWith(compareBy(NaturalOrder) { paths[it] }).forEachIndexed { place, i -> rank[i] = place + 1 }
         val width = pages.size.toString().length
         val numbered = unique.indices.map { i -> if (rank[i] == 0) unique[i] else rank[i].toString().padStart(width, '0') + "_" + unique[i] }
-        return distinct(numbered, pages.toSet())
+        return distinct(numbered, pages.toSet() + bare)
+    }
+
+    /**
+     * The place in [paths] of the ComicInfo.xml (any case) that keeps its bare name: the
+     * shallowest, then the first in natural order; never one of [pages]. Null when none.
+     */
+    fun comicInfoOf(paths: List<String>, pages: List<Int>): Int? {
+        val pageSet = pages.toSet()
+        return paths.indices.filter { it !in pageSet && ComicInfo.isComicInfo(paths[it]) }
+            .minWithOrNull(compareBy<Int> { parts(paths[it]).size }.thenBy(NaturalOrder) { paths[it] })
     }
 
     /** True when [pages] (places in [paths]) read in the same order named [flat]. */

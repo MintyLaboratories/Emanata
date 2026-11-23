@@ -80,6 +80,57 @@ class FlatNamesTest {
     }
 
     @Test
+    fun aComicInfoInASubfolderKeepsItsBareNameWhenFoldersArePrefixed() {
+        assertEquals(
+            listOf("a_01.jpg", "b_01.jpg", "ComicInfo.xml", "b_notes.txt"),
+            FlatNames.of(listOf("a/01.jpg", "b/01.jpg", "b/ComicInfo.xml", "b/notes.txt"), listOf("01.jpg", "01.jpg", "ComicInfo.xml", "notes.txt"))
+        )
+        // Also when the pages are numbered.
+        assertEquals(
+            listOf("1_A_2.jpg", "2_A B_1.jpg", "ComicInfo.xml"),
+            FlatNames.of(listOf("A/2.jpg", "A B/1.jpg", "A B/ComicInfo.xml"), listOf("2.jpg", "1.jpg", "ComicInfo.xml"))
+        )
+    }
+
+    @Test
+    fun theShallowestComicInfoKeepsTheBareNameOthersArePrefixed() {
+        assertEquals(
+            listOf("sub_01.jpg", "sub_ComicInfo.xml", "ComicInfo.xml"),
+            FlatNames.of(listOf("sub/01.jpg", "sub/ComicInfo.xml", "ComicInfo.xml"), listOf("01.jpg", "ComicInfo.xml", "ComicInfo.xml"))
+        )
+        // Two at one depth: the first in natural order.
+        assertEquals(
+            listOf("b_ComicInfo.xml", "ComicInfo.xml", "a_01.jpg"),
+            FlatNames.of(listOf("b/ComicInfo.xml", "a/ComicInfo.xml", "a/01.jpg"), listOf("ComicInfo.xml", "ComicInfo.xml", "01.jpg"))
+        )
+    }
+
+    @Test
+    fun aLowercaseComicInfoKeepsItsOwnBareName() {
+        assertEquals(
+            listOf("a_01.jpg", "b_01.jpg", "comicinfo.xml"),
+            FlatNames.of(listOf("a/01.jpg", "b/01.jpg", "b/comicinfo.xml"), listOf("01.jpg", "01.jpg", "comicinfo.xml"))
+        )
+        // Beside a root one in another case it gives way.
+        assertEquals(listOf("ComicInfo.xml", "sub_COMICINFO.XML"), FlatNames.of(listOf("ComicInfo.xml", "sub/COMICINFO.XML"), listOf("ComicInfo.xml", "COMICINFO.XML")))
+    }
+
+    @Test
+    fun aPageNeverTakesTheComicInfoName() {
+        // A page named like it is prefixed as any page.
+        assertEquals(
+            listOf("a_ComicInfo.jxl", "b_ComicInfo.jxl", "ComicInfo.xml"),
+            FlatNames.of(listOf("a/ComicInfo.png", "b/ComicInfo.png", "b/ComicInfo.xml"), listOf("ComicInfo.jxl", "ComicInfo.jxl", "ComicInfo.xml"))
+        )
+        // One listed as a page under that very name is never the ComicInfo.xml kept.
+        assertEquals(
+            listOf("a_ComicInfo.xml", "ComicInfo.xml"),
+            FlatNames.of(listOf("a/ComicInfo.xml", "b/ComicInfo.xml"), listOf("ComicInfo.xml", "ComicInfo.xml"), pages = listOf(0))
+        )
+        assertEquals(1, FlatNames.comicInfoOf(listOf("ComicInfo.xml", "b/ComicInfo.xml"), pages = listOf(0)))
+    }
+
+    @Test
     fun theNewFileIsNamedAfterTheBookUnlessTaken() {
         assertEquals("Book.cbz", FlatNames.output("Book.cbr", "compacted") { false })
         assertEquals("Book (compacted).cbz", FlatNames.output("Book.cbz", "compacted") { it == "Book.cbz" })

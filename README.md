@@ -294,8 +294,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   - names stay but for the extension; when two match, or flat names would
     change the reading order, those in folders take the folder's name in front
     (`sub_001.jxl`), and pages their place in the order too should that not
-    keep it.
-    ComicInfo.xml and other files are copied as they are; OS litter
+    keep it. The ComicInfo.xml keeps its bare name (the one nearest the top
+    when there are several), so readers still find it.
+    It and other files are copied as they are; OS litter
     (`__MACOSX/`, `._*`, `Thumbs.db`, `desktop.ini`, `.DS_Store`) and whatever is
     in a dot-folder are left out. A book holding other archives is
     left alone.

@@ -367,6 +367,7 @@ struct rar
    */
   int64_t lzss_base;
   char end_marker_read;   /* the current entry's end-of-file code was read */
+  char decoder_started;   /* a compressed entry has started */
   char solid_ready;       /* the decoder holds every entry before this one */
   char solid_unreadable;  /* a solid entry whose predecessors were not decoded */
   char solid_skip_consume; /* option solid-skip=consume: skip without unpacking */
@@ -1887,9 +1888,13 @@ read_header(struct archive_read *a, struct archive_entry *entry,
   if (rar->compression_method == COMPRESS_METHOD_STORE ||
       rar->packed_size == 0)
   {
-    /* Stored and empty entries leave the decoder state as it is. */
+    /* Stored and empty entries leave the decoder state as it is. Before
+     * the first compressed entry, that is the initial state, which a
+     * solid entry after them starts from. */
+    if (!rar->decoder_started)
+      rar->solid_ready = 1;
   }
-  else if (rar->file_flags & FHD_SOLID)
+  else if ((rar->file_flags & FHD_SOLID) && rar->decoder_started)
   {
     /* Continue from the state the entry before this one left. */
     if (!(rar->main_flags & MHD_SOLID) || !rar->solid_ready)
@@ -1900,6 +1905,13 @@ read_header(struct archive_read *a, struct archive_entry *entry,
   }
   else
   {
+    /* A new stream. A solid entry starts one only after stored or empty
+     * entries: as an archive's first entry, it continues a previous
+     * volume. */
+    if ((rar->file_flags & FHD_SOLID) &&
+        (!(rar->main_flags & MHD_SOLID) || !rar->solid_ready))
+      rar->solid_unreadable = 1;
+    rar->decoder_started = 1;
     rar->lzss.position = 0;
     rar->lzss_base = 0;
     rar->dictionary_size = 0;

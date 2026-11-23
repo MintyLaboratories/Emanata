@@ -1402,7 +1402,7 @@ class PageAdapter(
         seg.loads.incrementAndGet()
         val entry = Pending(key, CompletableDeferred())
         val standIn = entry.standIn
-        val queued = Traces.queued("page $pageIndex queued")
+        val queued = Traces.queued { "page $pageIndex queued" }
         // Decoders are taken in the order pages are asked for; each decode then runs on the IO pool.
         val deferred = scope.async(inOrder) {
             gate.withPermit {

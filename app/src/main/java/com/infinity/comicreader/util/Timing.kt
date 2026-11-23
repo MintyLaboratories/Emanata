@@ -22,7 +22,7 @@ object Timing {
 
     /**
      * Runs [block], logging [what] with how long it took, and whether it failed; traced as
-     * the section [what] ([Traces]) in every build. [block] must not suspend.
+     * the section [what] ([Traces]) in debug and bench builds. [block] must not suspend.
      */
     inline fun <T> span(what: String, block: () -> T): T = Traces.section(what) { logged(what, block) }
 

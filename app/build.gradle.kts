@@ -32,7 +32,11 @@ android {
         vectorDrawables { useSupportLibrary = true }
         // 64-bit ARM devices and x86_64 emulators; 32-bit libraries only add size.
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
+        // Trace sections (util/Traces.kt) for profiling; off in release builds, where R8 then drops them.
+        buildConfigField("boolean", "TRACES", "true")
     }
+
+    buildFeatures { buildConfig = true }
 
     signingConfigs {
         if (keystorePropsFile.exists()) {
@@ -53,6 +57,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            buildConfigField("boolean", "TRACES", "false")
             if (keystorePropsFile.exists()) {
                 signingConfig = signingConfigs.getByName("release")
             }
@@ -70,6 +75,7 @@ android {
             versionNameSuffix = "-bench"
             signingConfig = signingConfigs.getByName("debug")
             matchingFallbacks += "release"
+            buildConfigField("boolean", "TRACES", "true")
         }
     }
 

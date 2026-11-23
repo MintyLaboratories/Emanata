@@ -1,23 +1,22 @@
 package com.infinity.comicreader.ui
 
-import android.os.Build
 import android.os.SystemClock
-import android.os.Trace
 import android.util.Log
-import java.util.concurrent.atomic.AtomicInteger
+import com.infinity.comicreader.util.Traces
 
 /**
  * Times one resize of the pages (a new fit, page gap or item size) for profiling: until
  * its first frame is drawn, and until every page it left standing in has its exact
  * bitmap. Logged under "ResizeTiming" and traced as the async sections "Resize shown" and
- * "Resize exact" (Android 10+), for logcat or Perfetto. A new resize ends the last one.
+ * "Resize exact" ([Traces], Android 10+), for logcat or Perfetto. A new resize ends the last one.
  *
  * Main thread only.
  */
 internal class ResizeTiming(private val now: () -> Long = SystemClock::uptimeMillis) {
 
     private var start = -1L
-    private var cookie = 0
+    private var shownSection = Traces.none
+    private var exactSection = Traces.none
     private var shown = false
     private val waiting = HashSet<Any>()
 
@@ -26,17 +25,13 @@ internal class ResizeTiming(private val now: () -> Long = SystemClock::uptimeMil
 
     /** A resize starts now. */
     fun begin() {
-        if (running) {
-            if (!shown) endSection(SHOWN)
-            endSection(EXACT)
-        }
-        // Unique across adapters, whose resizes may overlap as one replaces another.
-        cookie = cookies.incrementAndGet()
+        shownSection.end()
+        exactSection.end()
         start = now()
         shown = false
         waiting.clear()
-        beginSection(SHOWN)
-        beginSection(EXACT)
+        shownSection = Traces.queued { SHOWN }
+        exactSection = Traces.queued { EXACT }
     }
 
     /** [slot] shows a stand-in until its exact bitmap arrives ([done]). */
@@ -48,7 +43,7 @@ internal class ResizeTiming(private val now: () -> Long = SystemClock::uptimeMil
     fun drawn(): Long? {
         if (!running || shown) return null
         shown = true
-        endSection(SHOWN)
+        shownSection.end()
         val ms = now() - start
         Log.d(TAG, "Resize shown in $ms ms, ${waiting.size} page(s) standing in")
         finishIfDone()
@@ -66,27 +61,16 @@ internal class ResizeTiming(private val now: () -> Long = SystemClock::uptimeMil
 
     private fun finishIfDone(): Long? {
         if (!shown || waiting.isNotEmpty()) return null
-        endSection(EXACT)
+        exactSection.end()
         val ms = now() - start
         Log.d(TAG, "Resize exact in $ms ms")
         start = -1L
         return ms
     }
 
-    private fun beginSection(name: String) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) Trace.beginAsyncSection(name, cookie)
-    }
-
-    private fun endSection(name: String) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) Trace.endAsyncSection(name, cookie)
-    }
-
     private companion object {
         const val TAG = "ResizeTiming"
         const val SHOWN = "Resize shown"
         const val EXACT = "Resize exact"
-
-        /** The last trace cookie taken by any resize. */
-        val cookies = AtomicInteger()
     }
 }

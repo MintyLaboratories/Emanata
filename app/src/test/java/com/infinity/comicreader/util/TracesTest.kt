@@ -21,7 +21,7 @@ class TracesTest {
 
     @Test
     fun anAsyncSectionEndsQuietly() {
-        val queued = Traces.queued("waiting")
+        val queued = Traces.queued { error("never built") }
         queued.end()
         queued.end()
     }

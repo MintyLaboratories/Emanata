@@ -13,14 +13,17 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(libarchive)
 
-# The read core and the two RAR readers; PPMd (RAR 4) and BLAKE2sp (RAR 5) are theirs.
+# The read core and the two RAR readers; PPMd (RAR 4) and BLAKE2sp (RAR 5) are theirs. The RAR 4
+# reader is the release's, modified to read solid archives (libarchive_rar/; diff it against the
+# release's when moving to another one).
 set(LIBARCHIVE_SOURCES
     archive_acl.c archive_blake2s_ref.c archive_blake2sp_ref.c archive_check_magic.c archive_crc32.c
     archive_entry.c archive_entry_sparse.c archive_entry_xattr.c archive_options.c archive_ppmd7.c
-    archive_random.c archive_read.c archive_read_set_options.c archive_read_support_format_rar.c
+    archive_random.c archive_read.c archive_read_set_options.c
     archive_read_support_format_rar5.c archive_string.c archive_string_sprintf.c archive_time.c archive_util.c
     archive_version_details.c archive_virtual.c)
 list(TRANSFORM LIBARCHIVE_SOURCES PREPEND "${libarchive_SOURCE_DIR}/libarchive/")
+list(APPEND LIBARCHIVE_SOURCES "${CMAKE_CURRENT_LIST_DIR}/libarchive_rar/archive_read_support_format_rar.c")
 
 add_library(archive_ro STATIC ${LIBARCHIVE_SOURCES})
 target_compile_definitions(archive_ro PRIVATE "PLATFORM_CONFIG_H=\"archive_config.h\"")

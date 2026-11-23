@@ -21,7 +21,7 @@ Based on [ComicReader by infinity6901](https://github.com/infinity6901/ComicRead
 
 ## Download
 
-Get the latest APK from the [**Releases**](https://github.com/MintyLaboratories/EmanataComicReader/releases/latest) page.
+No APK is published yet: build the app from source (see [Building](#building)).
 
 The app id is `minty.emanata` (debug: `minty.emanata.debug`), so it installs
 beside ComicReader rather than over it. To bring your library across, back it up

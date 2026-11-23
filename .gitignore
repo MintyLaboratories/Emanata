@@ -11,7 +11,7 @@ app/build/
 # Release signing secrets -- never commit these
 keystore.properties
 keystore/
-# Built artifacts (published as GitHub Release assets instead)
+# Built artifacts
 dist/
 *.apk
 *.aab

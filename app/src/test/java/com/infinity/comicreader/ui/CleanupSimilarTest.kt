@@ -231,11 +231,15 @@ class CleanupSimilarTest {
             .putExtra(CleanupActivity.EXTRA_MODE, CleanupActivity.MODE_DUPES)
             .putExtra(CleanupActivity.EXTRA_ROOT, root.absolutePath)
         val activity = Robolectric.buildActivity(CleanupActivity::class.java, intent).setup().get()
-        activity.findViewById<MaterialButton>(R.id.similar_stop).performClick()
+        val bar = activity.findViewById<View>(R.id.similar_bar)
+        val stop = activity.findViewById<MaterialButton>(R.id.similar_stop)
+        // Stopped once the exact-copy check is over: stopping that one leaves its own note, which Compare keeps.
+        val progress = activity.findViewById<View>(R.id.cleanup_progress)
+        idleUntil("the exact-copy check over") { progress.visibility != View.VISIBLE }
+        stop.performClick()
         settle(activity)
         val list = activity.findViewById<RecyclerView>(R.id.cleanup_list)
         lay(list)
-        val bar = activity.findViewById<View>(R.id.similar_bar)
         // Reads done before Stop are compared; the rest, the one under way included, are counted.
         if (bar.visibility == View.VISIBLE) {
             assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.similar_compare).visibility)

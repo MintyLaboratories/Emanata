@@ -862,7 +862,12 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   strengths, each with its own. A tap on a
   row picks it and closes; letting go of a slider (or, moved by keyboard or
   screen reader, letting it rest half a second) picks that level and keeps
-  the picker open. Models that take 10 s or more for a 1000×1500
+  the picker open. A family's slider keeps the level picked last for that
+  step while another row is picked (shown only: it picks and downloads
+  nothing until moved or tapped). A step's picker, in Settings or the
+  reader's sheet, opens where it was last left while the app runs, scrolled
+  only as far as needed to show the picked row whole. Settings' summaries and
+  the reader sheet's step buttons name models by these short names too. Models that take 10 s or more for a 1000×1500
   page on the reference tablet are marked slow with their time, and are
   offered only with Keep it simple off (or once chosen), in Settings, the
   reader's sheet and Models alike. Artifact removal and descreen are advanced settings;

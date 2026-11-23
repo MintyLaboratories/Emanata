@@ -92,8 +92,8 @@ class FileJobsRepackTest {
     }
 
     @Test
-    fun aSolidRar4RepacksBesideItsBookByteForByte() {
-        val book = File(tmp.root, "Book.cbr").apply { writeBytes(Fixtures.rar4Bytes(*files, solid = true)) }
+    fun aSolidRarRepacksBesideItsBookByteForByte() {
+        val book = File(tmp.root, "Book.cbr").apply { writeBytes(Fixtures.rar5Bytes(*files, solid = true)) }
         val outcome = run(book, FileJobs.Rebuild.REPACK, inPlace = false) as FileWork.Outcome.Done
         val cbz = File(tmp.root, "Book.cbz")
         assertEquals(cbz.absolutePath, outcome.path)
@@ -141,7 +141,7 @@ class FileJobsRepackTest {
     @Test
     fun aRepeatedNameKeepsBothFilesWithTheirBytes() {
         val book = File(tmp.root, "Two.cbr").apply {
-            writeBytes(Fixtures.rar4Bytes(entry("a/01.jpg", jpeg(1)), entry("b/01.jpg", jpeg(2)), solid = true))
+            writeBytes(Fixtures.rar5Bytes(entry("a/01.jpg", jpeg(1)), entry("b/01.jpg", jpeg(2)), solid = true))
         }
         run(book, FileJobs.Rebuild.REPACK, inPlace = false) as FileWork.Outcome.Done
         val got = entries(File(tmp.root, "Two.cbz"))
@@ -152,7 +152,7 @@ class FileJobsRepackTest {
 
     @Test
     fun anotherNameBesideWhenTheCbzNameIsTaken() {
-        val book = File(tmp.root, "Book.cbr").apply { writeBytes(Fixtures.rar4Bytes(*files, solid = true)) }
+        val book = File(tmp.root, "Book.cbr").apply { writeBytes(Fixtures.rar5Bytes(*files, solid = true)) }
         val taken = File(tmp.root, "Book.cbz").apply { writeBytes(byteArrayOf(1, 2, 3)) }
         val outcome = run(book, FileJobs.Rebuild.REPACK, inPlace = false) as FileWork.Outcome.Done
         assertEquals(File(tmp.root, "Book (repacked).cbz").absolutePath, outcome.path)
@@ -219,7 +219,7 @@ class FileJobsRepackTest {
     @Test
     fun repackingNeedsNoLibjxl() {
         val none = FileJobs(context, library, prefs) { null }
-        val book = File(tmp.root, "Book.cbr").apply { writeBytes(Fixtures.rar4Bytes(*files, solid = true)) }
+        val book = File(tmp.root, "Book.cbr").apply { writeBytes(Fixtures.rar5Bytes(*files, solid = true)) }
         val outcome = none.rebuild(listOf(book.absolutePath), FileJobs.Rebuild.REPACK, false, false, none.look(listOf(book.absolutePath)), Going)
         assertTrue(outcome is FileWork.Outcome.Done)
     }

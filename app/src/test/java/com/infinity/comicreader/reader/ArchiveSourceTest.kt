@@ -70,13 +70,13 @@ class ArchiveSourceTest {
     fun cheapComicInfoOnlyAheadOfTheFirstPageInSolidArchives() {
         val info = entry("ComicInfo.xml", "<ComicInfo><Year>2004</Year></ComicInfo>".toByteArray())
         // Solid rar: stored after the pages, so reading it would unpack them first.
-        val after = File(tmp.root, "after.cbr").apply { writeBytes(Fixtures.rar4Bytes(entry("01.jpg"), entry("02.jpg"), info, solid = true)) }
+        val after = File(tmp.root, "after.cbr").apply { writeBytes(Fixtures.rar5Bytes(entry("01.jpg"), entry("02.jpg"), info, solid = true)) }
         open(after).use { src ->
             assertNull(src.comicInfo(cheapOnly = true))
             assertTrue(src.comicInfoCostly())
             assertEquals(2004, src.comicInfo()?.year)
         }
-        val before = File(tmp.root, "before.cbr").apply { writeBytes(Fixtures.rar4Bytes(info, entry("01.jpg"), entry("02.jpg"), solid = true)) }
+        val before = File(tmp.root, "before.cbr").apply { writeBytes(Fixtures.rar5Bytes(info, entry("01.jpg"), entry("02.jpg"), solid = true)) }
         open(before).use {
             assertEquals(2004, it.comicInfo(cheapOnly = true)?.year)
             assertFalse(it.comicInfoCostly())
@@ -160,7 +160,7 @@ class ArchiveSourceTest {
 
     @Test
     fun aSolidInnerArchiveClosedForRoomStillMakesSizesCostly() {
-        val solid = Fixtures.rar4Bytes(entry("01.jpg"), entry("02.jpg"), solid = true)
+        val solid = Fixtures.rar5Bytes(entry("01.jpg"), entry("02.jpg"), solid = true)
         val plain = { name: String -> Fixtures.zip(File(tmp.root, name), entry("01.jpg"), entry("02.jpg")).readBytes() }
         val outer = Fixtures.zip(
             File(tmp.root, "set.cbz"),

@@ -54,6 +54,6 @@ class ViewerActivityUnreadableRarTest {
 
     @Test
     fun aSolidRar4ClosesWithTheUsualMessage() {
-        openClosesWithTheUsualMessage(Fixtures.rar4Bytes(*pages, solid = true, linked = true))
+        openClosesWithTheUsualMessage(Fixtures.rar4Bytes(*pages, solid = true))
     }
 }

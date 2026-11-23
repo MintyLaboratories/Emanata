@@ -272,7 +272,7 @@ class ViewerActivityTallTest {
     fun aTallLastPageFoundTallOnlyAsItLoadsStillShowsFromItsBottom() {
         // A solid RAR: page sizes are not read ahead, only learned as each page loads.
         val solid = File(dir, "Mixed 07.cbr").apply {
-            writeBytes(Fixtures.rar4Bytes(*listOf(140, 140, 1000).mapIndexed { i, h -> Fixtures.entry("p%02d.png".format(i), TestImages.png(100, h)) }.toTypedArray(), solid = true))
+            writeBytes(Fixtures.rar5Bytes(*listOf(140, 140, 1000).mapIndexed { i, h -> Fixtures.entry("p%02d.png".format(i), TestImages.png(100, h)) }.toTypedArray(), solid = true))
         }
         val viewer = launch(solid, page = Int.MAX_VALUE)
         val pager = viewer.findViewById<ViewPager2>(R.id.viewer_pager)

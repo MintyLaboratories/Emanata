@@ -111,10 +111,11 @@ object Fixtures {
 
     /**
      * A RAR 4 archive with every entry stored (method 0x30), per the RAR 2.9-4.x format notes.
-     * [linked] marks each entry after the first as using those before it (0x0010), as in a real
-     * solid archive; [encrypted] marks every entry's data encrypted (0x0004).
+     * [solid] marks the archive solid and each entry after the first as using those before it
+     * (0x0010), as real solid archives are: libarchive cannot read those past the first entry.
+     * [encrypted] marks every entry's data encrypted (0x0004).
      */
-    fun rar4Bytes(vararg entries: Pair<String, ByteArray>, solid: Boolean = false, linked: Boolean = false, encrypted: Boolean = false): ByteArray {
+    fun rar4Bytes(vararg entries: Pair<String, ByteArray>, solid: Boolean = false, encrypted: Boolean = false): ByteArray {
         val out = ByteArrayOutputStream()
         out.write(bytes(0x52, 0x61, 0x72, 0x21, 0x1A, 0x07, 0x00))
         // Main header: type, flags (0x0008 marks the archive solid), size, reserved.
@@ -122,7 +123,7 @@ object Fixtures {
         for ((i, entry) in entries.withIndex()) {
             val (path, content) = entry
             val name = path.replace('/', '\\').toByteArray(Charsets.ISO_8859_1)
-            val flags = 0x8000 or (if (linked && i > 0) 0x0010 else 0) or (if (encrypted) 0x0004 else 0)
+            val flags = 0x8000 or (if (solid && i > 0) 0x0010 else 0) or (if (encrypted) 0x0004 else 0)
             val head = LeBytes().u8(0x74).u16(flags).u16(32 + name.size)
                 .u32(content.size.toLong()).u32(content.size.toLong())
                 .u8(2) // Win32
@@ -140,6 +141,8 @@ object Fixtures {
 
     /**
      * A RAR 5 archive with every entry stored (method 0), per the RAR 5.0 format notes.
+     * [solid] marks the archive solid and each entry after the first as using those before it
+     * (compression flag 0x0040), as real solid archives are.
      * [encrypted] gives every entry an encryption record; [headersEncrypted] puts an archive
      * encryption header before the main header, as an archive with encrypted names has;
      * [dictBits] declares each entry's dictionary as 128 KiB shifted left by it.
@@ -159,13 +162,15 @@ object Fixtures {
         rar5Block(out, VarBytes().v(1).v(0).v(if (solid) 4 else 0).bytes())
         // Encryption record: size, type 1, version, flags, KDF count, salt and IV.
         val record = if (encrypted) VarBytes().v(35).v(1).v(0).v(0).raw(ByteArray(32)).bytes() else ByteArray(0)
-        for ((path, content) in entries) {
+        for ((i, entry) in entries.withIndex()) {
+            val (path, content) = entry
             val name = path.toByteArray(Charsets.UTF_8)
+            val linked = if (solid && i > 0) 0x0040L else 0L
             val lead = if (encrypted) VarBytes().v(2).v(0x0003).v(record.size.toLong()) else VarBytes().v(2).v(0x0002)
             val head = lead.v(content.size.toLong()) // type, extra and data areas, data size
                 .v(0x0004).v(content.size.toLong()).v(0x20) // CRC present, unpacked size, attributes
                 .u32(crc(content))
-                .v(dictBits.toLong() shl 10).v(0) // stored with that dictionary, Windows
+                .v(dictBits.toLong() shl 10 or linked).v(0) // stored with that dictionary, Windows
                 .v(name.size.toLong()).raw(name).raw(record).bytes()
             rar5Block(out, head)
             out.write(content)

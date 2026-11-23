@@ -89,7 +89,7 @@ class ViewerActivitySeamsTest {
         }
         val ext = if (png) "png" else "jpg"
         val entries = pages.mapIndexed { i, p -> Fixtures.entry("Tale 001-%03d.$ext".format(i), encoded(p, png)) }.toTypedArray()
-        if (solid) return File(dir, "Tale 001.cbr").apply { writeBytes(Fixtures.rar4Bytes(*entries, solid = true)) }
+        if (solid) return File(dir, "Tale 001.cbr").apply { writeBytes(Fixtures.rar5Bytes(*entries, solid = true)) }
         return Fixtures.zip(File(dir, "Tale 001.cbz"), *entries)
     }
 

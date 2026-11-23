@@ -82,7 +82,7 @@ class ViewerActivityWideImageTest {
     /** The pages of [book] in a solid RAR, whose sizes are learned as pages load. */
     private fun solidBook(): File =
         File(dir, "Tale 002.cbr").apply {
-            writeBytes(Fixtures.rar4Bytes(*(1..6).map { Fixtures.entry("Tale 002-%03d.png".format(it), if (it == 3) wide else portrait) }.toTypedArray(), solid = true))
+            writeBytes(Fixtures.rar5Bytes(*(1..6).map { Fixtures.entry("Tale 002-%03d.png".format(it), if (it == 3) wide else portrait) }.toTypedArray(), solid = true))
         }
 
     private fun idle() = shadowOf(Looper.getMainLooper()).idle()

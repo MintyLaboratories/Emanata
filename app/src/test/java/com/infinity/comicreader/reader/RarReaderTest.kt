@@ -197,11 +197,6 @@ class RarReaderTest {
                 assertEquals(0, r.spliced)
             }
         }
-        // A RAR 4 marked solid whose entries stand alone reads the same way.
-        RarReader(file(Fixtures.rar4Bytes(*big, solid = true))).use { r ->
-            assertEquals(true, r.solid)
-            for (i in listOf(0, 2, 5, 1)) assertArrayEquals("entry $i", big[i].second, r.bytes(i))
-        }
     }
 
     @Test
@@ -240,9 +235,9 @@ class RarReaderTest {
     }
 
     @Test
-    fun aSolidRar4WhoseEntriesUseThoseBeforeThemDoesNotOpen() {
-        // libarchive cannot unpack them: a book of its first page alone would hide the rest.
-        assertThrows(IOException::class.java) { RarReader(file(Fixtures.rar4Bytes(*big, solid = true, linked = true))) }
+    fun aSolidRar4DoesNotOpen() {
+        // libarchive cannot unpack its entries after the first: a book of its first page alone would hide the rest.
+        assertThrows(RefusedRar::class.java) { RarReader(file(Fixtures.rar4Bytes(*big, solid = true))) }
     }
 
     @Test

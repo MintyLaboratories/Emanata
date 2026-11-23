@@ -164,7 +164,7 @@ class RemoteBooksTest {
     @Test
     fun aSolidRarIsStreamedOnceKeepingItsPages() {
         val big = bigPages(6, 5)
-        File(share, "s.cbr").writeBytes(Fixtures.rar4Bytes(*big, solid = true))
+        File(share, "s.cbr").writeBytes(Fixtures.rar5Bytes(*big, solid = true))
         PageSources.open(remote("s.cbr"), "UTF-8", cacheDir, fetch = PageSources.Fetch()).use { src ->
             assertEquals(6, src.pageCount)
             src.pageSize(3)
@@ -188,8 +188,8 @@ class RemoteBooksTest {
     fun factsOfASolidRarSkipAComicInfoStoredAfterThePages() {
         val big = bigPages(4, 13)
         val info = entry("ComicInfo.xml", "<ComicInfo><Year>2004</Year></ComicInfo>".toByteArray())
-        File(share, "late.cbr").writeBytes(Fixtures.rar4Bytes(*big, info, solid = true))
-        File(share, "early.cbr").writeBytes(Fixtures.rar4Bytes(info, *big, solid = true))
+        File(share, "late.cbr").writeBytes(Fixtures.rar5Bytes(*big, info, solid = true))
+        File(share, "early.cbr").writeBytes(Fixtures.rar5Bytes(info, *big, solid = true))
         val before = fake.bytesRead
         val late = com.infinity.comicreader.reader.BookFactsReader.read(remote("late.cbr"), "UTF-8", cacheDir)
         assertEquals(4, late.pages)
@@ -201,7 +201,7 @@ class RemoteBooksTest {
     @Test
     fun keptPagesAreTrimmedWithTheCopies() {
         val big = bigPages(4, 9)
-        File(share, "s.cbr").writeBytes(Fixtures.rar4Bytes(*big, solid = true))
+        File(share, "s.cbr").writeBytes(Fixtures.rar5Bytes(*big, solid = true))
         PageSources.open(remote("s.cbr"), "UTF-8", cacheDir, fetch = PageSources.Fetch()).use { src ->
             src.pageSize(3)
         }
@@ -234,7 +234,7 @@ class RemoteBooksTest {
     @Test
     fun inPlaceOnlyOpensWhatReadsInPlaceAndNeverFetchesOrStreams() {
         Fixtures.zip(File(share, "a.cbz"), *pages)
-        File(share, "s.cbr").writeBytes(Fixtures.rar4Bytes(*bigPages(4, 9), solid = true))
+        File(share, "s.cbr").writeBytes(Fixtures.rar5Bytes(*bigPages(4, 9), solid = true))
         File(share, "book.pdf").writeBytes("%PDF-1.4\n".toByteArray() + ByteArray(4096))
         PageSources.open(remote("a.cbz"), "UTF-8", cacheDir, inPlaceOnly = true).use { assertEquals(3, it.pageCount) }
         for (name in listOf("s.cbr", "book.pdf")) {

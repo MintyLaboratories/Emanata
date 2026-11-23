@@ -29,6 +29,10 @@ class SolidArchivesTest {
     fun rar5SolidByItsArchiveFlags() {
         assertTrue(SolidArchives.isSolid(file("a.cbr", Fixtures.rar5Bytes(*pages, solid = true))))
         assertFalse(SolidArchives.isSolid(file("a.cbr", Fixtures.rar5Bytes(*pages))))
+        // The CC0 RAR test files (resources/rar/README.md).
+        fun resource(name: String) = file("a.cbr", javaClass.getResourceAsStream("/rar/$name")!!.use { it.readBytes() })
+        assertTrue(SolidArchives.isSolid(resource("testfile.rar5.solid.cbr")))
+        assertFalse(SolidArchives.isSolid(resource("testfile.rar5.cbr")))
     }
 
     @Test
@@ -56,7 +60,6 @@ class SolidArchivesTest {
         fun solidOf(file: File) = ArchiveSource(ArchiveReader.open(file, "UTF-8")!!).let { src ->
             HiddenPages.wrap(GuardedSource(src), setOf(0)).use { it.solid }
         }
-        assertEquals(true, solidOf(file("a.cbr", Fixtures.rar4Bytes(*pages, solid = true))))
         assertEquals(false, solidOf(file("a.cbr", Fixtures.rar4Bytes(*pages))))
         assertEquals(true, solidOf(file("a.cbr", Fixtures.rar5Bytes(*pages, solid = true))))
         assertEquals(false, solidOf(file("a.cbr", Fixtures.rar5Bytes(*pages))))

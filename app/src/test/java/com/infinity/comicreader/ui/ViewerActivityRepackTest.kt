@@ -76,7 +76,7 @@ class ViewerActivityRepackTest {
 
     private fun idle() = shadowOf(Looper.getMainLooper()).idle()
 
-    private fun solid(name: String = "one.cbr") = File(dir, name).apply { writeBytes(Fixtures.rar4Bytes(*pages, solid = true)) }
+    private fun solid(name: String = "one.cbr") = File(dir, name).apply { writeBytes(Fixtures.rar5Bytes(*pages, solid = true)) }
 
     /**
      * Opens [book] and runs the main looper, a frame's time passing each round (sizes learned

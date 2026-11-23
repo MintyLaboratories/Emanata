@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.R
 import com.infinity.comicreader.ai.AiStep
+import com.infinity.comicreader.ai.ChainKind
 import com.infinity.comicreader.ai.ModelCatalog
 import com.infinity.comicreader.ai.ModelSource
 import com.infinity.comicreader.ai.Models
@@ -92,5 +93,14 @@ class ModelTextTest {
         assertTrue(all.any { it.toString() == "Real-ESRGAN 2×" })
         // A slow model chosen stays listed.
         assertTrue("realesr-animevideov3-x3" in ModelText.choices(context, AiStep.UPSCALE, true, "realesr-animevideov3-x3").second)
+    }
+
+    @Test
+    fun chainLinesNameModelsByTheirShortNames() {
+        val other = listOf("opencomic-ai-artifact-removal-compact-v2", "opencomic-ai-descreen-hard-compact-v2", "cunny-4x16-ds-rp").map { Models.byId(it)!! }
+        val manga = listOf(ModelCatalog.byId(ModelCatalog.DEFAULT_UPSCALE)!!)
+        val lines = ModelText.chains(context, mapOf(ChainKind.MANGA to manga, ChainKind.OTHER to other)).lines()
+        assertEquals(listOf(context.getString(R.string.pref_ai_desc), "Manga: waifu2x 2×", "Everything else: OpenComic → OpenComic v2 → CuNNy 2×, 4x16"), lines)
+        assertEquals("Manga: None", ModelText.chains(context, mapOf(ChainKind.MANGA to emptyList())).lines()[1])
     }
 }

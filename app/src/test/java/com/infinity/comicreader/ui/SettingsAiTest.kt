@@ -299,9 +299,10 @@ class SettingsAiTest {
         val fragment = settings()
         val pref = fragment.findPreference<ListPreference>(Prefs.aiKey(AiStep.UPSCALE))!!
         if (pref.callChangeListener(upscalers[0].id)) pref.value = upscalers[0].id
-        awaitSummary(pref, upscalers[0].name)
+        // By short name, as the picker's rows.
+        awaitSummary(pref, PickerRows.shortName(upscalers[0]))
         if (pref.callChangeListener(upscalers[1].id)) pref.value = upscalers[1].id
-        awaitSummary(pref, context.getString(R.string.ai_model_missing, upscalers[1].name))
+        awaitSummary(pref, context.getString(R.string.ai_model_missing, PickerRows.shortName(upscalers[1])))
         assertEquals(upscalers[1].id, Prefs(context).aiModel(AiStep.UPSCALE))
         if (pref.callChangeListener(Prefs.AI_NONE)) pref.value = Prefs.AI_NONE
         awaitSummary(pref, context.getString(R.string.ai_none))
@@ -312,19 +313,25 @@ class SettingsAiTest {
 
     @Test
     fun aChoiceShowsItsDownloadProgressAsText() {
-        val m = ModelCatalog.forStep(AiStep.UPSCALE)[0]
+        val m = ModelCatalog.byId(ModelCatalog.DEFAULT_UPSCALE)!!
         assertEquals(context.getString(R.string.ai_none), ModelText.choice(context, null, false, null))
-        assertEquals(m.name, ModelText.choice(context, m, true, DownloadState.Running(1, 2)))
-        assertEquals("${m.name} · downloading 40%", ModelText.choice(context, m, false, DownloadState.Running(40, 100)))
-        assertEquals(context.getString(R.string.ai_model_failed, m.name), ModelText.choice(context, m, false, DownloadState.Failed(DownloadFailure.NETWORK)))
-        assertEquals(context.getString(R.string.ai_model_missing, m.name), ModelText.choice(context, m, false, null))
+        // Every state by the short name the picker's row shows, never the catalog's full name.
+        assertEquals("waifu2x 2×", ModelText.choice(context, m, true, DownloadState.Running(1, 2)))
+        assertEquals("waifu2x 2× · downloading 40%", ModelText.choice(context, m, false, DownloadState.Running(40, 100)))
+        assertEquals(context.getString(R.string.ai_model_metered, "waifu2x 2×"), ModelText.choice(context, m, false, DownloadState.Failed(DownloadFailure.METERED)))
+        assertEquals(context.getString(R.string.ai_model_failed, "waifu2x 2×"), ModelText.choice(context, m, false, DownloadState.Failed(DownloadFailure.NETWORK)))
+        assertEquals(context.getString(R.string.ai_model_missing, "waifu2x 2×"), ModelText.choice(context, m, false, null))
+        // A family's level by its family and level.
+        val level = Models.byId("anime4k-a-m")!!
+        assertEquals("Anime4K A (sharp) 2×, M", ModelText.choice(context, level, true, null))
+        assertEquals("Anime4K A (sharp) 2×, M · downloading 5%", ModelText.choice(context, level, false, DownloadState.Running(5, 100)))
         // Shown through a summary provider: a ListPreference would read "40%" as a format.
         val pref = settings().findPreference<ListPreference>(Prefs.aiKey(AiStep.UPSCALE))!!
         // Set once the installed models are read off the main thread.
         idleUntil("the picker's summary provider") { pref.summaryProvider != null }
         assertNotNull(pref.summaryProvider)
-        pref.summaryProvider = Preference.SummaryProvider<ListPreference> { "${m.name} · downloading 40%" }
-        assertEquals("${m.name} · downloading 40%", pref.summary.toString())
+        pref.summaryProvider = Preference.SummaryProvider<ListPreference> { "waifu2x 2× · downloading 40%" }
+        assertEquals("waifu2x 2× · downloading 40%", pref.summary.toString())
     }
 
     @Test
@@ -340,8 +347,10 @@ class SettingsAiTest {
         assertTrue(prefs.keepSimple)
         var ai = settings().findPreference<Preference>(Prefs.KEY_AI)!!
         awaitSummary(ai, ModelText.chains(context, mapOf(ChainKind.MANGA to listOf(upscale), ChainKind.OTHER to slowest)))
-        assertTrue(ai.summary.toString().contains("Everything else: " + slowest.joinToString(" → ") { it.name }))
-        assertTrue(ai.summary.toString().contains("Manga: ${upscale.name}"))
+        // By short names, as the pickers' rows.
+        assertTrue(ai.summary.toString().contains("Everything else: " + slowest.joinToString(" → ", transform = PickerRows::shortName)))
+        assertTrue(ai.summary.toString().contains("Manga: waifu2x 2×"))
+        assertFalse(ai.summary.toString().contains(upscale.name))
         assertTrue(ai.summary.toString().endsWith(context.getString(R.string.ai_chain_slow)))
         prefs.setAiModel(AiStep.ARTIFACTS, null)
         prefs.setAiModel(AiStep.DESCREEN, null)

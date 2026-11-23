@@ -151,14 +151,16 @@ object ModelText {
         }
     )
 
-    /** A step's choice [m] (null: none), [installed] or in download [state]. */
-    fun choice(context: Context, m: AiModel?, installed: Boolean, state: DownloadState?): String = when {
-        m == null -> context.getString(R.string.ai_none)
-        installed -> m.name
-        state is DownloadState.Running -> context.getString(R.string.ai_model_downloading, m.name, state.percent)
-        state is DownloadState.Failed && state.failure == DownloadFailure.METERED -> context.getString(R.string.ai_model_metered, m.name)
-        state is DownloadState.Failed -> context.getString(R.string.ai_model_failed, m.name)
-        else -> context.getString(R.string.ai_model_missing, m.name)
+    /** A step's choice [m] (null: none) by its short name ([PickerRows.shortName]), [installed] or in download [state]. */
+    fun choice(context: Context, m: AiModel?, installed: Boolean, state: DownloadState?): String {
+        val name = m?.let(PickerRows::shortName) ?: return context.getString(R.string.ai_none)
+        return when {
+            installed -> name
+            state is DownloadState.Running -> context.getString(R.string.ai_model_downloading, name, state.percent)
+            state is DownloadState.Failed && state.failure == DownloadFailure.METERED -> context.getString(R.string.ai_model_metered, name)
+            state is DownloadState.Failed -> context.getString(R.string.ai_model_failed, name)
+            else -> context.getString(R.string.ai_model_missing, name)
+        }
     }
 
     /** The name of [kind]'s default chain. */
@@ -167,7 +169,7 @@ object ModelText {
 
     /**
      * AI processing's description, then the models each default chain of [chains] runs, in
-     * order, and [slowNote] when one is heavy ([AiChain.slow]) by its [loads] (its load bar's
+     * order, by short name ([PickerRows.shortName]), and [slowNote] when one is heavy ([AiChain.slow]) by its [loads] (its load bar's
      * page time; else its catalog times), with battery saver named when it [saverPausesAi].
      */
     fun chains(
@@ -177,7 +179,7 @@ object ModelText {
         saverPausesAi: Boolean = true
     ): String {
         val lines = listOf(context.getString(R.string.pref_ai_desc)) + chains.map { (kind, chain) ->
-            val names = if (chain.isEmpty()) context.getString(R.string.ai_none) else chain.joinToString(" → ") { it.name }
+            val names = if (chain.isEmpty()) context.getString(R.string.ai_none) else chain.joinToString(" → ", transform = PickerRows::shortName)
             context.getString(R.string.ai_chain_of, kind(context, kind), names)
         }
         return (if (loads.values.any(AiChain::slow)) lines + slowNote(context, saverPausesAi) else lines).joinToString("\n")

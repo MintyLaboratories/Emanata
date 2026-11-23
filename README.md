@@ -296,7 +296,11 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
     (`sub_001.jxl`), and pages their place in the order too should that not
     keep it. The ComicInfo.xml keeps its bare name (the one nearest the top
     when there are several), so readers still find it.
-    It and other files are copied as they are; OS litter
+    Other files are copied as they are. So is ComicInfo.xml, unless pages were
+    left out or made anew: then its `PageCount`, the `<Page>` entries of pages
+    left out, the others' `Image` numbers and the `ImageSize` of pages made
+    anew follow, and `ImageWidth`/`ImageHeight` go where a page's pixel size
+    changed; every other byte stays as it was. OS litter
     (`__MACOSX/`, `._*`, `Thumbs.db`, `desktop.ini`, `.DS_Store`) and whatever is
     in a dot-folder are left out. A book holding other archives is
     left alone.

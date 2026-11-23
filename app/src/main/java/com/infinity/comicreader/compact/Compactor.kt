@@ -7,6 +7,7 @@ import com.infinity.comicreader.reader.ArchiveEntry
 import com.infinity.comicreader.reader.ArchiveJunk
 import com.infinity.comicreader.reader.ArchiveKind
 import com.infinity.comicreader.reader.ArchiveReader
+import com.infinity.comicreader.reader.ComicInfo
 import com.infinity.comicreader.reader.PageMoves
 import com.infinity.comicreader.util.Formats
 import com.infinity.comicreader.util.LimitGate
@@ -34,7 +35,8 @@ import java.util.zip.ZipOutputStream
 /**
  * Rebuilds a comic archive as a flat `.cbz` of stored (uncompressed) entries in natural
  * order: each page [convert]ed or kept as it is, names kept but for the extension of a
- * page made anew ([FlatNames]), every other file copied as it is, OS litter left out.
+ * page made anew ([FlatNames]), every other file copied as it is, OS litter left out; the
+ * ComicInfo.xml's page list follows pages left out or made anew ([ComicInfoPages]).
  * Pages convert on up to [maxWorkers] threads at once, fewer while [limit] says so, and
  * only as many as [memory] bytes hold ([Request.cost]); each file passes through
  * [scratch] on its way, checked by the CRC its archive stores, if any; a folder's file kept
@@ -160,8 +162,11 @@ class Compactor(
         NOT_SMALLER
     }
 
-    /** A file of the new archive, waiting in [scratch]; [failed] for a page kept because it could not be made anew. */
-    private class Piece(val file: File, val size: Long, val crc: Long, val made: PageWork.Made?, val failed: Boolean = false)
+    /**
+     * A file of the new archive, waiting in [scratch]; [failed] for a page kept because it
+     * could not be made anew; [resized] for a page [made] whose pixel size changed or is unknown.
+     */
+    private class Piece(val file: File, val size: Long, val crc: Long, val made: PageWork.Made?, val failed: Boolean = false, val resized: Boolean = false)
 
     /**
      * Rebuilds [request]'s book, read through the reader [open] gives, closed before the new
@@ -203,22 +208,27 @@ class Compactor(
         if (!work.mkdirs()) throw IOException("Cannot make ${work.name}")
         var part: File? = null
         try {
-            val pieces = convertAll(request, reader, files, work, progress, total)
+            val converted = convertAll(request, reader, files, work, progress, total)
             closeReader()
-            val failedAt = files.indices.filter { pieces[it].failed }
-            if (!request.always && pieces.none { it.made != null } && dropped.isEmpty()) return Result.Unchanged(Why.NOTHING, failedAt.map { FlatNames.baseName(files[it].path) })
+            val failedAt = files.indices.filter { converted[it].failed }
+            val pagesChanged = converted.any { it.made != null } || dropped.isNotEmpty()
+            if (!request.always && !pagesChanged) return Result.Unchanged(Why.NOTHING, failedAt.map { FlatNames.baseName(files[it].path) })
             // What is kept of dot-folders keeps its path: never a page, never flattened.
             val flat = files.indices.filter { !FlatNames.inDotFolder(files[it].path) }
             val flatNames = FlatNames.of(
                 flat.map { files[it].path },
                 flat.map { i ->
                     val base = FlatNames.baseName(files[i].path)
-                    pieces[i].made?.let { FlatNames.withExtension(base, it.ext) } ?: base
+                    converted[i].made?.let { FlatNames.withExtension(base, it.ext) } ?: base
                 },
                 pagesOf(flat.map { files[it].path to files[it].size })
             )
             val names = files.map { it.path }.toMutableList()
             flat.forEachIndexed { k, i -> names[i] = flatNames[k] }
+            val oldKeys = pages.map { e -> files.indexOf(e).let { if (it < 0) null else names[it] } }
+            val newPages = pagesOf(names.indices.map { names[it] to converted[it].size }).map { names[it] }
+            val moves = PageMoves.of(oldKeys.mapIndexed { i, n -> n ?: "\u0000$i" }, newPages)
+            val pieces = if (pagesChanged) withComicInfo(names, converted, pages.map { files.indexOf(it) }, moves, newPages.size, work) else converted
             val out = File(dir, ".${book.name}.${System.nanoTime()}.part")
             part = out
             val writing = System.nanoTime()
@@ -238,9 +248,6 @@ class Compactor(
             val over = request.inPlace && Formats.ext(book.name) in Formats.ZIP
             val target = request.target ?: if (over) book else File(dir, FlatNames.output(book.name, request.suffix) { n -> File(dir, n).exists() })
             val removed = if (request.inPlace && !over) book else null
-            val oldKeys = pages.map { e -> files.indexOf(e).let { if (it < 0) null else names[it] } }
-            val newPages = pagesOf(names.indices.map { names[it] to pieces[it].size }).map { names[it] }
-            val moves = PageMoves.of(oldKeys.mapIndexed { i, n -> n ?: "\u0000$i" }, newPages)
             val reencoded = files.indices.filter { pieces[it].made?.reencoded == true }.map { names[it] }
             val result = Result.Rebuilt(target, before, after, moves, newPages.size, removed, reencoded, failedAt.map { names[it] })
             request.placer.place(result, out) {
@@ -344,7 +351,8 @@ class Compactor(
                             ensureRoom(work, keep.size.toLong())
                             file.writeBytes(keep)
                         }
-                        pieces[i] = Piece(own ?: file, keep.size.toLong(), crcOf(keep), made, failed)
+                        val resized = made != null && runCatching { PageProbe.sizeOf(bytes)?.let { PageProbe.sizeOf(made.bytes)?.contentEquals(it) } }.getOrNull() != true
+                        pieces[i] = Piece(own ?: file, keep.size.toLong(), crcOf(keep), made, failed, resized)
                         advance(entry.size.coerceAtLeast(0))
                     } finally {
                         budget.give(taken)
@@ -376,6 +384,29 @@ class Compactor(
         reader.looseFile(entry)?.let { own -> return reader.read(entry) { sum(it, own) }.also { checkRead(entry, it.size, it.crc) } }
         ensureRoom(file.parentFile!!, entry.size)
         return reader.read(entry) { copy(it, file) }.also { checkRead(entry, it.size, it.crc) }
+    }
+
+    /**
+     * [pieces] with the ComicInfo.xml the reader finds in the new archive (named [names],
+     * the one nearest its top) in line with its pages ([ComicInfoPages]): book page `k` is
+     * file [pageFiles]`[k]` (-1: left out), now page [moves]`[k]` of [pageCount]. One longer
+     * than the reader reads ([ComicInfo.MAX_BYTES]) stays as it is. Throws when that file
+     * changed since it was read.
+     */
+    private fun withComicInfo(names: List<String>, pieces: List<Piece>, pageFiles: List<Int>, moves: IntArray, pageCount: Int, work: File): List<Piece> {
+        val at = names.indices.filter { ComicInfo.isComicInfo(names[it]) }.minByOrNull { i -> names[i].count { it == '/' || it == '\\' } } ?: return pieces
+        val piece = pieces[at]
+        if (piece.size > ComicInfo.MAX_BYTES) return pieces
+        val xml = piece.file.readBytes()
+        if (xml.size.toLong() != piece.size || crcOf(xml) != piece.crc) throw IOException("${names[at]} changed")
+        val remade = HashMap<Int, ComicInfoPages.Remade>()
+        pageFiles.forEachIndexed { k, i -> pieces.getOrNull(i)?.takeIf { it.made != null }?.let { remade[k] = ComicInfoPages.Remade(it.size, it.resized) } }
+        val edited = ComicInfoPages.edit(xml, moves, pageCount, remade)
+        if (edited.contentEquals(xml)) return pieces
+        val file = File(work, "comicinfo")
+        ensureRoom(work, edited.size.toLong())
+        file.writeBytes(edited)
+        return pieces.toMutableList().also { it[at] = Piece(file, edited.size.toLong(), crcOf(edited), null) }
     }
 
     /** Writes [pieces] as [names] into [out], a stored ZIP, in order, each dated [time]. */

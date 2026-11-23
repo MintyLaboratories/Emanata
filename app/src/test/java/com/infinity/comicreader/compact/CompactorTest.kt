@@ -2,6 +2,8 @@ package com.infinity.comicreader.compact
 
 import com.infinity.comicreader.net.ChangeRefused
 import com.infinity.comicreader.reader.ArchiveReader
+import com.infinity.comicreader.reader.ComicInfo
+import com.infinity.comicreader.testing.Xxh3Port
 import org.apache.commons.compress.archivers.sevenz.SevenZMethod
 import org.apache.commons.compress.archivers.sevenz.SevenZOutputFile
 import org.junit.Assert.assertArrayEquals
@@ -196,6 +198,54 @@ class CompactorTest {
         // Leaving a page out is a change of its own.
         val plain = zip("Skip2.cbz", listOf("1.jpg" to page(JPG), "2.jpg" to page(JPG)))
         assertTrue(run(plain, skip = setOf(0), smallerOnly = false) is Compactor.Result.Rebuilt)
+    }
+
+    private val info = """<?xml version="1.0" encoding="utf-8"?>
+<ComicInfo>
+  <Series>S</Series>
+  <Number>1</Number>
+  <PageCount>3</PageCount>
+  <Pages>
+    <Page Image="0" Type="FrontCover" ImageSize="2000" />
+    <Page Image="1" ImageSize="2000" />
+    <Page Image="2" ImageSize="2000" />
+  </Pages>
+</ComicInfo>
+"""
+
+    @Test
+    fun skippingHiddenPagesBringsTheComicInfoInLineAndKeepsItFindable() {
+        // Two pages named 01 prefix every name under a folder; the ComicInfo.xml keeps its own.
+        val source = zip("Info.cbz", listOf("a/01.png" to page(PNG), "a/02.jpg" to page(JPG), "b/01.png" to page(PNG), "a/ComicInfo.xml" to info.toByteArray()))
+        val request = Compactor.Request(source, halve, false, "compacted", skip = setOf(1), marks = listOf(OutputMarks.Operation.COMPACT))
+        val result = Compactor(scratch, 2, hash = { Xxh3Port }).run(request, { ArchiveReader.open(source, "UTF-8")!! }, alive) as Compactor.Result.Rebuilt
+        val out = entries(result.file)
+        assertEquals(listOf("a_01.jxl", "ComicInfo.xml", "b_01.jxl"), out.map { it.first })
+        assertEquals(
+            info.replace("<PageCount>3<", "<PageCount>2<").replace("\n    <Page Image=\"1\" ImageSize=\"2000\" />", "")
+                .replace("<Page Image=\"0\" Type=\"FrontCover\" ImageSize=\"2000\"", "<Page Image=\"0\" Type=\"FrontCover\" ImageSize=\"200\"")
+                .replace("<Page Image=\"2\" ImageSize=\"2000\"", "<Page Image=\"1\" ImageSize=\"200\""),
+            String(out[1].second)
+        )
+        val parsed = ArchiveReader.open(result.file, "UTF-8")!!.use { ComicInfo.read(it) }!!
+        assertEquals(2, parsed.pageCount)
+        assertEquals(listOf(ComicInfo.Page(0, "FrontCover", false), ComicInfo.Page(1, null, false)), parsed.pages)
+        assertEquals(ComicInfo.parse(out[1].second), parsed)
+        assertEquals("Emanata", OutputMarks.verified(result.file, Xxh3Port).compactedBy)
+    }
+
+    @Test
+    fun withNoPageLeftOutOrMadeAnewTheComicInfoStaysAsItIs() {
+        // Its PageCount is wrong, and stays so: only a change of pages rewrites it.
+        val stale = info.replace("<PageCount>3<", "<PageCount>9<").toByteArray()
+        val dir = folder("Plain", listOf("1.jpg" to page(JPG), "2.jpg" to page(JPG), "ComicInfo.xml" to stale))
+        val files = listOf("1.jpg", "2.jpg", "ComicInfo.xml").map { File(dir, it) }
+        val request = Compactor.Request(dir, null, inPlace = false, suffix = "", target = File(tmp.root, "Plain.cbz"), always = true)
+        val result = Compactor(scratch, 2).run(request, { FolderReader(files) }, alive) as Compactor.Result.Rebuilt
+        assertArrayEquals(stale, entries(result.file)[2].second)
+        // Pages made anew with nothing in it to change: as it is too.
+        val plain = zip("Made.cbz", listOf("1.png" to page(PNG), "ComicInfo.xml" to "<ComicInfo><Pages><Page Image=\"0\"/></Pages></ComicInfo>".toByteArray()))
+        assertEquals("<ComicInfo><Pages><Page Image=\"0\"/></Pages></ComicInfo>", String(entries((run(plain) as Compactor.Result.Rebuilt).file)[1].second))
     }
 
     @Test

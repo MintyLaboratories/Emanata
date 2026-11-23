@@ -16,6 +16,7 @@ import com.infinity.comicreader.reader.Calibration
 import com.infinity.comicreader.reader.Cancellation
 import com.infinity.comicreader.reader.Plan
 import com.infinity.comicreader.reader.Scaling
+import kotlin.math.sqrt
 
 /**
  * When AI runs stop: with battery saver on, unless the Battery settings let AI run under it
@@ -140,9 +141,10 @@ class AiRendered(val bitmap: Bitmap, val run: PageRun)
 /**
  * A page through a chain ([AiPages.chain]): [bitmap] when it finished, else why not
  * ([fallback]); [ran] models in [ms]. [early]: it fell back as [Fallback.TIMEOUT] before any
- * model ran, its expected time past the limit.
+ * model ran, its expected time past the limit. [detail]: the last model's output at full size,
+ * when asked for ([AiPages.chain]'s `keepBytes`); the caller frees it.
  */
-class ChainRun(val bitmap: Bitmap?, val fallback: Fallback?, val ran: Int, val ms: Long, val early: Boolean = false)
+class ChainRun(val bitmap: Bitmap?, val fallback: Fallback?, val ran: Int, val ms: Long, val early: Boolean = false, val detail: Bitmap? = null)
 
 /** A model of a chain that runs on a page: [index] in the chain, on an input of [pixels]. */
 data class ChainStep(val index: Int, val pixels: Long)
@@ -219,8 +221,9 @@ internal object AiPages {
      * expected to take on an input of so many pixels (0: unknown): a chain expected to take
      * longer than the limit falls back at once, and each model stops as soon as it would leave
      * the models after it too little time. [onStep] hears each model's run on its input, once
-     * it ran a tile. Throws [java.util.concurrent.CancellationException] once
-     * [canceled]. [src] is only read.
+     * it ran a tile. With [keepBytes] above 0 the last model's output is kept as the run's
+     * [ChainRun.detail], reduced evenly to at most [keepBytes] ([reduced]). Throws
+     * [java.util.concurrent.CancellationException] once [canceled]. [src] is only read.
      */
     fun chain(
         sessions: List<Session>,
@@ -238,7 +241,8 @@ internal object AiPages {
         steps: List<ChainStep> = steps(
             sessions.map { ChainModel(AiStep.ARTIFACTS, it.geometry.scale) }, src.width, src.height, plan,
             AiThresholds(cleanupPct = AiThresholds.ALWAYS)
-        )
+        ),
+        keepBytes: Long = 0
     ): ChainRun {
         val start = clock()
         if (steps.isEmpty()) return ChainRun(null, Fallback.UNNEEDED, 0, 0)
@@ -268,9 +272,36 @@ internal object AiPages {
                 ran++
             }
             val out = Cancellation.during(canceled) { BitmapUtils.resample(page, scaled(plan, scale), linear, scaling.unsharpened) }
-            return ChainRun(out, null, ran, clock() - start)
+            if (keepBytes <= 0 || page === src) return ChainRun(out, null, ran, clock() - start)
+            val full = page
+            // Owned by [reduced] from here: it hands back the output or frees it.
+            page = src
+            val detail = try {
+                Cancellation.during(canceled) { reduced(full, keepBytes, linear, scaling) }
+            } catch (t: Throwable) {
+                out.recycle()
+                throw t
+            }
+            return ChainRun(out, null, ran, clock() - start, detail = detail)
         } finally {
             if (page !== src) page.recycle()
+        }
+    }
+
+    /**
+     * [full] when it holds at most [maxBytes], else [full] reduced evenly to fit, as [scaling]
+     * resamples without sharpening ([linear]: in linear light), and [full] recycled.
+     */
+    fun reduced(full: Bitmap, maxBytes: Long, linear: Boolean = false, scaling: Scaling = Scaling.DEFAULT): Bitmap {
+        val bytes = full.byteCount.toLong()
+        if (bytes <= maxBytes) return full
+        try {
+            val f = sqrt(maxBytes.toDouble() / bytes)
+            val w = (full.width * f).toInt().coerceAtLeast(1)
+            val h = (full.height * f).toInt().coerceAtLeast(1)
+            return BitmapUtils.resample(full, Plan(w, h, 0.0, 0.0, full.width.toDouble(), full.height.toDouble()), linear, scaling.unsharpened)
+        } finally {
+            full.recycle()
         }
     }
 

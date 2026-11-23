@@ -66,4 +66,15 @@ class LibArchiveSourceTest {
         assertArrayEquals(data.copyOfRange(900, 1000), got)
         assertEquals(-1, source.read(buffer))
     }
+
+    @Test
+    fun aReadTakesNoMoreThanItsChunk() = withSource { source, channel ->
+        val buffer = ByteBuffer.allocateDirect(256)
+        source.chunk = 40
+        assertEquals(40, source.read(buffer))
+        assertEquals(40, channel.position())
+        source.chunk = 1 shl 20
+        assertEquals(256, source.read(buffer))
+        assertArrayEquals(data.copyOfRange(40, 296), ByteArray(256).also { buffer.flip(); buffer.get(it) })
+    }
 }

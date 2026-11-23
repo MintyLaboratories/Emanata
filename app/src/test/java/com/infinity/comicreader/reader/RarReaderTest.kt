@@ -258,14 +258,25 @@ class RarReaderTest {
     }
 
     @Test
-    fun aRealSolidRar4IsListed() {
-        // The CC0 RAR test file (resources/rar/README.md): two compressed entries, the second solid.
-        val f = file(javaClass.getResourceAsStream("/rar/testfile.rar3.solid.cbr")!!.use { it.readBytes() })
-        RarReader(f).use { r ->
+    fun realRar4ArchivesListTheEntriesOfTheRar5OnesInTheirOwnOrder() {
+        // The CC0 RAR test files (resources/rar/README.md): the same two compressed images in each.
+        fun channel(name: String) = Counting(FileChannel.open(file(javaClass.getResourceAsStream("/rar/$name")!!.use { it.readBytes() }).toPath(), StandardOpenOption.READ))
+        val rar5 = RarReader.of(channel("testfile.rar5.cbr")).use { r -> r.entries.map { it.path to it.size } }
+        RarReader.of(channel("testfile.rar5.solid.cbr")).use { r -> assertEquals(rar5, r.entries.map { it.path to it.size }) }
+        val plain = channel("testfile.rar3.cbr")
+        RarReader.of(plain).use { r ->
+            assertEquals(false, r.solid)
+            assertEquals(rar5, r.entries.map { it.path to it.size })
+        }
+        val solid = channel("testfile.rar3.solid.cbr")
+        RarReader.of(solid).use { r ->
             assertEquals(true, r.solid)
             assertFalse(r.randomAccess)
-            assertEquals(listOf("testfile.png" to 87L, "testfile.jpg" to 220L), r.entries.map { it.path to it.size })
+            // Solid RAR 4 groups by extension: the PNG first.
+            assertEquals(rar5.reversed(), r.entries.map { it.path to it.size })
         }
+        // Listing jumps over the solid entries' data as over the others'.
+        assertTrue("listing read ${solid.read} bytes, ${plain.read} when not solid", solid.read <= plain.read)
     }
 
     @Test

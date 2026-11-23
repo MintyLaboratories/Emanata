@@ -23,6 +23,10 @@ class SolidArchivesTest {
     fun rar4SolidByItsMainHeader() {
         assertTrue(SolidArchives.isSolid(file("a.cbr", Fixtures.rar4Bytes(*pages, solid = true))))
         assertFalse(SolidArchives.isSolid(file("a.cbr", Fixtures.rar4Bytes(*pages))))
+        // The CC0 RAR test files (resources/rar/README.md).
+        fun resource(name: String) = file("a.cbr", javaClass.getResourceAsStream("/rar/$name")!!.use { it.readBytes() })
+        assertTrue(SolidArchives.isSolid(resource("testfile.rar3.solid.cbr")))
+        assertFalse(SolidArchives.isSolid(resource("testfile.rar3.cbr")))
     }
 
     @Test

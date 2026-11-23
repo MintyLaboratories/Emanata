@@ -170,6 +170,26 @@ class RarReaderTest {
     }
 
     @Test
+    fun realRar5ArchivesAreListedAndAStoredEntryReadStraight() {
+        // The CC0 RAR test files (resources/rar/README.md): a compressed JPEG, then a stored PNG.
+        fun resource(name: String) = file(javaClass.getResourceAsStream("/rar/$name")!!.use { it.readBytes() })
+        RarReader(resource("testfile.rar5.cbr")).use { r ->
+            assertEquals(false, r.solid)
+            assertEquals(listOf("testfile.jpg" to 220L, "testfile.png" to 87L), r.entries.map { it.path to it.size })
+            // Stored, so the engine here reads it, its CRC checked: past a main header with a locator record.
+            val png = r.bytes(1)
+            assertEquals(87, png.size)
+            assertArrayEquals(byteArrayOf(0x89.toByte(), 'P'.code.toByte(), 'N'.code.toByte(), 'G'.code.toByte()), png.copyOf(4))
+            assertEquals(1, r.spliced)
+        }
+        RarReader(resource("testfile.rar5.solid.cbr")).use { r ->
+            assertEquals(true, r.solid)
+            assertFalse(r.randomAccess)
+            assertEquals(listOf("testfile.jpg" to 220L, "testfile.png" to 87L), r.entries.map { it.path to it.size })
+        }
+    }
+
+    @Test
     fun aSolidRar4WhoseEntriesUseThoseBeforeThemDoesNotOpen() {
         // libarchive cannot unpack them: a book of its first page alone would hide the rest.
         assertThrows(IOException::class.java) { RarReader(file(Fixtures.rar4Bytes(*big, solid = true, linked = true))) }

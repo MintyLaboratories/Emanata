@@ -33,6 +33,18 @@ class Rar5HeadersTest {
     }
 
     @Test
+    fun aRealSolidArchivesHeaders() {
+        // From the CC0 RAR test files (resources/rar/README.md): its second entry uses the first's data.
+        val bytes = javaClass.getResourceAsStream("/rar/testfile.rar5.solid.cbr")!!.use { it.readBytes() }
+        assertEquals(RarMain(5, true, 23), RarMain.of(bytes.copyOf(RarMain.HEAD_BYTES)))
+        val headers = list(bytes)
+        assertEquals(listOf("testfile.jpg", "testfile.png"), headers.map { String(it.name) })
+        assertEquals(listOf(220L, 87L), headers.map { it.size })
+        assertEquals(listOf(23L, 298L), headers.map { it.start })
+        assertTrue(headers.all { it.file })
+    }
+
+    @Test
     fun fileHeadersInOrderWithWhereTheyStart() {
         val bytes = Fixtures.rar5Bytes(entry("b/02.jpg", ByteArray(300)), entry("a/01.jpg", ByteArray(5)), solid = true)
         val headers = list(bytes)

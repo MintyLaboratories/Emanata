@@ -30,8 +30,9 @@
  * filter programs) the entries before it left, and skipping an entry of a
  * solid archive unpacks it unless the option rar:solid-skip=consume is set.
  * Also changed for all archives: the PPMd model's memory size no longer
- * replaces the window size, and an entry that is not solid also resets the
- * filter programs and the repeat distances.
+ * replaces the window size, a PPMd block keeps the escape character an
+ * earlier block set, and an entry that is not solid also resets the filter
+ * programs and the repeat distances.
  */
 
 #include "archive_platform.h"
@@ -1925,6 +1926,8 @@ read_header(struct archive_read *a, struct archive_entry *entry,
     memset(rar->oldoffset, 0, sizeof(rar->oldoffset));
     __archive_ppmd7_functions.Ppmd7_Free(&rar->ppmd7_context);
     rar->ppmd_valid = 0;
+    /* Later PPMd blocks keep this escape character unless they set one. */
+    rar->ppmd_escape = 2;
     delete_program_code(rar->filters.progs);
     rar->filters.progs = NULL;
     rar->filters.lastfilternum = 0;
@@ -2508,8 +2511,6 @@ parse_codes(struct archive_read *a)
       rar->ppmd_escape = rar->ppmd7_context.InitEsc = rar_br_bits(br, 8);
       rar_br_consume(br, 8);
     }
-    else
-      rar->ppmd_escape = 2;
 
     if (ppmd_flags & 0x20)
     {

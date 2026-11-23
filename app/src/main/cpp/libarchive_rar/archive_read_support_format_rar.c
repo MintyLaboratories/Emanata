@@ -923,9 +923,19 @@ archive_read_format_rar_options(struct archive_read *a,
   }
   if (strcmp(key, "solid-skip") == 0) {
     /* "consume": skipping a solid entry jumps over its data instead of
-     * unpacking it, for listing; solid entries after it cannot be read. */
-    rar->solid_skip_consume = val != NULL && strcmp(val, "consume") == 0;
-    return (ARCHIVE_OK);
+     * unpacking it, for listing; solid entries after it cannot be read.
+     * "!solid-skip" restores the default. */
+    if (val == NULL) {
+      rar->solid_skip_consume = 0;
+      return (ARCHIVE_OK);
+    }
+    if (strcmp(val, "consume") == 0) {
+      rar->solid_skip_consume = 1;
+      return (ARCHIVE_OK);
+    }
+    archive_set_error(&a->archive, ARCHIVE_ERRNO_MISC,
+        "rar: solid-skip option takes only the value \"consume\"");
+    return (ARCHIVE_FAILED);
   }
 
   /* Note: The "warn" return is just to inform the options

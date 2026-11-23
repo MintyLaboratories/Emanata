@@ -238,6 +238,13 @@ int main(int argc, char **argv) {
           archive_error_string(a));
     archive_read_free(a);
 
+    // solid-skip takes only "consume".
+    a = archive_read_new();
+    archive_read_support_format_rar(a);
+    CHECK(archive_read_set_format_option(a, "rar", "solid-skip", "yes") == ARCHIVE_FAILED,
+          "solid-skip=yes accepted");
+    archive_read_free(a);
+
     // A stored entry first: the compressed entry after it, flagged solid, starts the stream.
     static const unsigned char text[] = "Stored before the solid stream.\n";
     Buffer stored_first = first_flagged_solid(solid4, 1, text, sizeof text - 1);

@@ -190,7 +190,7 @@ class ViewRingLabelsTest {
         val (plain, floor, six) = textSizes(2.0f)
         assertTrue("nonlinear: $plain at 2.0, $plain13 at 1.3", plain < plain13 * 2.0f / 1.3f - 1f)
         assertEquals(plain13, floor, 0f)
-        for (size in six) assertTrue("$size of $plain, floor $plain13", size < plain && size >= plain13 - 0.5f)
+        for (size in six) assertTrue("$size of $plain, floor $plain13", size < plain && size >= plain13)
         for (left in listOf(false, true)) check(PHONE, 2.0f, left)
     }
 

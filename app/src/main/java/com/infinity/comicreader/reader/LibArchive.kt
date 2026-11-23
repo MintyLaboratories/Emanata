@@ -118,7 +118,7 @@ internal object LibArchive : ArchiveEngine {
 
     override fun close(handle: Long) = nClose(handle)
 
-    /** libarchive's version and those of its compression libraries. */
+    /** libarchive's version and those of its compression libraries, then the commit built (LibarchivePin.cmake). */
     @JvmStatic external fun nVersion(): String
 
     @JvmStatic private external fun nOpen(source: Source, listing: Boolean): Long

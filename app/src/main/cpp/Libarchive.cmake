@@ -36,6 +36,7 @@ target_link_libraries(archive_ro PRIVATE z)
 
 add_library(archivejni SHARED archive_jni.c)
 target_link_libraries(archivejni PRIVATE archive_ro z log)
+target_compile_definitions(archivejni PRIVATE "LIBARCHIVE_COMMIT=\"${LIBARCHIVE_COMMIT}\"")
 target_compile_options(archivejni PRIVATE -Wall -Wextra)
 set_target_properties(archivejni PROPERTIES C_VISIBILITY_PRESET hidden)
 target_link_options(archivejni PRIVATE -Wl,--gc-sections -Wl,--exclude-libs,ALL)

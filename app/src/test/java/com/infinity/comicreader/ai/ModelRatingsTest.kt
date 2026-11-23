@@ -56,8 +56,8 @@ class ModelRatingsTest {
     }
 
     @Test
-    fun speedMatchesTheUsersByEyeColumn() {
-        // The user's Speed column, set with Anime4K in the table: Anime4K 5, waifu2x 4, OpenComic 3, LSDIR and Real-ESRGAN 1.
+    fun speedMatchesTheByEyeColumn() {
+        // The by-eye Speed column, set with Anime4K in the table: Anime4K 5, waifu2x 4, OpenComic 3, LSDIR and Real-ESRGAN 1.
         val column = mapOf(
             "anime4k-a-ul" to 10, "anime4k-b-ul" to 10, "anime4k-c-ul" to 10, "anime4k-upscale-ul" to 10, "anime4k-upscale-denoise-ul" to 10,
             "waifu2x-upconv7-2x" to 8, "waifu2x-upconv7-2x-denoise0" to 8, "waifu2x-upconv7-2x-denoise3" to 8,

@@ -30,7 +30,7 @@ data class PickerRow(val name: String, val models: List<AiModel>, val levelNames
     /** The model whose ratings the row shows at [level]: the largest of sizes, else the level's own. */
     fun rated(level: Int): AiModel = if (sizes) models.last() else models[level]
 
-    /** The user's ratings shown at [level] ([ModelRatings.of]); empty when never rated. */
+    /** The by-eye ratings shown at [level] ([ModelRatings.of]); empty when never rated. */
     fun ratings(level: Int): Map<RatingCategory, Int> = ModelRatings.of(rated(level))
 
     /**

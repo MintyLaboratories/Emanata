@@ -32,7 +32,7 @@ data class ShaderModel(
  * from the upstream repository at the release's commit, so their checksums hold. Five families,
  * each in every size from S to UL: the upscaler alone and with denoise, and mpv's modes A
  * (highlight clamp, restore, upscale), B (the same with the soft restore) and C (highlight
- * clamp, upscale with denoise), as the user compared them. Pickers offer every level.
+ * clamp, upscale with denoise), the families [ModelRatings] rates. Pickers offer every level.
  */
 object ShaderCatalog {
     /** The repository the files come from, and the commit they are fetched at (tag v4.0.1). */

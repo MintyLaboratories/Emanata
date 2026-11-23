@@ -13,9 +13,13 @@ import java.util.zip.CRC32
 internal object Rar5Headers {
     /**
      * A file header: [name] as stored (UTF-8), the unpacked [size] (-1 unknown), whether it is a
-     * regular [file] (not a folder or a link), and where its block [start]s.
+     * regular [file] (not a folder or a link), where its block [start]s, and the dictionary its
+     * data unpacks with ([dict] bytes; 0 for a folder or when not known).
      */
-    class Header(val name: ByteArray, val size: Long, val file: Boolean, val start: Long)
+    class Header(val name: ByteArray, val size: Long, val file: Boolean, val start: Long, val dict: Long = 0)
+
+    /** The largest dictionary libarchive unpacks with; it turns larger ones down entry by entry. */
+    const val MAX_DICT_BYTES = 64L * 1024 * 1024
 
     private const val SIGNATURE_BYTES = 8L
     private const val HEAD_FILE = 2L
@@ -41,8 +45,9 @@ internal object Rar5Headers {
 
     /**
      * Every file header of the RAR 5 archive in [channel], in order, until its end block or its
-     * end. Throws [RefusedRar] for an encrypted archive or entry, IOException for a header cut
-     * short or damaged; [found] holds the headers read before it.
+     * end. Throws [RefusedRar] for an encrypted archive or entry or a file whose dictionary is
+     * over [MAX_DICT_BYTES], IOException for a header cut short or damaged; [found] holds the
+     * headers read before it.
      */
     fun list(channel: SeekableByteChannel, found: MutableList<Header> = ArrayList()): List<Header> {
         val size = channel.size()
@@ -72,7 +77,7 @@ internal object Rar5Headers {
                     r.need() // attributes
                     if (fileFlags and MTIME != 0L) r.skip(4)
                     if (fileFlags and CRC != 0L) r.skip(4)
-                    r.need() // compression information
+                    val dict = dictOf(r.need())
                     r.need() // host OS
                     val nameLength = r.need().toInt()
                     val name = r.bytes(nameLength)
@@ -90,12 +95,22 @@ internal object Rar5Headers {
                         }
                     }
                     val folder = fileFlags and DIRECTORY != 0L
-                    found += Header(name, if (fileFlags and SIZE_UNKNOWN != 0L) -1 else unpacked, !folder && !link, at)
+                    if (!folder && dict > MAX_DICT_BYTES) throw RefusedRar("Dictionary over 64 MiB")
+                    found += Header(name, if (fileFlags and SIZE_UNKNOWN != 0L) -1 else unpacked, !folder && !link, at, if (folder) 0 else dict)
                 }
             }
             at += 4 + sized.size + dataSize
         }
         return found
+    }
+
+    /**
+     * The dictionary size in a file header's compression information [info]: 128 KiB doubled
+     * per bits 10-14; RAR 7 (format version 1 in bits 0-5) adds 1/32 of it per bits 15-19.
+     */
+    internal fun dictOf(info: Long): Long {
+        val dict = (128L * 1024) shl ((info shr 10) and 0x1F).toInt()
+        return if (info and 0x3F == 1L) dict + dict / 32 * ((info shr 15) and 0x1F) else dict
     }
 
     private fun readAt(channel: SeekableByteChannel, at: Long, count: Int): ByteArray {

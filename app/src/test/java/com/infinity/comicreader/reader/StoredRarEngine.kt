@@ -15,8 +15,8 @@ import java.util.zip.CRC32
  * - a header's position is where the walk stood when [next] began (0 for the first);
  * - header CRCs are checked by [next], each entry's data CRC once its last byte is read;
  * - an entry with the RAR 4 solid flag (0x0010) fails ("RAR solid archive support unavailable"),
- *   an encrypted entry is flagged, RAR 5 header encryption fails, and a solid RAR 5 is unpacked
- *   (read through) to skip an entry.
+ *   an encrypted entry is flagged, RAR 5 header encryption fails, a RAR 5 file whose dictionary
+ *   is over 64 MiB fails, and a solid RAR 5 is unpacked (read through) to skip an entry.
  * Unlike libarchive, names come as stored: RAR 4's "\" stays.
  */
 internal class StoredRarEngine : ArchiveEngine {
@@ -224,6 +224,9 @@ internal class StoredRarEngine : ArchiveEngine {
                     if (fileFlags and 2L != 0L) r.at += 4
                     val crc = if (fileFlags and 4L != 0L) u32(body, r.at).also { r.at += 4 } else -1L
                     val compression = r.next()
+                    if (fileFlags and 1L == 0L && (128L * 1024 shl ((compression shr 10) and 15).toInt()) > 64L * 1024 * 1024) {
+                        throw IOException("Declared dictionary size is not supported")
+                    }
                     r.next()
                     val nameLength = r.next().toInt()
                     val name = body.copyOfRange(r.at, r.at + nameLength)

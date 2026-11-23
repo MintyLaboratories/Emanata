@@ -62,6 +62,24 @@ class Rar5HeadersTest {
     }
 
     @Test
+    fun theDictionaryIsDecodedFromTheCompressionInformation() {
+        assertEquals(128L * 1024, Rar5Headers.dictOf(0))
+        assertEquals(32L shl 20, Rar5Headers.dictOf(8L shl 10))
+        // RAR 7 (version 1): 5 bits of size, then 1/32 steps; RAR 5.0 has no fraction.
+        assertEquals(4L shl 30, Rar5Headers.dictOf(15L shl 10 or 1))
+        assertEquals((64L shl 20) + (64L shl 20) / 32 * 3, Rar5Headers.dictOf(3L shl 15 or (9L shl 10) or 1))
+        assertEquals(64L shl 20, Rar5Headers.dictOf(3L shl 15 or (9L shl 10)))
+        val headers = list(Fixtures.rar5Bytes(entry("01.jpg"), solid = true, dictBits = 9))
+        assertEquals(listOf(64L shl 20), headers.map { it.dict })
+    }
+
+    @Test
+    fun aDictionaryOver64MiBIsTurnedDown() {
+        val e = assertThrows(RefusedRar::class.java) { list(Fixtures.rar5Bytes(entry("01.jpg"), solid = true, dictBits = 10)) }
+        assertEquals("Dictionary over 64 MiB", e.message)
+    }
+
+    @Test
     fun aDamagedOrCutHeaderStopsTheListingKeepingThoseBefore() {
         val bytes = Fixtures.rar5Bytes(entry("01.jpg"), entry("02.jpg"), entry("03.jpg"))
         val starts = list(bytes).map { it.start.toInt() }

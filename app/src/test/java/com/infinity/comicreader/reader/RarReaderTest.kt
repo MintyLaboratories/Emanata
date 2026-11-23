@@ -214,6 +214,14 @@ class RarReaderTest {
     }
 
     @Test
+    fun aRar5WhoseDictionaryIsOver64MiBDoesNotOpen() {
+        // libarchive unpacks with 64 MiB at most: a solid one is turned down by its headers, the other by libarchive.
+        assertThrows(RefusedRar::class.java) { RarReader(file(Fixtures.rar5Bytes(*pages, solid = true, dictBits = 10))) }
+        assertThrows(IOException::class.java) { RarReader(file(Fixtures.rar5Bytes(*pages, dictBits = 10))) }
+        RarReader(file(Fixtures.rar5Bytes(*pages, solid = true, dictBits = 9))).use { assertEquals("02.jpg", String(it.bytes(0))) }
+    }
+
+    @Test
     fun anEncryptedArchiveDoesNotOpen() {
         val encrypted = listOf(
             Fixtures.rar4Bytes(*pages, encrypted = true),

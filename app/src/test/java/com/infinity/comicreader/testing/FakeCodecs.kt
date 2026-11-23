@@ -18,7 +18,8 @@ import java.util.zip.InflaterInputStream
  * Stands in for libjxl on the JVM, with files of its own making that pass for JPEG XL:
  * a JPEG "transcoded" is a container holding the JPEG deflated in a `jbrd` box; pixels
  * "encoded" are a codestream holding them deflated, lossless (`L`) or lossy (`Y`, made by
- * [lossy]). Each step can be made to fail.
+ * [lossy]). Each step can be made to fail. Safe to call from several threads at once, as
+ * pages convert: what it counts and keeps is guarded by the instance.
  */
 class FakeJxl : JxlCodec {
     var available_ = true
@@ -43,8 +44,10 @@ class FakeJxl : JxlCodec {
     val channelsEncoded = ArrayList<Int>()
 
     override fun transcode(jpeg: ByteArray, effort: Int): ByteArray {
-        transcodes++
-        efforts += effort
+        synchronized(this) {
+            transcodes++
+            efforts += effort
+        }
         val packed = deflate(jpeg)
         val out = ByteArrayOutputStream()
         out.write(CONTAINER)
@@ -81,7 +84,7 @@ class FakeJxl : JxlCodec {
     /** ICC profiles given to [encode], by what it made. */
     private val iccs = HashMap<ByteBuffer, ByteArray>()
 
-    override fun iccOfPixels(jxl: ByteArray): ByteArray = iccs[ByteBuffer.wrap(jxl)] ?: "icc".toByteArray()
+    override fun iccOfPixels(jxl: ByteArray): ByteArray = synchronized(this) { iccs[ByteBuffer.wrap(jxl)] } ?: "icc".toByteArray()
 
     override fun decode(jxl: ByteArray, channels: Int, bits: Int, srgb: Boolean): ByteArray? {
         val info = info(jxl) ?: return null
@@ -95,11 +98,13 @@ class FakeJxl : JxlCodec {
     }
 
     override fun encode(pixels: ByteArray, width: Int, height: Int, channels: Int, bits: Int, profile: ByteArray?, effort: Int): ByteArray {
-        encodes++
-        efforts += effort
-        channelsEncoded += channels
         val out = codestream('L', width, height, channels, bits, profile == null, pixels)
-        if (profile != null && profile[0] == JxlCodec.PROFILE_ICC) iccs[ByteBuffer.wrap(out)] = profile.copyOfRange(1, profile.size)
+        synchronized(this) {
+            encodes++
+            efforts += effort
+            channelsEncoded += channels
+            if (profile != null && profile[0] == JxlCodec.PROFILE_ICC) iccs[ByteBuffer.wrap(out)] = profile.copyOfRange(1, profile.size)
+        }
         return out
     }
 
@@ -158,6 +163,7 @@ class FakeJxl : JxlCodec {
 /**
  * Stands in for the platform's image codecs: PNGs decoded by [Png], WebPs of its own
  * making (a real header, then the pixels deflated). [losslessWebp] false is Android before 11.
+ * Safe to call from several threads at once.
  */
 class FakeImages(var losslessWebp: Boolean = true) : PlatformImages {
     /** Decoded WebPs come out one sample off. */
@@ -183,7 +189,7 @@ class FakeImages(var losslessWebp: Boolean = true) : PlatformImages {
     /** A JPEG of its own making: its start of image, then the pixels deflated. */
     override fun jpeg(pixels: Pixels, quality: Int): ByteArray? {
         if (maxOf(pixels.width, pixels.height) > PageWork.JPEG_MAX_SIDE) return null
-        jpegQualities += quality
+        synchronized(this) { jpegQualities += quality }
         return byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte()) + FakeJxl.deflate(pixels.data)
     }
 

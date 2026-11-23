@@ -44,7 +44,9 @@ import kotlin.concurrent.thread
  *  [--ei rounds 3] [--ei random 20] [--el seed 1] [--ez warmup true] [--es pages images|all] [--es dir /path --ei depth 3]`
  *
  * Archives are `paths`, named in the log by their place in it (`a1`, `a2`...). `via`: the file,
- * or a channel over it, as the app reads books on a share.
+ * or a channel over it, as the app reads books on a share. For RAR both are one route
+ * ([RarReader] over a `FileChannel`): `channel` repeats `file`, and a share's own channel
+ * ([com.infinity.comicreader.net.RemoteChannel]) is not exercised.
  *
  * - time (default): per archive and `via`, a warm-up run, then `rounds` runs, each one line:
  *   `openMs` (opening and listing), `firstPageMs` (that plus the first page in the reader's

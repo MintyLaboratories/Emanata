@@ -1475,7 +1475,7 @@ page is reported across its valid rounds with their spread. Unplug the cable, us
 over Wi-Fi and keep the screen on: under `dumpsys battery unplug` a charger still
 supplies power.
 
-`ArchiveCheckService` (debug and bench builds, shell only) times the app's archive readers on real archives (RAR through libarchive): opening and listing, the first page, pages in a fixed pseudo-random order, every entry in order, CPU time, and peak native and Java heap. It also checks that a reader returns the same bytes from the file and through a channel, in archive order, backward and shuffled, and finds RAR 4, RAR 5 and solid test archives in a folder. See its KDoc.
+`ArchiveCheckService` (debug and bench builds, shell only) times the app's archive readers on real archives (RAR through libarchive): opening and listing, the first page, pages in a fixed pseudo-random order, every entry in order, CPU time, and peak native and Java heap. It also checks that a reader returns the same bytes from the file and through a channel, in archive order, backward and shuffled (for RAR both are one route, a `FileChannel`; the share's own channel is not exercised), and finds RAR 4, RAR 5 and solid test archives in a folder. See its KDoc.
 
 `AiCheckService` (debug and bench builds, shell only) runs an ncnn model end to end
 on synthetic pages: how it opens (measuring, checks, tile size, precision), seams

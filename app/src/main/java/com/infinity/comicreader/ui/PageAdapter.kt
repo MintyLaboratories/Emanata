@@ -1621,6 +1621,8 @@ class PageAdapter(
             if (key != keyFor(key.part)) return false
             val bitmap = cache.get(key) ?: return false
             val chapter = strip.chapterOf(key.page)
+            // A page of a chapter trimmed from the strip is none of the chapters left.
+            if (key.page < chapter.first) return false
             return replanned(chapter.value.source, key.page - chapter.first, key.target, bitmap.width, bitmap.height)
         }
         val dropped = processed.filter(::picked)

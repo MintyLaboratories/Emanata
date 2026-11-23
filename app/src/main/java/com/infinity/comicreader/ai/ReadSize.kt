@@ -49,12 +49,9 @@ enum class PageClass(val key: Char, val widthCm: Double) {
             else -> US
         }
 
-        /**
-         * True for a manga book: read [rightToLeft], its ComicInfo [marked] it manga (left to
-         * right or not; null: unread), or it runs the manga chain ([kind]).
-         */
-        fun manga(rightToLeft: Boolean, marked: ComicInfo.Manga?, kind: ChainKind): Boolean =
-            rightToLeft || marked == ComicInfo.Manga.YES || marked == ComicInfo.Manga.YES_RTL || kind == ChainKind.MANGA
+        /** True for a manga book: read [rightToLeft], or its ComicInfo [marked] it manga (left to right or not; null: unread). */
+        fun manga(rightToLeft: Boolean, marked: ComicInfo.Manga?): Boolean =
+            rightToLeft || marked == ComicInfo.Manga.YES || marked == ComicInfo.Manga.YES_RTL
 
         /**
          * The median aspect of [analysis]'s pages of known size, covers (and the first page),

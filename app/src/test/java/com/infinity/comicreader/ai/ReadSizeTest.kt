@@ -34,15 +34,15 @@ class ReadSizeTest {
     }
 
     @Test
-    fun aBookIsMangaReadRightToLeftMarkedMangaOrRunningTheMangaChain() {
-        assertTrue(PageClass.manga(rightToLeft = true, marked = null, kind = ChainKind.OTHER))
-        assertTrue("left to right, Manga=Yes", PageClass.manga(rightToLeft = false, marked = ComicInfo.Manga.YES, kind = ChainKind.OTHER))
-        assertTrue("Manga=YesAndRightToLeft read left to right", PageClass.manga(rightToLeft = false, marked = ComicInfo.Manga.YES_RTL, kind = ChainKind.OTHER))
-        assertTrue("the manga chain", PageClass.manga(rightToLeft = false, marked = null, kind = ChainKind.MANGA))
-        assertFalse(PageClass.manga(rightToLeft = false, marked = ComicInfo.Manga.NO, kind = ChainKind.OTHER))
-        assertFalse(PageClass.manga(rightToLeft = false, marked = ComicInfo.Manga.UNKNOWN, kind = ChainKind.OTHER))
+    fun aBookIsMangaReadRightToLeftOrMarkedManga() {
+        assertTrue(PageClass.manga(rightToLeft = true, marked = null))
+        assertTrue("left to right, Manga=Yes", PageClass.manga(rightToLeft = false, marked = ComicInfo.Manga.YES))
+        assertTrue("Manga=YesAndRightToLeft read left to right", PageClass.manga(rightToLeft = false, marked = ComicInfo.Manga.YES_RTL))
+        assertFalse(PageClass.manga(rightToLeft = false, marked = null))
+        assertFalse(PageClass.manga(rightToLeft = false, marked = ComicInfo.Manga.NO))
+        assertFalse(PageClass.manga(rightToLeft = false, marked = ComicInfo.Manga.UNKNOWN))
         val us = book(1988, 3056)
-        assertEquals(PageClass.MANGA, BookShape.of(PageClass.manga(false, ComicInfo.Manga.YES, ChainKind.OTHER), false, us).pageClass)
+        assertEquals(PageClass.MANGA, BookShape.of(PageClass.manga(false, ComicInfo.Manga.YES), false, us).pageClass)
     }
 
     @Test

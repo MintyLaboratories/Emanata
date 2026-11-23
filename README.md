@@ -934,8 +934,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   tablet rarely is. The printed size comes from the screen's physical pixels
   per inch (never from DPI stored in image files) and the book's class,
   decided from its direction and median page shape (covers, spreads and wide
-  pages left out): manga (read right to left, marked manga by its ComicInfo,
-  or running the Manga chain) at B6, 12.8 cm wide; web (read top to bottom,
+  pages left out): manga (read right to left, or marked manga by its
+  ComicInfo) at B6, 12.8 cm wide; web (read top to bottom,
   or a median aspect outside 0.60-0.78) at its pixels / 96 inches;
   Franco-Belgian (median aspect 0.73-0.755) at 21.5 cm; US comics (the rest)
   at 16.8 cm. A spread prints at the height of the book's pages.

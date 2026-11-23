@@ -165,11 +165,10 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
     // Archive support
-    implementation("com.github.junrar:junrar:8.1.2")          // RAR / CBR (RAR4 + RAR5/7)
     implementation("org.apache.commons:commons-compress:1.26.2") // 7z / CB7
     implementation("commons-io:commons-io:2.16.1")
     implementation("org.tukaani:xz:1.9")
-    implementation("org.slf4j:slf4j-nop:2.0.18")              // silence junrar/slf4j on Android
+    implementation("org.slf4j:slf4j-nop:2.0.18")              // silences SMBJ's SLF4J logging
     // JPEG XL decoding, and the libjxl.so lossless compaction calls (jxl_jni.c): it must
     // stay libjxl 0.12.x, the headers CMakeLists.txt pins, or compaction turns itself off.
     implementation("io.github.awxkee:jxl-coder:2.6.1")

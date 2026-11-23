@@ -45,11 +45,6 @@ object Notices {
     const val SOURCE_URL = "https://github.com/MintyLaboratories/EmanataComicReader"
     const val TIP_URL = "https://ko-fi.com/mmeminty"
 
-    /** The statement the UnRAR license requires in the documentation of software using it. */
-    const val UNRAR_NOTE = "junrar is derived from the UnRAR source code. All copyrights to RAR and UnRAR " +
-        "are owned by Alexander Roshal. The UnRAR code may not be used to develop a RAR (WinRAR) " +
-        "compatible archiver."
-
     /** Where the dot-pattern test picture of an import's before and after is from. */
     const val PREVIEW_DOTS_URL = "https://www.flickr.com/photos/seattlemunicipalarchives/44998418715/"
 
@@ -87,10 +82,6 @@ object Notices {
         Notice(
             "Guava ListenableFuture", APACHE_2, "https://github.com/google/guava", APACHE,
             listOf("com.google.guava:listenablefuture")
-        ),
-        Notice(
-            "junrar", "UnRAR License", "https://github.com/junrar/junrar", listOf("unrar.txt"),
-            listOf("com.github.junrar:junrar"), note = UNRAR_NOTE
         ),
         Notice(
             "Apache Commons Compress", APACHE_2, "https://commons.apache.org/proper/commons-compress/",
@@ -161,6 +152,11 @@ object Notices {
         Notice(
             "xxHash", BSD_2, "https://github.com/Cyan4973/xxHash", listOf("xxhash.txt"),
             note = "Built from source; its XXH3-64 hash makes Book IDs."
+        ),
+        Notice(
+            "libarchive", BSD_2, "https://github.com/libarchive/libarchive", listOf("libarchive.txt"),
+            note = "Built from source; reads RAR archives (RAR 4 and 5) with its own code. Parts under the " +
+                "BSD 3-Clause License, CC0 and in the public domain, in the same text."
         ),
         Notice(
             "ncnn", BSD_3, "https://github.com/Tencent/ncnn", listOf("ncnn.txt"),

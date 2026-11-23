@@ -380,7 +380,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - **Repack as CBZ** copies every page and file of a CBR, CB7 or CBT as it is
   into a flat `.cbz` of stored entries (the Compact rules for names, litter
   and ComicInfo.xml; nothing converted), every entry checked by its CRC-32.
-  Solid RAR (4 and 5) and 7z archives, told from their headers, unpack every
+  Solid RAR 5 and 7z archives, told from their headers, unpack every
   page before the one asked for, so they are slow to jump around in and never
   read for seam checks: with **Suggest repacking solid archives** (Settings →
   Library, on by default), opening one on the device offers **Repack as CBZ**
@@ -970,7 +970,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 | jxl | `ImageSource` | libjxl as jxl-coder ships it, through our JNI binding (`jxl_page.c`); jxl-coder itself for images without an sRGB rendering |
 | tif/tiff | `ImageSource` | built-in `Tiff` (strips/tiles; none, PackBits, LZW, Deflate; JPEG via the platform) |
 | zip / cbz | `ArchiveSource` + `ZipReader` | `java.util.zip` |
-| rar / cbr | `ArchiveSource` + `RarReader` | junrar 8.x (RAR4 and RAR5/7) |
+| rar / cbr | `ArchiveSource` + `RarReader` | libarchive 3.8, built from source (RAR 4 and 5; not solid RAR 4, not encrypted) |
 | 7z / cb7 | `ArchiveSource` + `SevenZipReader` | Apache Commons Compress |
 | tar / cbt | `ArchiveSource` + `TarReader` | Apache Commons Compress |
 | pdf | `PdfSource` | platform `PdfRenderer` |
@@ -1402,8 +1402,9 @@ listed in `.gitignore` and **must not be committed**. If `keystore.properties` i
 absent the release build still compiles, just unsigned.
 
 Release uses `isMinifyEnabled = true` + `isShrinkResources = true` (R8). The
-proguard rules keep junrar and commons-compress whole so the reflection paths in
-the archive backends survive minification.
+proguard rules keep commons-compress whole so the reflection paths in the
+archive backends survive minification, and the classes native code calls back
+by name (libarchive's `LibArchive$Source`, among others).
 
 ### Install on a connected device
 
@@ -1474,7 +1475,7 @@ page is reported across its valid rounds with their spread. Unplug the cable, us
 over Wi-Fi and keep the screen on: under `dumpsys battery unplug` a charger still
 supplies power.
 
-`ArchiveCheckService` (debug and bench builds, shell only) times reading archives by the app's reader for the format (junrar for RAR) against libarchive, which CMake builds from its pinned release into `libarchivejni.so` (RAR 4 and 5, 7z and ZIP; not used by the reader yet): opening and listing, the first page, pages in a fixed pseudo-random order, every entry in order, CPU time, peak native and Java heap, and energy per page on battery (`sustain`). It also checks that both return the same bytes, and reads a ZIP and a 7z it makes through libarchive. See its KDoc.
+`ArchiveCheckService` (debug and bench builds, shell only) times the app's archive readers on real archives (RAR through libarchive): opening and listing, the first page, pages in a fixed pseudo-random order, every entry in order, CPU time, and peak native and Java heap. It also checks that a reader returns the same bytes from the file and through a channel, in archive order, backward and shuffled, and finds RAR 4, RAR 5 and solid test archives in a folder. See its KDoc.
 
 `AiCheckService` (debug and bench builds, shell only) runs an ncnn model end to end
 on synthetic pages: how it opens (measuring, checks, tile size, precision), seams
@@ -1630,7 +1631,7 @@ estimated from the tiles run in 60 or 120 s):
   exact Lanczos3 rendering replaces it: enlarged through the GPU Lanczos3
   shader, shrunk bilinear. Shrinking through the shader at source size would
   alias, and the stand-in shows only for a fraction of a second.
-- The archive/PDF backends (`SevenZFile`, junrar `Archive`, `PdfRenderer`) keep
+- The archive/PDF backends (`SevenZFile`, libarchive's readers, `PdfRenderer`) keep
   per-instance decode state and are **not thread-safe**. Because the page grid
   loads the current page and its neighbors concurrently, all access to these
   backends is serialized on the reader or source instance (`@Synchronized`).
@@ -1654,7 +1655,6 @@ app shows each license and NOTICE text under Settings → About (files in
 | AndroidX, Material Components for Android | Apache-2.0 |
 | Kotlin standard library, kotlinx.coroutines | Apache-2.0 |
 | JetBrains Java Annotations, JSpecify, Error Prone annotations, Guava ListenableFuture | Apache-2.0 |
-| [junrar](https://github.com/junrar/junrar) | UnRAR License (see below) |
 | Apache Commons Compress, IO, Lang, Codec | Apache-2.0 |
 | XZ for Java | Public domain |
 | SLF4J (`slf4j-api`, `slf4j-nop`) | MIT |
@@ -1668,6 +1668,7 @@ app shows each license and NOTICE text under Settings → About (files in
 | [libavif](https://github.com/AOMediaCodec/libavif), with parts of libyuv | BSD-2-Clause (libyuv: BSD-3-Clause) |
 | [dav1d](https://code.videolan.org/videolan/dav1d) | BSD-2-Clause |
 | [xxHash](https://github.com/Cyan4973/xxHash) | BSD-2-Clause |
+| [libarchive](https://github.com/libarchive/libarchive) (its read core and RAR readers) | BSD-2-Clause; parts BSD-3-Clause, CC0, public domain |
 | [ncnn](https://github.com/Tencent/ncnn), with parts under zlib and BSD-2-Clause, and ruapu (MIT) | BSD-3-Clause |
 | [glslang](https://github.com/KhronosGroup/glslang) (in the ncnn library) | BSD-3-Clause, BSD-2-Clause, MIT, Apache-2.0; parser GPL-3.0 with the Bison exception; preprocessor also NVIDIA's license |
 | Rust standard library; crates addr2line, gimli, libc, miniz_oxide, rustc-demangle (in jxl-coder) | MIT or Apache-2.0 |
@@ -1703,7 +1704,3 @@ CuNNy), and lists their authors and licenses under Settings → About.
 | [CuNNy](https://github.com/funnyplanter/CuNNy) | funnyplanter; ncnn conversion made for this app | LGPL-3.0-or-later |
 | [ArtCNN](https://github.com/Artoriuz/ArtCNN) | João Chrisóstomo (Artoriuz); ncnn conversion made for this app | MIT |
 | [Anime4K](https://github.com/bloc97/Anime4K) | bloc97 | MIT |
-
-**UnRAR:** junrar is derived from the UnRAR source code. All copyrights to RAR
-and UnRAR are owned by Alexander Roshal. The UnRAR code may not be used to
-develop a RAR (WinRAR) compatible archiver.

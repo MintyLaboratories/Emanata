@@ -85,18 +85,19 @@ class NoticesTest {
     }
 
     @Test
-    fun unrarRestrictionIsStatedInAboutAndReadme() {
-        assertEquals(Notices.UNRAR_NOTE, Notices.forArtifact("com.github.junrar:junrar")!!.note)
-        val readme = File("../README.md").readText().replace(Regex("\\s+"), " ")
-        assertTrue(readme.contains(Notices.UNRAR_NOTE))
-        assertTrue(Notices.UNRAR_NOTE.contains("may not be used to develop a RAR (WinRAR) compatible archiver"))
+    fun noUnrarCodeShipsOrIsNamed() {
+        assertTrue(shippedArtifacts().none { it.startsWith("com.github.junrar:") })
+        assertTrue(Notices.all.none { it.license.contains("UnRAR") || it.note.orEmpty().contains("UnRAR") })
+        val readme = File("../README.md").readText()
+        assertFalse(readme.contains("junrar"))
+        assertFalse(readme.contains("UnRAR License"))
     }
 
     @Test
     fun codeBuiltFromSourceIsInTheReadmesLicenseTable() {
         val readme = File("../README.md").readText()
         val built = Notices.all.filter { it.note?.startsWith("Built from source") == true }
-        assertEquals(setOf("libavif", "dav1d", "xxHash", "ncnn", "glslang"), built.map { it.name }.toSet())
+        assertEquals(setOf("libavif", "dav1d", "xxHash", "libarchive", "ncnn", "glslang"), built.map { it.name }.toSet())
         for (n in built) assertTrue("${n.name} not in README", readme.contains("| [${n.name}]("))
     }
 

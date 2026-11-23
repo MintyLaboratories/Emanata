@@ -337,7 +337,12 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
     removed). Either way the new file takes the book's favorite, read mark,
     history, bookmarks, hidden pages and own settings (pages renumbered where
     hidden ones were left out); its file name charset is dropped, the new file
-    naming its pages in UTF-8.
+    naming its pages in UTF-8. Page sizes, seams, pages seen and previews
+    follow each page that came out byte for byte the same (same size and
+    CRC-32, known only for zip books); the book's facts (reading direction
+    detected, slices, cover) only when every page did, in the same order.
+    The rest is read again; a book whose file stays, or that has a copy
+    elsewhere, keeps its own.
   - Each file read is checked against the CRC-32 its archive stores (zip; RAR
     and 7z check their own), and every entry of the new file is read back and
     checked against its CRC-32 before it takes its place; a book left as it was

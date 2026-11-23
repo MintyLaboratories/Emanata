@@ -35,6 +35,7 @@ import com.infinity.comicreader.files.Transfer
 import com.infinity.comicreader.net.ChangeRefused
 import com.infinity.comicreader.net.RemoteException
 import com.infinity.comicreader.net.Remotes
+import com.infinity.comicreader.reader.ArchiveEntry
 import com.infinity.comicreader.reader.ArchiveJunk
 import com.infinity.comicreader.reader.ArchiveReader
 import com.infinity.comicreader.reader.ImageKind
@@ -51,6 +52,7 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executor
 import java.util.concurrent.Future
 import java.util.Locale
+import java.util.zip.ZipFile
 
 /**
  * The work of queued file operations ([FileWork]): it holds the application, never a
@@ -456,17 +458,21 @@ internal class FileJobs(
                         already++
                         continue
                     }
+                    // The book's files as its reader lists them, kept once the compactor opens it.
+                    var listed: List<ArchiveEntry> = emptyList()
                     // Not opened meanwhile: the reader waits while the new file takes the book's place and its data follows.
                     val placer = Compactor.Placer { result, part, swap ->
                         OpenBooks.unlessOpen(path) {
                             val newId = BookIds.peek(part)
                             val target = result.file.absolutePath
                             val removed = result.removed != null
+                            // Read while the book is still there.
+                            val same = if (id != null && id != newId) runCatching { samePages(listed, part, result.moves) }.getOrNull() else null
                             // Kept on the device until the data has followed, should the app stop in between.
                             val handover = id?.takeIf { it != newId }
-                                ?.let { handovers.add(Handovers.Entry(it, newId, path, target, removed, result.moves, result.pageCount)) }
+                                ?.let { handovers.add(Handovers.Entry(it, newId, path, target, removed, result.moves, result.pageCount, same)) }
                             swap()
-                            follow(path, id, newId, target, removed, result.moves, result.pageCount)
+                            follow(path, id, newId, target, removed, result.moves, result.pageCount, same)
                             handover?.let(handovers::remove)
                         }
                     }
@@ -478,7 +484,10 @@ internal class FileJobs(
                         always = how == Rebuild.REPACK, mustConvert = { how == Rebuild.COMPATIBLE && PageWork.needsCompatible(it) }, marks = listOf(how.mark),
                         meter = meter
                     )
-                    val open = { ArchiveReader.open(book, NameCharset.forBook(book, prefs.charset)) ?: throw IOException("Not an archive: ${book.name}") }
+                    val open = {
+                        (ArchiveReader.open(book, NameCharset.forBook(book, prefs.charset)) ?: throw IOException("Not an archive: ${book.name}"))
+                            .also { listed = it.entries }
+                    }
                     val began = System.nanoTime()
                     val result = compactor.run(request, open, progress)
                     // A book holding archives was only listed.
@@ -689,7 +698,10 @@ internal class FileJobs(
     fun recover() = synchronized(RECOVERY) {
         for (e in handovers.entries()) {
             val placed = File(e.target).isFile && runCatching { BookIds.peek(File(e.target)) }.getOrNull() == e.new
-            if (placed && library.mayHaveData(e.old) && !library.mayHaveData(e.new)) follow(e.book, e.old, e.new, e.target, e.removed, e.moves, e.pageCount)
+            if (placed) {
+                if (library.mayHaveData(e.old) && !library.mayHaveData(e.new)) follow(e.book, e.old, e.new, e.target, e.removed, e.moves, e.pageCount, e.same)
+                else followCaches(e.book, e.old, e.new, e.target, e.removed, e.moves, e.same)
+            }
             handovers.remove(e)
         }
     }
@@ -697,13 +709,12 @@ internal class FileJobs(
     /**
      * Hands everything kept for the book at [path] (Book ID [old]) to its rebuilt file at
      * [target] (Book ID [new]): book page `i` is now page [moves]`[i]` of [pageCount], its own
-     * charset dropped (the new file names its pages in UTF-8). When the book's own file
-     * went ([removed]) or was replaced, what is cached for it goes too, unless a copy
-     * elsewhere keeps it, and picks waiting follow the new file.
+     * charset dropped (the new file names its pages in UTF-8), and what is cached for its
+     * pages [same] finds identical ([followCaches]). When the book's own file went
+     * ([removed]), picks waiting follow the new file.
      */
-    private fun follow(path: String, old: BookId?, new: BookId, target: String, removed: Boolean, moves: IntArray, pageCount: Int) {
-        val replaced = removed || target == path
-        if (replaced && old != null && BookIds.elsewhere(setOf(old), path).isEmpty()) BookCaches.forget(app, old)
+    private fun follow(path: String, old: BookId?, new: BookId, target: String, removed: Boolean, moves: IntArray, pageCount: Int, same: BookCaches.SamePages?) {
+        val replaced = followCaches(path, old, new, target, removed, moves, same)
         if (replaced) BookIds.removed(path)
         val ref = BookRef(new, target)
         if (old != null && old != ref.id) {
@@ -714,6 +725,21 @@ internal class FileJobs(
             library.seen(ref)
         }
         if (removed) FileClipboard.edit { items -> items.map { if (it.path == path) it.copy(path = target) else it } }
+    }
+
+    /**
+     * Hands what is cached for the pages of book [old] at [path] that [same] finds identical
+     * in its rebuilt file at [target] (Book ID [new]) to that file, book page `i` as page
+     * [moves]`[i]`. When the book's own file went ([removed]) or was replaced, they move and
+     * the rest of what is cached for it goes, unless a copy elsewhere keeps it all; else they
+     * are copied. True when the book's own file went or was replaced.
+     */
+    private fun followCaches(path: String, old: BookId?, new: BookId, target: String, removed: Boolean, moves: IntArray, same: BookCaches.SamePages?): Boolean {
+        val replaced = removed || target == path
+        val drop = replaced && old != null && BookIds.elsewhere(setOf(old), path).isEmpty()
+        if (old != null && old != new && same != null) BookCaches.carry(app, old, new, moves, same, move = drop)
+        if (drop) BookCaches.forget(app, old)
+        return replaced
     }
 
     /** Picks [items] of a move's [clip] up again, as a new pick; a copy's are let go. Returns how many were picked up. */
@@ -748,6 +774,25 @@ internal class FileJobs(
 
         /** How long reading books' marks for an estimate may take: books past it are taken to be done as often as those read. */
         const val MARK_MS = 8_000L
+
+        /**
+         * The pages of a book whose files its reader lists as [entries] that came out
+         * byte-identical in its rebuilt file [part], book page `i` as page [moves]`[i]`: both
+         * sizes and CRCs known and equal. Null when none is, or the pages do not line up.
+         */
+        fun samePages(entries: List<ArchiveEntry>, part: File, moves: IntArray): BookCaches.SamePages? {
+            val old = Compactor.pagesOf(entries.map { it.path to it.size }).map { entries[it] }
+            if (old.size != moves.size || old.none { it.crc >= 0 }) return null
+            val files = ZipFile(part).use { zip -> zip.entries().asSequence().filter { !it.isDirectory }.toList() }
+            val new = Compactor.pagesOf(files.map { it.name to it.size }).map { files[it] }
+            val same = old.indices.filter { i ->
+                val a = old[i]
+                val b = new.getOrNull(moves[i])
+                b != null && a.crc >= 0 && a.crc == b.crc && a.size >= 0 && a.size == b.size
+            }
+            if (same.isEmpty()) return null
+            return BookCaches.SamePages(same.toIntArray(), old.map { it.path }, new.map { it.name })
+        }
 
         /** libjxl and the platform's codecs; null where libjxl is missing. */
         fun platformPages(): PageWork? = if (runCatching { LibJxl.available }.getOrDefault(false)) PageWork(LibJxl, AndroidImages) else null

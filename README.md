@@ -934,10 +934,11 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   tablet rarely is. The printed size comes from the screen's physical pixels
   per inch (never from DPI stored in image files) and the book's class,
   decided from its direction and median page shape (covers, spreads and wide
-  pages left out): manga (read right to left) at B6, 12.8 cm wide; web (read
-  top to bottom, or a median aspect outside 0.60-0.78) at its pixels / 96
-  inches; Franco-Belgian (median aspect 0.73-0.755) at 21.5 cm; US comics
-  (the rest) at 16.8 cm. A spread prints at the height of the book's pages.
+  pages left out): manga (read right to left, marked manga by its ComicInfo,
+  or running the Manga chain) at B6, 12.8 cm wide; web (read top to bottom,
+  or a median aspect outside 0.60-0.78) at its pixels / 96 inches;
+  Franco-Belgian (median aspect 0.73-0.755) at 21.5 cm; US comics (the rest)
+  at 16.8 cm. A spread prints at the height of the book's pages.
   Upscaling models run on pages read above the upscale handle (100% by
   default, never below 50%, where an upscale is always resampled away);
   artifact removal runs above the cleanup handle (50% by default, down to
@@ -1257,8 +1258,10 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   (`ReadSize`: the shown size, or the printed size of the book's `PageClass`
   past a 1.15x zoom) over the side of the model's input (after the 8 MP
   reduction and any model before it), decided for each render at its size;
-  the reader tells each open book's class (`BookShape`) as its direction and
-  page sizes become known, and shows its pages anew when it changes. An
+  the reader tells each open book's class (`BookShape`) as its direction,
+  ComicInfo and page sizes become known; when it changes, only the pages it
+  gives another class or other models (`ReaderAi.replanned`) show anew, and
+  the page under way goes on unless it is one of them. An
   upscaler runs above the upscale threshold (100 % by default, never below
   50 %), an artifact-removal model
   above the cleanup threshold (50 % by default, or always), and a descreen

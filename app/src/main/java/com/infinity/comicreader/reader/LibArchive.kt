@@ -11,8 +11,12 @@ import java.util.ServiceLoader
  * per handle.
  */
 internal interface ArchiveEngine {
-    /** A handle reading [source] from its current position (its start). Throws IOException. */
-    fun open(source: LibArchive.Source): Long
+    /**
+     * A handle reading [source] from its current position (its start). Throws IOException.
+     * [listing]: moving past an entry of a solid RAR 4 jumps over its data instead of unpacking it,
+     * so the solid entries after it cannot be read.
+     */
+    fun open(source: LibArchive.Source, listing: Boolean = false): Long
 
     /**
      * The next header's name as UTF-8 bytes, with [meta] = size (-1 unknown), file type, header
@@ -106,7 +110,7 @@ internal object LibArchive : ArchiveEngine {
     const val SEEK_CUR = 1
     const val SEEK_END = 2
 
-    override fun open(source: Source): Long = nOpen(source)
+    override fun open(source: Source, listing: Boolean): Long = nOpen(source, listing)
 
     override fun next(handle: Long, meta: LongArray): ByteArray? = nNext(handle, meta)
 
@@ -117,7 +121,7 @@ internal object LibArchive : ArchiveEngine {
     /** libarchive's version and those of its compression libraries. */
     @JvmStatic external fun nVersion(): String
 
-    @JvmStatic private external fun nOpen(source: Source): Long
+    @JvmStatic private external fun nOpen(source: Source, listing: Boolean): Long
 
     @JvmStatic private external fun nNext(handle: Long, meta: LongArray): ByteArray?
 

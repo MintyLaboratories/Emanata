@@ -13,7 +13,7 @@ import java.util.Objects
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
-/** An archive the RAR reader turns down whatever it listed: encrypted, solid RAR 4, or a RAR 5 dictionary over 64 MiB. */
+/** An archive the RAR reader turns down whatever it listed: encrypted, or a RAR 5 dictionary over 64 MiB. */
 internal class RefusedRar(message: String) : IOException(message)
 
 /**
@@ -26,8 +26,9 @@ internal class RefusedRar(message: String) : IOException(message)
  *   A solid archive keeps its handle going forward; an entry at or before the last one read
  *   reopens it and unpacks every entry up to it ([ExtractingReader] reads them in order).
  * - A solid RAR 5 is listed by its headers ([Rar5Headers]): libarchive would unpack it whole to
- *   list it. libarchive cannot read solid RAR 4 past its first entry, nor RAR 5 with a dictionary
- *   over 64 MiB: such an archive does not open.
+ *   list it. A solid RAR 4 is listed by libarchive jumping over each entry's data (its RAR 4
+ *   reader is modified to read solid archives, Libarchive.cmake). libarchive cannot read RAR 5
+ *   with a dictionary over 64 MiB: such an archive does not open.
  * - Paths use "/" whatever made the archive (RAR 4 stores "\"), as the other formats' do.
  * - A header that cannot be read ends the listing, keeping the entries before it. An archive
  *   without any, or with an encrypted entry, does not open (IOException).
@@ -107,7 +108,6 @@ class RarReader private constructor(
                 if (main?.version == 5 && main.solid) Rar5Headers.list(channel, headers) else list(headers)
             } catch (e: IOException) {
                 if (e is RefusedRar) throw e
-                if (main?.version == 4 && main.solid) throw RefusedRar("Solid RAR 4 cannot be read: ${e.message}")
                 if (headers.none { it.file }) throw e
             }
             val files = headers.withIndex().filter { it.value.file }
@@ -121,10 +121,10 @@ class RarReader private constructor(
         }
     }
 
-    /** Every header libarchive walks, into [into]; throws for one it cannot read, [into] holding those before it. */
+    /** Every header libarchive walks, into [into], unpacking nothing; throws for one it cannot read, [into] holding those before it. */
     private fun list(into: MutableList<Rar5Headers.Header>) {
         channel.position(0)
-        val h = engine.open(LibArchive.ChannelSource(channel, HEADER_READ_BYTES))
+        val h = engine.open(LibArchive.ChannelSource(channel, HEADER_READ_BYTES), listing = true)
         try {
             val meta = LongArray(LibArchive.META_COUNT)
             while (true) {

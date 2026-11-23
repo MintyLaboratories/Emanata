@@ -104,9 +104,10 @@ Java_com_infinity_comicreader_reader_LibArchive_nVersion(JNIEnv *env, jclass c) 
     return (*env)->NewStringUTF(env, archive_version_details());
 }
 
-// A reader of the RAR the source holds, from the source's current position (its start).
+// A reader of the RAR the source holds, from the source's current position (its start). Listing:
+// moving past an entry of a solid RAR 4 jumps over its data instead of unpacking it.
 JNIEXPORT jlong JNICALL
-Java_com_infinity_comicreader_reader_LibArchive_nOpen(JNIEnv *env, jclass c, jobject source) {
+Java_com_infinity_comicreader_reader_LibArchive_nOpen(JNIEnv *env, jclass c, jobject source, jboolean listing) {
     (void) c;
     Reader *r = calloc(1, sizeof(Reader));
     if (!r) {
@@ -139,6 +140,11 @@ Java_com_infinity_comicreader_reader_LibArchive_nOpen(JNIEnv *env, jclass c, job
     }
     archive_read_support_format_rar(r->a);
     archive_read_support_format_rar5(r->a);
+    if (listing && archive_read_set_format_option(r->a, "rar", "solid-skip", "consume") != ARCHIVE_OK) {
+        throw_archive(env, r);
+        free_reader(env, r);
+        return 0;
+    }
     archive_read_set_read_callback(r->a, source_read);
     archive_read_set_seek_callback(r->a, source_seek);
     archive_read_set_skip_callback(r->a, source_skip);

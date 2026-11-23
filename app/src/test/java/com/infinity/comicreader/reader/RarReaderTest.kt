@@ -235,9 +235,37 @@ class RarReaderTest {
     }
 
     @Test
-    fun aSolidRar4DoesNotOpen() {
-        // libarchive cannot unpack its entries after the first: a book of its first page alone would hide the rest.
-        assertThrows(RefusedRar::class.java) { RarReader(file(Fixtures.rar4Bytes(*big, solid = true))) }
+    fun aSolidRar4IsListedWithoutUnpackingAndReadForward() {
+        // Listing jumps over each entry's data, as for an archive that is not solid; reading unpacks every entry up to the one asked for.
+        fun listingRead(bytes: ByteArray) = Counting(FileChannel.open(file(bytes).toPath(), StandardOpenOption.READ)).let { channel ->
+            RarReader.of(channel).use { channel.read }
+        }
+        val plainListed = listingRead(Fixtures.rar4Bytes(*big))
+        val bytes = Fixtures.rar4Bytes(*big, solid = true)
+        val f = file(bytes)
+        Counting(FileChannel.open(f.toPath(), StandardOpenOption.READ)).let { channel ->
+            RarReader.of(channel).use { r ->
+                assertEquals(true, r.solid)
+                assertFalse(r.randomAccess)
+                assertEquals(big.map { it.first to it.second.size.toLong() }, r.entries.map { it.path to it.size })
+                val listed = channel.read
+                assertTrue("listing read $listed bytes, $plainListed when not solid", listed <= plainListed)
+                assertArrayEquals(big[3].second, r.bytes(3))
+                for (i in big.indices) assertArrayEquals("entry $i", big[i].second, r.bytes(i))
+                assertEquals(0, r.spliced)
+            }
+        }
+    }
+
+    @Test
+    fun aRealSolidRar4IsListed() {
+        // The CC0 RAR test file (resources/rar/README.md): two compressed entries, the second solid.
+        val f = file(javaClass.getResourceAsStream("/rar/testfile.rar3.solid.cbr")!!.use { it.readBytes() })
+        RarReader(f).use { r ->
+            assertEquals(true, r.solid)
+            assertFalse(r.randomAccess)
+            assertEquals(listOf("testfile.png" to 87L, "testfile.jpg" to 220L), r.entries.map { it.path to it.size })
+        }
     }
 
     @Test

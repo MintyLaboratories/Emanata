@@ -370,7 +370,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - **Repack as CBZ** copies every page and file of a CBR, CB7 or CBT as it is
   into a flat `.cbz` of stored entries (the Compact rules for names, litter
   and ComicInfo.xml; nothing converted), every entry checked by its CRC-32.
-  Solid RAR 5 and 7z archives, told from their headers, unpack every
+  Solid RAR and 7z archives, told from their headers, unpack every
   page before the one asked for, so they are slow to jump around in and never
   read for seam checks: with **Suggest repacking solid archives** (Settings →
   Library, on by default), opening one on the device offers **Repack as CBZ**
@@ -984,7 +984,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 | jxl | `ImageSource` | libjxl as jxl-coder ships it, through our JNI binding (`jxl_page.c`); jxl-coder itself for images without an sRGB rendering |
 | tif/tiff | `ImageSource` | built-in `Tiff` (strips/tiles; none, PackBits, LZW, Deflate; JPEG via the platform) |
 | zip / cbz | `ArchiveSource` + `ZipReader` | `java.util.zip` |
-| rar / cbr | `ArchiveSource` + `RarReader` | libarchive 3.8, built from source (RAR 4 and 5; see RAR limits below) |
+| rar / cbr | `ArchiveSource` + `RarReader` | libarchive 3.8, built from source, its RAR 4 reader modified to read solid archives (RAR 4 and 5; see RAR limits below) |
 | 7z / cb7 | `ArchiveSource` + `SevenZipReader` | Apache Commons Compress |
 | tar / cbt | `ArchiveSource` + `TarReader` | Apache Commons Compress |
 | pdf | `PdfSource` | platform `PdfRenderer` |
@@ -992,7 +992,6 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 - The backend is picked from the file's magic bytes (`ArchiveKind`), the
   extension only when they match nothing.
 - RAR limits: these do not open ("Cannot open this file"):
-  - solid RAR 4: libarchive 3.8.11 cannot read it past its first entry;
   - RAR 5 with any entry's dictionary over 64 MiB (libarchive's limit;
     WinRAR's default is 32 MB);
   - encrypted RAR (entries or headers).

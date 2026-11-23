@@ -14,17 +14,18 @@ import java.util.zip.CRC32
  * - the source is read in blocks up to its chunk and data is skipped, through the same callbacks;
  * - a header's position is where the walk stood when [next] began (0 for the first);
  * - header CRCs are checked by [next], each entry's data CRC once its last byte is read;
- * - an entry with the RAR 4 solid flag (0x0010) fails ("RAR solid archive support unavailable"),
- *   an encrypted entry is flagged, RAR 5 header encryption fails, a RAR 5 file whose dictionary
- *   is over 64 MiB fails, and a solid RAR 5 is unpacked (read through) to skip an entry.
+ * - an encrypted entry is flagged, RAR 5 header encryption fails, a RAR 5 file whose dictionary
+ *   is over 64 MiB fails, and a solid archive is unpacked (read through) to skip an entry, except
+ *   a solid RAR 4 opened for listing: its data is jumped over, and reading an entry with the
+ *   RAR 4 solid flag (0x0010) after that fails ("RAR solid entry needs the entries before it").
  * Unlike libarchive, names come as stored: RAR 4's "\" stays.
  */
 internal class StoredRarEngine : ArchiveEngine {
     private val handles = ConcurrentHashMap<Long, Walk>()
     private val ids = AtomicLong(1)
 
-    override fun open(source: LibArchive.Source): Long {
-        val walk = Walk(source)
+    override fun open(source: LibArchive.Source, listing: Boolean): Long {
+        val walk = Walk(source, listing)
         walk.signature()
         return ids.getAndIncrement().also { handles[it] = walk }
     }
@@ -39,7 +40,7 @@ internal class StoredRarEngine : ArchiveEngine {
 
     private fun walk(handle: Long) = handles[handle] ?: throw IllegalStateException("No handle $handle")
 
-    private class Walk(private val source: LibArchive.Source) {
+    private class Walk(private val source: LibArchive.Source, private val listing: Boolean) {
         private val block = ByteBuffer.allocateDirect(LibArchive.BLOCK_BYTES)
         private var buffered = ByteArray(0)
         private var at = 0
@@ -50,6 +51,12 @@ internal class StoredRarEngine : ArchiveEngine {
         private var solid = false
         private var started = false
         private var ended = false
+
+        /** A solid RAR 4 entry's data was jumped over: the solid entries after it cannot be read. */
+        private var solidBroken = false
+
+        /** The current entry carries the RAR 4 solid flag and comes after a jumped-over one. */
+        private var needsEarlier = false
 
         /** Of the current entry: data left to read, whether it can be read, its CRC so far and the one stored. */
         private var left = 0L
@@ -88,7 +95,7 @@ internal class StoredRarEngine : ArchiveEngine {
             at += fromBuffer
             position += fromBuffer
             var rest = n - fromBuffer
-            if (version == 5 && solid) {
+            if (solid && !(version == 4 && listing)) {
                 while (rest > 0) {
                     if (!fill(1)) throw IOException("Truncated input file")
                     val step = minOf(rest, available().toLong()).toInt()
@@ -98,6 +105,7 @@ internal class StoredRarEngine : ArchiveEngine {
                 }
                 return
             }
+            if (solid) solidBroken = true
             if (rest > 0) {
                 val skipped = source.skip(rest)
                 position += skipped
@@ -159,7 +167,7 @@ internal class StoredRarEngine : ArchiveEngine {
                     return null
                 }
                 0x74 -> {
-                    if (flags and 0x0010 != 0) throw IOException("RAR solid archive support unavailable")
+                    needsEarlier = flags and 0x0010 != 0 && solidBroken
                     val packed = u32(rest, 0)
                     val unpacked = u32(rest, 4)
                     val method = rest[18].toInt() and 0xFF
@@ -262,6 +270,7 @@ internal class StoredRarEngine : ArchiveEngine {
 
         fun read(dst: ByteArray, off: Int, len: Int): Int {
             if (!started || ended) throw IOException("No entry")
+            if (needsEarlier) throw IOException("RAR solid entry needs the entries before it")
             if (!stored) throw IOException("Unsupported in this stand-in: not stored, or encrypted")
             if (left == 0L) {
                 if (expectedCrc >= 0 && crc.value != expectedCrc) {

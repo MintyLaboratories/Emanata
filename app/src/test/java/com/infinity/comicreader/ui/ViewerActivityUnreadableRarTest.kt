@@ -53,7 +53,7 @@ class ViewerActivityUnreadableRarTest {
     }
 
     @Test
-    fun aSolidRar4ClosesWithTheUsualMessage() {
-        openClosesWithTheUsualMessage(Fixtures.rar4Bytes(*pages, solid = true))
+    fun aRar5DictionaryOver64MiBClosesWithTheUsualMessage() {
+        openClosesWithTheUsualMessage(Fixtures.rar5Bytes(*pages, dictBits = { 10 }))
     }
 }

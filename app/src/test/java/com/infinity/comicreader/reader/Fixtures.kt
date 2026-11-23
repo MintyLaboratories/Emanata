@@ -112,7 +112,7 @@ object Fixtures {
     /**
      * A RAR 4 archive with every entry stored (method 0x30), per the RAR 2.9-4.x format notes.
      * [solid] marks the archive solid and each entry after the first as using those before it
-     * (0x0010), as real solid archives are: libarchive cannot read those past the first entry.
+     * (0x0010), as real solid archives are.
      * [encrypted] marks every entry's data encrypted (0x0004).
      */
     fun rar4Bytes(vararg entries: Pair<String, ByteArray>, solid: Boolean = false, encrypted: Boolean = false): ByteArray {

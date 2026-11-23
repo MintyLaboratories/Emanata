@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.PowerManager
+import androidx.annotation.VisibleForTesting
 import androidx.core.content.ContextCompat
 import com.infinity.comicreader.ai.AiPicks
 import com.infinity.comicreader.ai.ChainKind
@@ -212,6 +213,10 @@ class SettingsRepository internal constructor(private val app: Context) {
         RemoteChannel.thrifty = Thrift.of(saving, prefs).lessReadAhead
         NetPolicy.rules = prefs.netRules
     }
+
+    /** Stops hearing stored settings change; tests use it to stand for a missed feed. */
+    @VisibleForTesting
+    internal fun stopHearingSettings() = prefs.unregisterListeners()
 
     private val saverReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {

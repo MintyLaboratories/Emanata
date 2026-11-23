@@ -1,8 +1,6 @@
 package com.infinity.comicreader.testing
 
 import android.content.Context
-import android.content.SharedPreferences
-import androidx.preference.PreferenceManager
 import com.infinity.comicreader.data.SettingsRepository
 
 /**
@@ -10,8 +8,5 @@ import com.infinity.comicreader.data.SettingsRepository
  * see later changes only by checking the stored settings themselves. Lasts for this application.
  */
 fun muteSettingsFeed(context: Context) {
-    val repository = SettingsRepository.get(context)
-    val listener = SettingsRepository::class.java.getDeclaredField("listener").apply { isAccessible = true }
-        .get(repository) as SharedPreferences.OnSharedPreferenceChangeListener
-    PreferenceManager.getDefaultSharedPreferences(context.applicationContext).unregisterOnSharedPreferenceChangeListener(listener)
+    SettingsRepository.get(context).stopHearingSettings()
 }

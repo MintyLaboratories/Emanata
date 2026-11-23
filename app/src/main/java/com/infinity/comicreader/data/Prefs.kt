@@ -654,6 +654,12 @@ class Prefs(context: Context) {
         sp.registerOnSharedPreferenceChangeListener(listener)
     }
 
+    /** Stops calling every listener given to [registerListener]. */
+    internal fun unregisterListeners() {
+        listeners.forEach(sp::unregisterOnSharedPreferenceChangeListener)
+        listeners.clear()
+    }
+
     fun reset() {
         val e = sp.edit()
         sp.all.keys.filter { it.startsWith("pref_") }.forEach { e.remove(it) }

@@ -3711,10 +3711,10 @@ class ViewerActivity : AppCompatActivity(), Calibrator.Reading, LargeBookWarning
     /**
      * The path the library keeps book [id], open as [f], at: a copy another app handed over
      * keeps the path its book was last seen at, so the library never points at the copy;
-     * a book seen nowhere else is kept at the copy.
+     * a book seen nowhere else (or last seen as another such copy) is kept at the copy.
      */
     private fun keptPath(id: BookId, f: File): String =
-        if (handedIn(f)) library.pathOf(id) ?: f.absolutePath else f.absolutePath
+        if (handedIn(f)) library.pathOf(id)?.takeUnless { handedIn(File(it)) } ?: f.absolutePath else f.absolutePath
 
     /** Reads whether the open comic and its folder are favorites. */
     private fun refreshFavorites() {

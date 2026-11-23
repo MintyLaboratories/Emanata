@@ -142,6 +142,27 @@ class OpenFromOtherAppsResumeTest {
         assertEquals(3, read(handIn(contentUri("only.cbz"))).page())
     }
 
+    @Test
+    fun aBookSeenNowhereElseIsKeptAtItsLatestCopy() {
+        val id = bookId(book)
+        book.delete()
+        read(handIn(contentUri("only.cbz"))).apply {
+            get().findViewById<ViewPager2>(R.id.viewer_pager).setCurrentItem(3, false)
+            pause().stop().destroy()
+        }
+
+        // Handed in again under another name: the first copy is gone, so the library follows the new one.
+        val intent = handIn(contentUri("renamed.cbz"))
+        val copy = File(intent.getStringExtra(ViewerActivity.EXTRA_PATH)!!)
+        val reader = read(intent)
+        assertEquals(3, reader.page())
+        reader.get().findViewById<ViewPager2>(R.id.viewer_pager).setCurrentItem(4, false)
+        reader.pause().stop().destroy()
+        assertEquals(4, library.pageFor(id))
+        assertEquals(copy.absolutePath, library.pathOf(id))
+        assertEquals(copy.absolutePath, library.historyFor(id)!!.path)
+    }
+
     private companion object {
         const val PAGES = 8
     }

@@ -256,7 +256,7 @@ tasks.withType<Test>().matching { it.name.endsWith("UnitTest") }.configureEach {
 }
 
 // Checks a minified build against r8-survivors.txt (MinifiedOutputsCheck): R8's mapping and dex
-// files, and the classes R8 read. assembleBench and assembleRelease run it.
+// files, and the classes R8 read. assembleBench, assembleRelease and check run it.
 for (variant in listOf("bench", "release")) {
     val cap = variant.replaceFirstChar { it.uppercase() }
     val minifiedCheck = tasks.register<Test>("check${cap}Minified") {
@@ -280,7 +280,11 @@ for (variant in listOf("bench", "release")) {
         }
     }
     tasks.matching { it.name == "assemble$cap" }.configureEach { dependsOn(minifiedCheck) }
+    if (variant == "bench") tasks.named("check") { dependsOn(minifiedCheck) }
 }
+// The full suite (testDebugUnitTest without --tests) checks the bench build too; filtered runs skip building it.
+val testFilters = gradle.startParameter.taskRequests.any { r -> r.args.any { it == "--tests" || it.startsWith("--tests=") } }
+if (!testFilters) tasks.matching { it.name == "testDebugUnitTest" }.configureEach { dependsOn("checkBenchMinified") }
 
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")

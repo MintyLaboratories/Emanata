@@ -1639,6 +1639,12 @@ class PageAdapter(
     /** Pages whose cached bitmap is the processed one. Main thread only. */
     private val processed = HashSet<PageKey>()
 
+    /** A processed detail's page as its models were given it: [key] and [page]. */
+    private class Made(val key: PageKey, val page: AiPage)
+
+    /** Where each processed detail held came from, by [detailKey], judged by [aiReplanned]. Main thread only. */
+    private val madeFrom = HashMap<PageKey, Made>()
+
     /** Processes item [position]'s pages, then the next item's, as each shows plain ([enhancer]). Call as the reader moves. */
     fun reading(position: Int) {
         if (readingAt == position) return
@@ -1657,6 +1663,7 @@ class PageAdapter(
         processed.clear()
         remakes.clear()
         details.dropMade()
+        madeFrom.clear()
         ai?.reset()
         notifyItemRangeChanged(0, itemCount, RESIZE)
         // Pages cached plain go through the new chain at once; those that were processed once decoded again.
@@ -1667,7 +1674,9 @@ class PageAdapter(
      * Processes anew only the pages [replanned] picks, given each page's source, index, target
      * and size as shown: those shown processed show plain again and let go of their processed
      * details, those done, skipped or under way are worked on again; the rest, the page under
-     * way included, are left as they are, processed details too.
+     * way included, are left as they are, processed details too. A processed detail is also let
+     * go of when [replanned] picks its page at the target and size its models were given
+     * ([madeFrom]), cached or not, or when those are not known.
      * After the shape of a book's pages changed.
      */
     fun aiReplanned(replanned: (source: PageSource, index: Int, target: Target, width: Int, height: Int) -> Boolean) {
@@ -1687,8 +1696,12 @@ class PageAdapter(
         ai?.again(::picked)
         for (key in dropped) cache.remove(key)
         processed -= dropped.toSet()
-        // Their processed details came from the models read before; the other pages keep theirs.
-        details.dropMade(dropped.map(::detailKey))
+        // Their processed details came from the models read before, as did those made from a page now
+        // read otherwise: a page read back from disk brings none to replace them. The others stay.
+        val stale = details.keys.filter { k ->
+            details.made(k) && madeFrom[k]?.let { replanned(it.page.source, it.page.index, it.key.target, it.page.width, it.page.height) } != false
+        }
+        details.dropMade(dropped.map(::detailKey) + stale)
         if (dropped.isNotEmpty()) notifyItemRangeChanged(0, itemCount, RESIZE)
         wantAi()
     }
@@ -1736,6 +1749,7 @@ class PageAdapter(
         remakes.retainAll(wanted)
         // The processed details of pages now far from the item read are let go of.
         details.trim()
+        madeFrom.keys.retainAll { details.made(it) }
         if (keys.isNotEmpty() || ai != null) queueOf(e).want(keys)
     }
 
@@ -1785,7 +1799,12 @@ class PageAdapter(
         cache.put(key, bitmap)
         processed += key
         remakes -= key
-        done.detail?.let { details.offer(detailKey(key), it) }
+        done.detail?.let {
+            val detailKey = detailKey(key)
+            details.offer(detailKey, it)
+            val page = aiPages[key]
+            if (page != null) madeFrom[detailKey] = Made(key, page) else madeFrom -= detailKey
+        }
         ReadProbes.current?.enhanced(key.page, done.ms, done.stored)
         recycler?.let { list ->
             for (i in 0 until list.childCount) {
@@ -1851,6 +1870,7 @@ class PageAdapter(
         mainHandler.removeCallbacks(rethinkAi)
         ai?.release()
         aiPages.clear()
+        madeFrom.clear()
         details.clear()
         scope.cancel()
         pending.clear()

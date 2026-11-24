@@ -60,7 +60,7 @@ internal class DetailStore<K>(private val scope: CoroutineScope, private val io:
     /** The pages the last [prepare] or [render] named: the item zoomed, whose made details go last. */
     private var zoomed: Set<K> = emptySet()
 
-    /** The pages currently held or loading; for tests. */
+    /** The pages currently held or loading. */
     val keys: Set<K> get() = entries.keys
 
     /** Memory the details loaded or made hold, those freed once their render ends aside. */

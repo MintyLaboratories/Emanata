@@ -363,6 +363,75 @@ class PageAdapterAiDetailTest {
     }
 
     @Test
+    fun aNewShapeLetsGoOfTheProcessedDetailOfAPageNotShownProcessedThatItReadsOtherwise() {
+        // RAM enough for the largest budget: the budget lets none go.
+        shadowOf(context.getSystemService(ActivityManager::class.java)).setMemoryInfo(ActivityManager.MemoryInfo().apply { totalMem = 8L shl 30 })
+        val source = Source(4)
+        val enhancer = Enhancer(processed)
+        val (adapter, rv) = reader(source, enhancer)
+        idleUntil("page 0 shown plain") { shownColor(rv, 0) == plain }
+        adapter.reading(0)
+        idleUntil("pages 0 and 1 processed") { listOf(0, 1).all { p -> enhancer.outputs.any { it.page == p } } }
+
+        // A turned screen: page 1, off screen, is decoded afresh at the new size and put off, so it
+        // shows plain there while its output, made at the old size, is still held.
+        enhancer.later = true
+        rv.layOut(900, 600)
+        idleUntil("page 1 asked for at the new size", step = { rv.layOut(900, 600) }) { enhancer.asked.count { it.page == 1 } == 2 }
+        assertFalse(enhancer.outputs.single { it.page == 1 }.released)
+
+        // Page 1 is read otherwise now, and its new output is on disk, read back with no detail.
+        enhancer.kept += 1
+        adapter.aiReplanned { _, index, _, _, _ -> index == 1 }
+        assertTrue("page 1's old output let go of", enhancer.outputs.single { it.page == 1 }.released)
+        assertFalse("page 0's output kept", enhancer.outputs.single { it.page == 0 }.released)
+
+        enhancer.later = false
+        adapter.aiWake()
+        rv.scrollToPosition(1)
+        rv.layOut(900, 600)
+        adapter.reading(1)
+        idleUntil("page 1 shown processed", step = { rv.layOut(900, 600) }) { shownColor(rv, 1)?.let { near(it, processed) } == true }
+        assertEquals("read back from disk", 1, enhancer.outputs.count { it.page == 1 })
+
+        // Its zoom has the output made again rather than drawing the old models' output.
+        enhancer.later = true
+        val image = image(rv, 1)!!
+        assertTrue(near(tileColor(image), plain))
+        assertTrue(enhancer.asked.any { it.page == 1 && it.remake })
+        enhancer.later = false
+        adapter.aiWake()
+        idleUntil("page 1 made again") { enhancer.outputs.count { it.page == 1 } == 2 }
+        assertTrue(near(tileColor(image), processed))
+        adapter.release()
+    }
+
+    @Test
+    fun aNewShapeForTheSizeAPageIsRedrawnAtLetsGoOfTheDetailItWasDrawnFrom() {
+        val source = Source(4)
+        val enhancer = Enhancer(processed)
+        val (adapter, rv) = reader(source, enhancer)
+        idleUntil("page 0 shown plain") { shownColor(rv, 0) == plain }
+        adapter.reading(0)
+        idleUntil("page 0 shown processed") { shownColor(rv, 0)?.let { near(it, processed) } == true }
+        val before = (image(rv, 0)!!.drawable as BitmapDrawable).bitmap
+
+        // A turned screen: page 0 is drawn from its output at the new size.
+        rv.layOut(900, 600)
+        idleUntil("page 0 at the turned screen's size", step = { rv.layOut(900, 600) }) {
+            (image(rv, 0)?.drawable as? BitmapDrawable)?.bitmap?.let { it.width != before.width } == true
+        }
+        assertTrue(near(shownColor(rv, 0)!!, processed))
+
+        // Read otherwise at the new size only, not at the size its models were given: it shows plain until processed anew.
+        enhancer.later = true
+        adapter.aiReplanned { _, index, _, width, _ -> index == 0 && width != before.width }
+        idleUntil("page 0 shown plain again", step = { rv.layOut(900, 600) }) { shownColor(rv, 0) == plain }
+        assertTrue("page 0's detail let go of", enhancer.outputs.single { it.page == 0 }.released)
+        adapter.release()
+    }
+
+    @Test
     fun aTurnedScreenOrPictureShowsAndZoomsTheProcessedPageWithoutAModel() {
         val source = Source(4)
         val enhancer = Enhancer(processed)

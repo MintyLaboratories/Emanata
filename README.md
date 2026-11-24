@@ -1434,6 +1434,15 @@ no trace sections: `BuildConfig.TRACES` is off there and `proguard-release.pro`
 drops the libraries' `android.os.Trace` calls; `assembleRelease` fails if one is
 left (`checkReleaseTraceSections`). Debug and bench builds keep them for Perfetto.
 
+Unit tests and the debug build run unminified code, so they never see what R8 removes
+or renames. `checkBenchMinified` and `checkReleaseMinified` read R8's mapping and dex
+files and the classes R8 read, and fail when R8 removed or renamed an entry of
+`app/r8-survivors.txt` (what code reaches by name, by reflection or from native code),
+renamed a native method or its class, or removed a field of the app holding a
+SharedPreferences change listener (SharedPreferences holds those only weakly).
+`assembleBench` and `assembleRelease` run their own; `check` and `testDebugUnitTest`
+without `--tests` run the bench one.
+
 ### Install on a connected device
 
 ```bash

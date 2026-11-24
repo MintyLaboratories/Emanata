@@ -247,12 +247,44 @@ fun traceCheck(variant: ApplicationVariant, traced: Boolean) {
     tasks.matching { it.name == "assemble$name" }.configureEach { dependsOn(check) }
 }
 
-tasks.withType<Test>().configureEach {
+tasks.withType<Test>().matching { it.name.endsWith("UnitTest") }.configureEach {
     inputs.files(releaseModules)
     // NoticesTest reads the Java resources the release APK packs, under this build directory.
     dependsOn("mergeReleaseJavaResource")
     systemProperty("emanata.buildDir", layout.buildDirectory.get().asFile.absolutePath)
+    filter.excludeTestsMatching("*.MinifiedOutputsCheck")
 }
+
+// Checks a minified build against r8-survivors.txt (MinifiedOutputsCheck): R8's mapping and dex
+// files, and the classes R8 read. assembleBench, assembleRelease and check run it.
+for (variant in listOf("bench", "release")) {
+    val cap = variant.replaceFirstChar { it.uppercase() }
+    val minifiedCheck = tasks.register<Test>("check${cap}Minified") {
+        group = "verification"
+        description = "Checks R8 kept in the $variant build what code reaches unseen (r8-survivors.txt)."
+        val unitTests = tasks.named<Test>("testDebugUnitTest").get()
+        testClassesDirs = unitTests.testClassesDirs
+        classpath = unitTests.classpath
+        filter.includeTestsMatching("*.MinifiedOutputsCheck")
+        maxHeapSize = "1g"
+        val r8 = files(tasks.named("minify${cap}WithR8"))
+        val compiled = files(tasks.named("compile${cap}Kotlin"), tasks.named("compile${cap}JavaWithJavac"))
+        val rules = file("r8-survivors.txt")
+        inputs.files(r8).withPropertyName("r8")
+        inputs.files(compiled).withPropertyName("compiled")
+        inputs.file(rules).withPropertyName("rules")
+        doFirst {
+            systemProperty("emanata.r8.outputs", r8.files.joinToString(File.pathSeparator))
+            systemProperty("emanata.r8.compiled", compiled.files.joinToString(File.pathSeparator))
+            systemProperty("emanata.r8.rules", rules.absolutePath)
+        }
+    }
+    tasks.matching { it.name == "assemble$cap" }.configureEach { dependsOn(minifiedCheck) }
+    if (variant == "bench") tasks.named("check") { dependsOn(minifiedCheck) }
+}
+// The full suite (testDebugUnitTest without --tests) checks the bench build too; filtered runs skip building it.
+val testFilters = gradle.startParameter.taskRequests.any { r -> r.args.any { it == "--tests" || it.startsWith("--tests=") } }
+if (!testFilters) tasks.matching { it.name == "testDebugUnitTest" }.configureEach { dependsOn("checkBenchMinified") }
 
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")

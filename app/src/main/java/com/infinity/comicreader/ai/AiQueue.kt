@@ -10,6 +10,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicBoolean
 
 /** How a page's AI work ended. */
 sealed class AiOutcome {
@@ -206,10 +207,14 @@ internal class AiQueue<K : Any>(
         // Started once it is the job: work that ends before the caller suspends goes on inline.
         val started = scope.launch(start = CoroutineStart.LAZY) {
             val queued = coroutineContext.job
+            val models = AtomicBoolean(false)
             val outcome = try {
                 withContext(worker) {
                     val self = coroutineContext.job
-                    work(key, { self.isCancelled }) { scope.launch { modelsStarted(queued) } }
+                    work(key, { self.isCancelled }) {
+                        models.set(true)
+                        scope.launch { modelsStarted(queued) }
+                    }
                 }
             } catch (e: CancellationException) {
                 return@launch
@@ -218,6 +223,8 @@ internal class AiQueue<K : Any>(
             }
             // A page no longer wanted: its bitmap may still be on its way to disk, so the GC frees it.
             if (job !== queued) return@launch
+            // Work ending before the report that its models started arrives: told now, so busy hears they ran.
+            if (models.get()) modelsStarted(queued)
             job = null
             ended()
             when (outcome) {

@@ -6,6 +6,7 @@ import android.os.Looper
 import com.infinity.comicreader.testing.awaitUntil
 import com.infinity.comicreader.testing.idleUntil
 import com.infinity.comicreader.util.AppDispatchers
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -27,6 +28,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.CoroutineContext
 
 /** Pages go through AI one at a time in the order wanted; one no longer wanted stops; one put off waits. */
 @RunWith(RobolectricTestRunner::class)
@@ -69,8 +71,15 @@ class AiQueueTest {
             return outcomes[key]?.invoke() ?: AiOutcome.Done(Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888))
         }
 
-        fun queue(backoffMs: Long = 50, maxBackoffMs: Long = 200) =
-            AiQueue<String>(scope, executor.asCoroutineDispatcher(), ::run, { k, _ -> delivered += k }, backoffMs, maxBackoffMs, { busy += it })
+        fun queue(backoffMs: Long = 50, maxBackoffMs: Long = 200, worker: CoroutineDispatcher = executor.asCoroutineDispatcher()) =
+            AiQueue<String>(scope, worker, ::run, { k, _ -> delivered += k }, backoffMs, maxBackoffMs, { busy += it })
+    }
+
+    /** Runs each block on the worker thread to its end before the caller goes on: work that ends before the caller suspends. */
+    private val endsFirst = object : CoroutineDispatcher() {
+        override fun dispatch(context: CoroutineContext, block: Runnable) {
+            executor.submit(block).get()
+        }
     }
 
     /** Runs what the queue posted to the main thread, then what it handed the worker, then what that posted back: what has not happened by then will not. */
@@ -372,6 +381,19 @@ class AiQueueTest {
         q.want(listOf("big"))
         idleUntil("busy told twice") { w.busy.size == 2 }
         assertEquals(listOf(true, false), w.busy)
+    }
+
+    @Test
+    fun modelsOnAPageEndingBeforeTheCallerWaitsAreToldBusy() {
+        val w = Work()
+        w.outcomes["a"] = { AiOutcome.Skipped(Fallback.TIMEOUT) }
+        val q = w.queue(worker = endsFirst)
+        q.want(listOf("a", "b"))
+        // Both pages ended inline; what the worker posted as their models started has not run yet.
+        assertEquals(listOf("b"), w.delivered)
+        assertEquals("not once per page", listOf(true, false), w.busy)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals("the reports arriving late change nothing", listOf(true, false), w.busy)
     }
 
     @Test

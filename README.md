@@ -683,10 +683,11 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   anti-ringing clamp (Android 13+; bilinear before). 150 ms after it stops,
   the visible part is re-rendered with Lanczos3 from the full-resolution page
   (vector for PDF) at exact screen resolution and swapped in pixel for pixel.
-  Only the zoomed page or spread is kept at full resolution, within a memory
-  budget, and it is freed when the reader is hidden. A page processed by AI
-  zooms from the models' own output at full size (within that budget), not
-  the plain page.
+  Plain pages are kept at full resolution only for the zoomed page or spread.
+  A page processed by AI zooms from the models' own output at full
+  size, not the plain page; that output is kept for the item read, the one
+  before it and up to five after it. All of it shares one memory budget and
+  is freed when the reader is hidden.
 - **Fit modes:** fit screen, fit width, fit height, stretch. Each page is
   scaled with Lanczos3 to the exact size it fills on screen (a spread half, or
   the whole row for a lone page) and drawn pixel for pixel, unfiltered. A new

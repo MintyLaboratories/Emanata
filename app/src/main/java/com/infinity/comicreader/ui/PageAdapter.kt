@@ -1150,7 +1150,7 @@ class PageAdapter(
     /**
      * Makes [key]'s bitmap from the full detail held for the page shown in [slot], as a
      * settled zoom would, instead of decoding the page again; decodes it when that render
-     * fails or the detail is dropped first.
+     * fails or the detail is dropped first. Once cached, AI work goes on as after a decode.
      */
     private fun renderFromDetail(holder: PageHolder, slot: Int, key: PageKey) {
         val shown = (holder.images[slot].drawable as? BitmapDrawable)?.bitmap
@@ -1173,6 +1173,8 @@ class PageAdapter(
             // Made from a model's output: the page shows processed at its new size.
             if (made) processed += key
             if (holder.shown[slot] == key.code) showBitmap(holder, slot, key, bitmap)
+            // Cached at its new size, as a page decoded: AI work goes on from it.
+            wantAi()
         }
         if (!decoding) holder.waiters[slot] = job
     }

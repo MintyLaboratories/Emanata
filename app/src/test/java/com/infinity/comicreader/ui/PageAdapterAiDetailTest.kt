@@ -95,12 +95,9 @@ class PageAdapterAiDetailTest {
         val kept: MutableSet<Int> = Collections.synchronizedSet(HashSet())
 
         @Volatile
-        var on = true
-
-        @Volatile
         var later = false
 
-        override fun enhances(source: PageSource): Boolean = on
+        override fun enhances(source: PageSource): Boolean = true
 
         override fun stored(source: PageSource, index: Int, target: Target, width: Int, height: Int): Boolean = index in kept
 
@@ -342,11 +339,18 @@ class PageAdapterAiDetailTest {
         idleUntil("page 0 shown plain") { shownColor(rv, 0) == plain }
         adapter.reading(0)
         idleUntil("page 0 shown processed") { shownColor(rv, 0)?.let { near(it, processed) } == true }
+        idleUntil("page 1 processed") { enhancer.asked.any { it.page == 1 } }
         val before = (image(rv, 0)!!.drawable as BitmapDrawable).bitmap
-        // From here no model runs: what shows processed comes from the output kept.
-        enhancer.on = false
-        val asks = enhancer.asked.size
+        // AI stays on: what shows processed comes from the output kept, and page 0 needs no model at the new sizes.
+        val asks = enhancer.asked.count { it.page == 0 }
 
+        /** Waits until page 1 is processed at the new size: AI work has looked at the pages wanted since, page 0 first. */
+        fun nextProcessedAnew(asked: Int) {
+            idleUntil("page 1 processed at the new size") { enhancer.asked.count { it.page == 1 } > asked }
+            shadowOf(Looper.getMainLooper()).idle()
+        }
+
+        var nextAsks = enhancer.asked.count { it.page == 1 }
         rv.layOut(900, 600)
         // Laid out again as a window would after items change.
         idleUntil("page 0 at the turned screen's size", step = { rv.layOut(900, 600) }) {
@@ -354,7 +358,10 @@ class PageAdapterAiDetailTest {
         }
         assertTrue(near(shownColor(rv, 0)!!, processed))
         assertTrue(near(tileColor(image(rv, 0)!!), processed))
+        nextProcessedAnew(nextAsks)
+        assertEquals("page 0 at the turned screen's size", asks, enhancer.asked.count { it.page == 0 })
 
+        nextAsks = enhancer.asked.count { it.page == 1 }
         val turned = (image(rv, 0)!!.drawable as BitmapDrawable).bitmap
         adapter.turnsImage = { true }
         rv.layOut(900, 600)
@@ -363,7 +370,8 @@ class PageAdapterAiDetailTest {
         }
         assertTrue(near(shownColor(rv, 0)!!, processed))
         assertTrue(near(tileColor(image(rv, 0)!!), processed))
-        assertEquals(asks, enhancer.asked.size)
+        nextProcessedAnew(nextAsks)
+        assertEquals("page 0 at the turned picture's size", asks, enhancer.asked.count { it.page == 0 })
         assertEquals(0, source.detailLoads.get())
         adapter.release()
     }

@@ -84,7 +84,8 @@ class ViewerActivityAiShapeTest {
         override fun enhances(source: PageSource): Boolean = ai.enhances(source)
 
         override fun enhance(
-            source: PageSource, index: Int, target: Target, width: Int, height: Int, held: () -> Boolean, models: () -> Unit, canceled: () -> Boolean
+            source: PageSource, index: Int, target: Target, width: Int, height: Int, held: () -> Boolean, models: () -> Unit,
+            detailBytes: Long, remake: Boolean, canceled: () -> Boolean
         ): AiOutcome {
             asked += index
             this@ViewerActivityAiShapeTest.canceled[index] = canceled

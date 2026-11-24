@@ -10,11 +10,13 @@ import com.infinity.comicreader.data.BookId
 import com.infinity.comicreader.data.BookIds
 import com.infinity.comicreader.data.Library
 import com.infinity.comicreader.data.Prefs
+import com.infinity.comicreader.reader.BitmapDetail
 import com.infinity.comicreader.reader.Cancellation
 import com.infinity.comicreader.reader.HiddenPages
 import com.infinity.comicreader.reader.NativeResampler
 import com.infinity.comicreader.reader.PageSource
 import com.infinity.comicreader.reader.Plan
+import com.infinity.comicreader.reader.ProcessedDetail
 import com.infinity.comicreader.reader.Target
 import com.infinity.comicreader.reader.Urgency
 import kotlinx.coroutines.CoroutineDispatcher
@@ -43,11 +45,14 @@ interface PageEnhancer {
      * read back from disk, or made from the page at full detail and stored. Blocking; stops
      * once [canceled]; waits between tiles while [held] (the reader moving). Calls [models] as
      * models start on the page (opening or running), at most once; never for a page read back,
-     * put off before its models open, or needing none.
+     * put off before its models open, or needing none. With [detailBytes] above 0, a page made
+     * keeps the models' output at full size, within [detailBytes], as its
+     * [AiOutcome.Done.detail]; a page read back has none. [remake] makes the page even when it
+     * is kept on disk, for its detail.
      */
     fun enhance(
         source: PageSource, index: Int, target: Target, width: Int, height: Int, held: () -> Boolean = { false }, models: () -> Unit = {},
-        canceled: () -> Boolean
+        detailBytes: Long = 0, remake: Boolean = false, canceled: () -> Boolean
     ): AiOutcome
 }
 
@@ -56,7 +61,7 @@ interface PageEnhancer {
  * default chain of its [ChainKind]), models opened once as [Session]s and kept until closed ([closeModels]), pages kept on disk
  * ([ProcessedStore]). A page is processed from its full-detail decode (at most
  * [MAX_INPUT_PIXELS]) and resampled to exactly the plain page's size, so it swaps in without
- * a jump. Puts pages off ([AiOutcome.Later]) while [gate] says stop (heat, battery saver) or a
+ * a jump; the models' output at full size is handed on as the page's detail for zooms. Puts pages off ([AiOutcome.Later]) while [gate] says stop (heat, battery saver) or a
  * model is still downloading ([download] starts one missing, unless its download failed: a pick
  * or Settings starts that again); skips pages of vector books,
  * pages drawn in bands, and pages read at a size where no model of the chain runs
@@ -299,12 +304,13 @@ class ReaderAi internal constructor(
     }
 
     override fun enhance(
-        source: PageSource, index: Int, target: Target, width: Int, height: Int, held: () -> Boolean, models: () -> Unit, canceled: () -> Boolean
+        source: PageSource, index: Int, target: Target, width: Int, height: Int, held: () -> Boolean, models: () -> Unit,
+        detailBytes: Long, remake: Boolean, canceled: () -> Boolean
     ): AiOutcome {
         val t0 = SystemClock.elapsedRealtime()
         var started = false
         val judged = Judgment()
-        val outcome = enhanceNow(source, index, target, width, height, held, canceled, judged) {
+        val outcome = enhanceNow(source, index, target, width, height, held, canceled, judged, detailBytes, remake) {
             if (!started) {
                 started = true
                 models()
@@ -343,7 +349,7 @@ class ReaderAi internal constructor(
     /** [enhance], calling [onModels] once models are sure to run, as each opens, and before the chain runs; what it judged goes to [judged]. */
     private fun enhanceNow(
         source: PageSource, index: Int, pageTarget: Target, width: Int, height: Int, held: () -> Boolean, canceled: () -> Boolean,
-        judged: Judgment, onModels: () -> Unit
+        judged: Judgment, detailBytes: Long, remake: Boolean, onModels: () -> Unit
     ): AiOutcome {
         // Models see and make pages unsharpened: sharpening is for plain pages, so its strength keys no processed page.
         val target = pageTarget.copy(scaling = pageTarget.scaling.unsharpened)
@@ -362,7 +368,7 @@ class ReaderAi internal constructor(
         val runKey = planned?.let { p -> AiPages.runKey(p.map { it.index }) } ?: AiPages.handles(chainModels, thresholds, read)
         val key = keyOf(source, index, target, width, height, chain, runKey)
         // Kept pages show even while paused, as those processed in memory do: a read costs about a plain decode, no GPU.
-        key?.let { store.get(it, width, height) }?.let { return AiOutcome.Done(it, stored = true, ms = clock() - t0) }
+        if (!remake) key?.let { store.get(it, width, height) }?.let { return AiOutcome.Done(it, stored = true, ms = clock() - t0) }
         if (gate() != null) return AiOutcome.Later
         for (m in chain) {
             if (!models.installed(m)) {
@@ -398,7 +404,7 @@ class ReaderAi internal constructor(
                             learn(chain[i], px, stats)
                             opened[i].heard(stats)
                         },
-                        steps = steps
+                        steps = steps, keepBytes = detailBytes
                     )
                 }
                 val out = run.bitmap ?: return when (run.fallback) {
@@ -410,13 +416,14 @@ class ReaderAi internal constructor(
                     }
                 }
                 val shown = immutable(out)
-                key?.let { store.put(it, shown) }
+                // A page made again for its detail is on disk already, unless it was let go of since.
+                key?.takeUnless { remake && store.has(it) }?.let { store.put(it, shown) }
                 val ms = clock() - t0
                 val signature = AiChain.signature(chain)
                 val ran = AiPages.runKey(steps.map { it.index })
                 pageTimes.merge("$signature|$ran", ms) { old, now -> (old + now) / 2 }
                 lastRuns[signature] = ran
-                return AiOutcome.Done(shown, ms = run.ms)
+                return AiOutcome.Done(shown, ms = run.ms, detail = run.detail?.let { ProcessedDetail(BitmapDetail(it)) })
             } finally {
                 if (readable !== input) readable.recycle()
             }

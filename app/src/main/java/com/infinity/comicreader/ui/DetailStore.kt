@@ -3,6 +3,7 @@ package com.infinity.comicreader.ui
 import android.util.Log
 import com.infinity.comicreader.reader.Cancellation
 import com.infinity.comicreader.reader.PageDetail
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -17,11 +18,14 @@ import kotlinx.coroutines.withContext
 import java.util.concurrent.CancellationException
 
 /**
- * Full-detail pages ([PageDetail]) for the item on screen, keyed by [K], and the
- * renders made from them for settled zooms.
+ * Full-detail pages ([PageDetail]) keyed by [K], and the renders made from them for settled
+ * zooms: details loaded from the page itself for the item on screen, and details made
+ * elsewhere ([offer]: a model's output) for pages near the one read.
  *
- * - Only the pages of one item (a page, or the two of a spread) are kept: asking for
- *   one drops every page not named with it, so memory stays at one item's worth.
+ * - A loaded detail is kept only for the pages of one item (a page, or the two of a spread):
+ *   asking for one drops every loaded page not named with it.
+ * - A made detail is kept while its page is near ([rank]) and the details held fit [budget],
+ *   the farthest let go of first, those of the item zoomed last ([trim]).
  * - A page's detail loads once and serves every render until it is dropped; a page
  *   dropped mid-render is freed once that render is done. A failed load is forgotten,
  *   so the next render tries again.
@@ -32,7 +36,8 @@ import java.util.concurrent.CancellationException
  */
 internal class DetailStore<K>(private val scope: CoroutineScope, private val io: CoroutineDispatcher) {
 
-    private class Entry {
+    /** A page's detail; [made] when [offer]ed rather than loaded. */
+    private class Entry(val made: Boolean = false) {
         lateinit var deferred: Deferred<PageDetail?>
 
         /** Renders using the detail; it is freed only once none is. */
@@ -46,13 +51,28 @@ internal class DetailStore<K>(private val scope: CoroutineScope, private val io:
     private val entries = HashMap<K, Entry>()
     private val gate = Semaphore(1)
 
-    /** The pages currently held or loading; for tests. */
+    /** Most memory the details held may take, made ones let go of to stay within it ([trim]). */
+    var budget: Long = MAX_BUDGET
+
+    /** How near a page is to the one read, lower nearer; null for one too far to keep a made detail of. */
+    var rank: (K) -> Int? = { null }
+
+    /** The pages the last [prepare] or [render] named: the item zoomed, whose made details go last. */
+    private var zoomed: Set<K> = emptySet()
+
+    /** The pages currently held or loading. */
     val keys: Set<K> get() = entries.keys
+
+    /** Memory the details loaded or made hold, those freed once their render ends aside. */
+    val heldBytes: Long get() = entries.values.sumOf { e -> synchronized(e) { e.detail?.byteCount ?: 0L } }
 
     /** True when [key]'s detail is loaded, so a render needs no load first. */
     fun loaded(key: K): Boolean = entries[key]?.let { synchronized(it) { it.detail != null } } == true
 
-    /** Starts loading [key] with [load] unless it is held, dropping every page not in [keep]. */
+    /** True when [key]'s detail is one made for it ([offer]). */
+    fun made(key: K): Boolean = entries[key]?.made == true
+
+    /** Starts loading [key] with [load] unless it is held, dropping every loaded page not in [keep]. */
     fun prepare(key: K, keep: Collection<K>, load: () -> PageDetail) {
         entry(key, keep, load)
     }
@@ -60,7 +80,7 @@ internal class DetailStore<K>(private val scope: CoroutineScope, private val io:
     /**
      * Renders [request] from [key]'s detail, loading it with [load] first if needed,
      * and hands the result to [done] on the main thread unless the returned job is
-     * canceled first. Drops every page not in [keep]. A failed load or render (logged)
+     * canceled first. Drops every loaded page not in [keep]. A failed load or render (logged)
      * calls [failed] instead; the page dropped before its render starts calls [dropped],
      * as [failed] unless told otherwise: asked again, it loads anew.
      */
@@ -109,19 +129,58 @@ internal class DetailStore<K>(private val scope: CoroutineScope, private val io:
         }
     }
 
-    /** Drops every page but [keep]. */
-    fun retain(keep: Collection<K>) {
-        entries.keys.filter { it !in keep }.forEach { drop(it) }
+    /**
+     * Takes [detail], made for [key] elsewhere, as its detail in place of any held: renders
+     * use it from now on. It is freed once let go of ([trim], [dropMade], [clear]).
+     */
+    fun offer(key: K, detail: PageDetail) {
+        drop(key)
+        val entry = Entry(made = true)
+        entry.detail = detail
+        entry.deferred = CompletableDeferred(detail)
+        entries[key] = entry
+        trim()
     }
 
-    /** Drops [keys]. */
-    fun drop(keys: Collection<K>) = keys.forEach { drop(it) }
+    /**
+     * Lets go of made details to keep what is held within [budget]: those of pages too far
+     * ([rank] null) at once, then the farthest first while over it, the item zoomed last.
+     * Call when what [rank] says may have changed.
+     */
+    fun trim() {
+        for ((key, entry) in entries.entries.toList()) {
+            if (entry.made && key !in zoomed && rank(key) == null) drop(key)
+        }
+        var held = heldBytes
+        if (held <= budget) return
+        val farthestFirst = entries.filterValues { it.made }.keys
+            .sortedWith(compareBy<K>({ it in zoomed }, { -(rank(it) ?: 0) }))
+        for (key in farthestFirst) {
+            if (held <= budget) break
+            held -= entries[key]?.let { synchronized(it) { it.detail?.byteCount } } ?: 0L
+            drop(key)
+        }
+    }
+
+    /** Drops the loaded details of [keys], pages no longer shown; made ones stay while [trim] keeps them, as for any page not zoomed. */
+    fun drop(keys: Collection<K>) {
+        zoomed = zoomed - keys.toSet()
+        keys.forEach { if (entries[it]?.made == false) drop(it) }
+        trim()
+    }
+
+    /** Drops every made detail, as when what made them changed. */
+    fun dropMade() = dropMade(entries.keys.toList())
+
+    /** Drops the made details of [keys], as when what made those changed; loaded ones stay. */
+    fun dropMade(keys: Collection<K>) = keys.forEach { if (entries[it]?.made == true) drop(it) }
 
     /** Drops every page, as when memory runs low. */
     fun clear() = entries.keys.toList().forEach { drop(it) }
 
     private fun entry(key: K, keep: Collection<K>, load: () -> PageDetail): Entry {
-        entries.keys.filter { it != key && it !in keep }.forEach { drop(it) }
+        entries.entries.filter { (k, e) -> k != key && k !in keep && !e.made }.forEach { drop(it.key) }
+        zoomed = keep.toHashSet().apply { add(key) }
         entries[key]?.let { return it }
         val entry = Entry()
         // Held before the load starts: a load that fails at once is forgotten by the handler below, which may run within this call.
@@ -148,6 +207,8 @@ internal class DetailStore<K>(private val scope: CoroutineScope, private val io:
             scope.launch {
                 val failed = synchronized(entry) { entry.detail == null }
                 if (failed && entries[key] === entry) entries.remove(key)
+                // What it holds now counts toward the budget.
+                if (!failed) trim()
             }
         }
         return entry
@@ -171,8 +232,8 @@ internal class DetailStore<K>(private val scope: CoroutineScope, private val io:
         private const val TAG = "DetailStore"
 
         /**
-         * Most memory one item's full-detail pages may hold once loaded: two of the largest
-         * pages drawn. Loading one briefly takes more (see [com.infinity.comicreader.reader.Target.detail]).
+         * Most memory the details held may take once loaded: two of the largest pages drawn.
+         * Loading one briefly takes more (see [com.infinity.comicreader.reader.Target.detail]).
          */
         const val MAX_BUDGET = 200L * 1024 * 1024
 

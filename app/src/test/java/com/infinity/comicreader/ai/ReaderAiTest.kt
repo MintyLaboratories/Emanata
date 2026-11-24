@@ -8,6 +8,9 @@ import androidx.test.core.app.ApplicationProvider
 import com.infinity.comicreader.data.BookId
 import com.infinity.comicreader.data.Prefs
 import com.infinity.comicreader.reader.PageSource
+import com.infinity.comicreader.reader.ProcessedDetail
+import com.infinity.comicreader.reader.Region
+import com.infinity.comicreader.reader.Scaling
 import com.infinity.comicreader.reader.Target
 import com.infinity.comicreader.testing.awaitJob
 import kotlinx.coroutines.CoroutineScope
@@ -144,6 +147,45 @@ class ReaderAiTest {
         assertTrue(again.stored)
         assertEquals("read back, not decoded", 1, b.loads.get())
     }
+
+    @Test
+    fun aPageMadeKeepsTheModelsFullSizeOutputAsItsDetailAndAPageReadBackNone() {
+        install(upscale)
+        val b = bookOf()
+        val s = upscale.scale
+        assertNull("none unless asked for", (ai.enhance(b, 0, target, 40, 60) { false } as AiOutcome.Done).detail)
+        val other = bookOf(id = BookId(0xcc))
+        val made = ai.enhance(other, 0, target, 40, 60, detailBytes = Long.MAX_VALUE) { false } as AiOutcome.Done
+        val detail = made.detail!!
+        assertTrue(detail is ProcessedDetail)
+        assertEquals(30L * s * 45 * s * 4, detail.byteCount)
+        // A model's output is never sharpened, zoomed in either.
+        val whole = Region(0.0, 0.0, 1.0, 1.0)
+        val sharp = detail.render(whole, 70, 105, false, Scaling(sharpen = 100))
+        val unsharp = detail.render(whole, 70, 105, false, Scaling.DEFAULT)
+        assertTrue(pixelsOf(sharp).contentEquals(pixelsOf(unsharp)))
+        detail.release()
+
+        val back = ai.enhance(other, 0, target, 40, 60, detailBytes = Long.MAX_VALUE) { false } as AiOutcome.Done
+        assertTrue(back.stored)
+        assertNull(back.detail)
+        assertEquals(1, other.loads.get())
+    }
+
+    @Test
+    fun aRemakeMakesAPageKeptOnDiskAgainForItsDetail() {
+        install(upscale)
+        val b = bookOf()
+        assertFalse((ai.enhance(b, 0, target, 40, 60) { false } as AiOutcome.Done).stored)
+        val again = ai.enhance(b, 0, target, 40, 60, detailBytes = Long.MAX_VALUE, remake = true) { false } as AiOutcome.Done
+        assertFalse(again.stored)
+        assertEquals("decoded and made again", 2, b.loads.get())
+        assertEquals(30L * upscale.scale * 45 * upscale.scale * 4, again.detail!!.byteCount)
+        again.detail!!.release()
+        assertTrue("still kept on disk", (ai.enhance(b, 0, target, 40, 60) { false } as AiOutcome.Done).stored)
+    }
+
+    private fun pixelsOf(b: Bitmap): IntArray = IntArray(b.width * b.height).also { b.getPixels(it, 0, b.width, 0, 0, b.width, b.height) }
 
     @Test
     fun modelsAreReportedOnceOnlyWhenTheyWorkOnAPage() {

@@ -52,3 +52,9 @@ class BitmapDetail(val bitmap: Bitmap) : PageDetail {
 
     override fun release() = bitmap.recycle()
 }
+
+/** Detail a model made, [inner]: never sharpened, whatever scaling a render asks for. */
+class ProcessedDetail(private val inner: PageDetail) : PageDetail by inner {
+    override fun render(region: Region, width: Int, height: Int, linear: Boolean, scaling: Scaling): Bitmap =
+        inner.render(region, width, height, linear, scaling.unsharpened)
+}

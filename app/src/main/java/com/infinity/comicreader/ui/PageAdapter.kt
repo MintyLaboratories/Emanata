@@ -33,6 +33,7 @@ import com.infinity.comicreader.reader.Look
 import com.infinity.comicreader.reader.PageDetail
 import com.infinity.comicreader.reader.PageSource
 import com.infinity.comicreader.reader.PairCrop
+import com.infinity.comicreader.reader.ProcessedDetail
 import com.infinity.comicreader.reader.Region
 import com.infinity.comicreader.reader.Scaling
 import com.infinity.comicreader.reader.Target
@@ -93,9 +94,10 @@ import java.util.concurrent.atomic.AtomicInteger
  * With an [enhancer], pages of a book with an AI chain go through it ([AiQueue]) once their
  * plain page shows: those of the item being read ([reading]), then the next item's, one at a
  * time; each processed page takes the plain one's place in the cache and in its image, at the
- * same size, so it swaps in without a jump ([ZoomImageView.swapBitmap]). Turning pages faster
- * than they are processed, the work skips ahead to pages the reader reaches once they are done
- * ([AiLead]).
+ * same size, so it swaps in without a jump ([ZoomImageView.swapBitmap]), and its zooms draw from
+ * the model's full-size output ([DetailStore.offer]), made again for a zoom once let go of
+ * ([wantDetail]). Turning pages faster than they are processed, the work skips ahead to pages
+ * the reader reaches once they are done ([AiLead]).
  *
  * A [RecyclerView.Adapter] has a fixed item view type, so callers build a fresh
  * instance whenever the mode, spread, reading direction, [autoCrop], [linear]
@@ -936,11 +938,47 @@ class PageAdapter(
 
     // ------------------------------------------------------------------ detail
 
-    /** Full-detail pages for the item being zoomed. */
-    private val details = DetailStore<PageKey>(scope, AppDispatchers.io)
+    /** Full-detail pages for the item being zoomed, and processed ones for the pages near the one read ([detailRank]). */
+    private val details = DetailStore<PageKey>(scope, AppDispatchers.io).also { it.rank = ::detailRank }
 
-    /** Memory one item's full-detail pages may take; set from the device's RAM once attached. */
+    /** Memory the full-detail pages may take; set from the device's RAM once attached. */
     private var detailBudget = DetailStore.MAX_BUDGET
+        set(value) {
+            field = value
+            details.budget = value
+            details.trim()
+        }
+
+    /**
+     * How near [key]'s page is to the item read, for the processed details kept
+     * ([DetailStore.rank]): the item read, the next, the one before, then the items after as far
+     * as AI work may start ahead ([AiLead.MAX] + 1); none further.
+     */
+    private fun detailRank(key: PageKey): Int? {
+        if (readingAt < 0) return null
+        val d = layout.itemOf(key.part) - readingAt
+        return when {
+            d == 0 -> 0
+            d == -1 -> 2
+            d in 1..AiLead.MAX + 1 -> 2 * d - 1
+            else -> null
+        }
+    }
+
+    /** Pages shown processed whose processed detail is being made again for a zoom ([wantDetail]); read on the AI thread. */
+    private val remakes: MutableSet<PageKey> = ConcurrentHashMap.newKeySet()
+
+    /**
+     * Has [key]'s processed detail made again, the zoom falling back to the plain page's
+     * meanwhile, when its page shows processed but its processed detail was let go of (or it
+     * was read back from disk, which keeps none); once per page until it is made or leaves AI
+     * work's reach.
+     */
+    private fun wantDetail(key: PageKey) {
+        if (enhancer == null || released || key !in processed || details.made(detailKey(key)) || !remakes.add(key)) return
+        ai?.forget(key)
+        wantAi()
+    }
 
     /** The pages [holder] shows at full detail, or could, by [detailKey]. */
     private fun detailKeys(holder: PageHolder): List<PageKey> =
@@ -978,12 +1016,15 @@ class PageAdapter(
         val detailKey = detailKey(key)
 
         override fun prepare() {
-            if (!released) details.prepare(detailKey, keptKeys(holder), loader())
+            if (released) return
+            details.prepare(detailKey, keptKeys(holder), loader())
+            wantDetail(key)
         }
 
         override fun render(region: Region, width: Int, height: Int, done: (Bitmap) -> Unit): () -> Unit {
             if (released) return {}
             val job = details.render(detailKey, keptKeys(holder), loader(), { frozen(it.render(region, width, height, linear, zoomScaling)) }, done = done)
+            wantDetail(key)
             return { job.cancel() }
         }
 
@@ -1109,7 +1150,7 @@ class PageAdapter(
     /**
      * Makes [key]'s bitmap from the full detail held for the page shown in [slot], as a
      * settled zoom would, instead of decoding the page again; decodes it when that render
-     * fails or the detail is dropped first.
+     * fails or the detail is dropped first. Once cached, AI work goes on as after a decode.
      */
     private fun renderFromDetail(holder: PageHolder, slot: Int, key: PageKey) {
         val shown = (holder.images[slot].drawable as? BitmapDrawable)?.bitmap
@@ -1122,14 +1163,18 @@ class PageAdapter(
         // [failed] can run before [DetailStore.render] returns, the decode then waited on.
         var decoding = false
         val job = details.render(detail.detailKey, keptKeys(holder), detail.loader(), {
-            frozen(it.render(WHOLE_PAGE, plan.width, plan.height, linear, pageScaling))
+            frozen(it.render(WHOLE_PAGE, plan.width, plan.height, linear, pageScaling)) to (it is ProcessedDetail)
         }, failed = {
             decoding = true
             decodeInto(holder, slot, key)
-        }) { bitmap ->
+        }) { (bitmap, made) ->
             holder.waiters[slot] = null
             cache.put(key, bitmap)
+            // Made from a model's output: the page shows processed at its new size.
+            if (made) processed += key
             if (holder.shown[slot] == key.code) showBitmap(holder, slot, key, bitmap)
+            // Cached at its new size, as a page decoded: AI work goes on from it.
+            wantAi()
         }
         if (!decoding) holder.waiters[slot] = job
     }
@@ -1531,8 +1576,12 @@ class PageAdapter(
 
     // ------------------------------------------------------------------ AI processing
 
-    /** What processing a page needs that only the main thread may read: its chapter's source, its index there, its plain page's size. */
-    private class AiPage(val source: PageSource, val index: Int, val width: Int, val height: Int)
+    /**
+     * What processing a page needs that only the main thread may read: its chapter's source, its
+     * index there, its plain page's size, and the memory its processed detail may take: its
+     * item's share of [detailBudget], as a plain detail's ([SlotDetail.loader]).
+     */
+    private class AiPage(val source: PageSource, val index: Int, val width: Int, val height: Int, val detailBytes: Long)
 
     /** The reader's pace of turns, which AI work keeps ahead of ([AiLead]). */
     private val pace = TurnPace()
@@ -1550,7 +1599,10 @@ class PageAdapter(
 
     private fun queueOf(e: PageEnhancer): AiQueue<PageKey> = ai ?: AiQueue<PageKey>(scope, e.worker, { key, canceled, models ->
         val p = aiPages[key] ?: return@AiQueue AiOutcome.Skipped(Fallback.UNNEEDED)
-        e.enhance(p.source, p.index, key.target, p.width, p.height, held = { motion.moving }, models = models, canceled = canceled)
+        e.enhance(
+            p.source, p.index, key.target, p.width, p.height, held = { motion.moving }, models = models, detailBytes = p.detailBytes,
+            remake = key in remakes, canceled = canceled
+        )
     }, ::enhanced, busy = { onAiBusy?.invoke(it) }).also {
         ai = it
         if (aiPaused) it.pause()
@@ -1587,6 +1639,12 @@ class PageAdapter(
     /** Pages whose cached bitmap is the processed one. Main thread only. */
     private val processed = HashSet<PageKey>()
 
+    /** A processed detail's page as its models were given it: [key] and [page]. */
+    private class Made(val key: PageKey, val page: AiPage)
+
+    /** Where each processed detail held came from, by [detailKey], judged by [aiReplanned]. Main thread only. */
+    private val madeFrom = HashMap<PageKey, Made>()
+
     /** Processes item [position]'s pages, then the next item's, as each shows plain ([enhancer]). Call as the reader moves. */
     fun reading(position: Int) {
         if (readingAt == position) return
@@ -1603,6 +1661,9 @@ class PageAdapter(
         if (enhancer == null || released) return
         for (key in processed) cache.remove(key)
         processed.clear()
+        remakes.clear()
+        details.dropMade()
+        madeFrom.clear()
         ai?.reset()
         notifyItemRangeChanged(0, itemCount, RESIZE)
         // Pages cached plain go through the new chain at once; those that were processed once decoded again.
@@ -1611,8 +1672,11 @@ class PageAdapter(
 
     /**
      * Processes anew only the pages [replanned] picks, given each page's source, index, target
-     * and size as shown: those shown processed show plain again, those done, skipped or under
-     * way are worked on again; the rest, the page under way included, are left as they are.
+     * and size as shown: those shown processed show plain again and let go of their processed
+     * details, those done, skipped or under way are worked on again; the rest, the page under
+     * way included, are left as they are, processed details too. A processed detail is also let
+     * go of when [replanned] picks its page at the target and size its models were given
+     * ([madeFrom]), cached or not, or when those are not known.
      * After the shape of a book's pages changed.
      */
     fun aiReplanned(replanned: (source: PageSource, index: Int, target: Target, width: Int, height: Int) -> Boolean) {
@@ -1632,6 +1696,12 @@ class PageAdapter(
         ai?.again(::picked)
         for (key in dropped) cache.remove(key)
         processed -= dropped.toSet()
+        // Their processed details came from the models read before, as did those made from a page now
+        // read otherwise: a page read back from disk brings none to replace them. The others stay.
+        val stale = details.keys.filter { k ->
+            details.made(k) && madeFrom[k]?.let { replanned(it.page.source, it.page.index, it.key.target, it.page.width, it.page.height) } != false
+        }
+        details.dropMade(dropped.map(::detailKey) + stale)
         if (dropped.isNotEmpty()) notifyItemRangeChanged(0, itemCount, RESIZE)
         wantAi()
     }
@@ -1674,7 +1744,12 @@ class PageAdapter(
             }
         }
         // Before want: a page done at once is delivered within it, and the wantAi it calls keeps its own pages.
-        aiPages.keys.retainAll(keys.toSet())
+        val wanted = keys.toSet()
+        aiPages.keys.retainAll(wanted)
+        remakes.retainAll(wanted)
+        // The processed details of pages now far from the item read are let go of.
+        details.trim()
+        madeFrom.keys.retainAll { details.made(it) }
         if (keys.isNotEmpty() || ai != null) queueOf(e).want(keys)
     }
 
@@ -1695,8 +1770,8 @@ class PageAdapter(
             val source = chapter.value.source
             if (!e.enhances(source)) continue
             val key = keyFor(part)
-            // A page shown processed already needs nothing.
-            if (key != null && key in processed) continue
+            // A page shown processed already needs nothing, but its processed detail when a zoom wants it.
+            if (key != null && key in processed && key !in remakes) continue
             val bitmap = key?.let { cache.get(it) }
             if (key == null || bitmap == null) {
                 if (item == readingAt && (key == null || permanentFailure(key) == null)) return null
@@ -1704,18 +1779,32 @@ class PageAdapter(
             }
             // A stand-in for a page drawn in bands is never processed.
             if (key.target.bandsAt(bitmap.width.toDouble(), bitmap.height.toDouble())) continue
-            aiPages.putIfAbsent(key, AiPage(source, key.page - chapter.first, bitmap.width, bitmap.height))
+            val share = detailBudget / strip.parts(item).count { it != null && it.page < end }.coerceAtLeast(1)
+            aiPages.putIfAbsent(key, AiPage(source, key.page - chapter.first, bitmap.width, bitmap.height, share))
             keys += key
         }
         return keys
     }
 
-    /** Shows [done]'s page in place of [key]'s plain one, in the cache and wherever it shows at that size. */
+    /**
+     * Shows [done]'s page in place of [key]'s plain one, in the cache and wherever it shows at
+     * that size; its processed detail serves zooms from now on, kept while near ([detailRank]).
+     */
     private fun enhanced(key: PageKey, done: AiOutcome.Done) {
-        if (released || key != keyFor(key.part)) return
+        if (released || key != keyFor(key.part)) {
+            done.detail?.release()
+            return
+        }
         val bitmap = frozen(done.bitmap)
         cache.put(key, bitmap)
         processed += key
+        remakes -= key
+        done.detail?.let {
+            val detailKey = detailKey(key)
+            details.offer(detailKey, it)
+            val page = aiPages[key]
+            if (page != null) madeFrom[detailKey] = Made(key, page) else madeFrom -= detailKey
+        }
         ReadProbes.current?.enhanced(key.page, done.ms, done.stored)
         recycler?.let { list ->
             for (i in 0 until list.childCount) {
@@ -1781,6 +1870,7 @@ class PageAdapter(
         mainHandler.removeCallbacks(rethinkAi)
         ai?.release()
         aiPages.clear()
+        madeFrom.clear()
         details.clear()
         scope.cancel()
         pending.clear()

@@ -187,4 +187,44 @@ class AiChainRunTest {
         assertEquals(before, clean.runs.get())
         assertEquals(Fallback.UNNEEDED, AiPages.chain(sessions, page(60, 90), plan, steps = emptyList()).fallback)
     }
+
+    @Test
+    fun theLastModelsOutputIsKeptAtFullSizeWhenAskedFor() {
+        val clean = FakeModel(scale = 1, reach = 1)
+        val up = FakeModel(scale = 2, reach = 2)
+        val src = page(60, 90)
+        val plain = AiPages.chain(listOf(session(clean), session(up)), src, plan)
+        assertNull("none unless asked for", plain.detail)
+        val kept = AiPages.chain(listOf(session(clean), session(up)), src, plan, keepBytes = Long.MAX_VALUE)
+        val once = bitmapOf(FakeModel.reference(src, 1, 1), 60, 90)
+        val full = FakeModel.reference(once, 2, 2)
+        val detail = kept.detail!!
+        assertEquals(120, detail.width)
+        assertEquals(180, detail.height)
+        assertArrayEquals(full, pixels(detail))
+        // The page shown is the same either way.
+        assertArrayEquals(pixels(plain.bitmap!!), pixels(kept.bitmap!!))
+        assertFalse(src.isRecycled)
+    }
+
+    @Test
+    fun aKeptOutputOverItsShareIsReducedEvenlyByTheSameResampler() {
+        val up = FakeModel(scale = 2, reach = 1)
+        val src = page(60, 90)
+        val run = AiPages.chain(listOf(session(up)), src, plan, keepBytes = 120L * 180 * 4 / 4)
+        val detail = run.detail!!
+        assertEquals(60, detail.width)
+        assertEquals(90, detail.height)
+        val full = bitmapOf(FakeModel.reference(src, 2, 1), 120, 180)
+        val expected = BitmapUtils.resample(full, Plan(60, 90, 0.0, 0.0, 120.0, 180.0), false, Scaling.DEFAULT)
+        assertArrayEquals(pixels(expected), pixels(detail))
+    }
+
+    @Test
+    fun aFallenBackChainKeepsNoOutput() {
+        val up = FakeModel(scale = 2, reach = 1)
+        val run = AiPages.chain(listOf(session(up)), page(60, 90), plan, gate = { Fallback.PAUSED }, keepBytes = Long.MAX_VALUE)
+        assertEquals(Fallback.PAUSED, run.fallback)
+        assertNull(run.detail)
+    }
 }

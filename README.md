@@ -683,8 +683,11 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   anti-ringing clamp (Android 13+; bilinear before). 150 ms after it stops,
   the visible part is re-rendered with Lanczos3 from the full-resolution page
   (vector for PDF) at exact screen resolution and swapped in pixel for pixel.
-  Only the zoomed page or spread is kept at full resolution, within a memory
-  budget, and it is freed when the reader is hidden.
+  Plain pages are kept at full resolution only for the zoomed page or spread.
+  A page processed by AI zooms from the models' own output at full
+  size, not the plain page; that output is kept for the item read, the one
+  before it and up to five after it. All of it shares one memory budget and
+  is freed when the reader is hidden.
 - **Fit modes:** fit screen, fit width, fit height, stretch. Each page is
   scaled with Lanczos3 to the exact size it fills on screen (a spread half, or
   the whole row for a lone page) and drawn pixel for pixel, unfiltered. A new
@@ -1263,8 +1266,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   reduction and any model before it), decided for each render at its size;
   the reader tells each open book's class (`BookShape`) as its direction,
   ComicInfo and page sizes become known; when it changes, only the pages it
-  gives another class or other models (`ReaderAi.replanned`) show anew, and
-  the page under way goes on unless it is one of them. An
+  gives another class or other models (`ReaderAi.replanned`) show anew and
+  let go of their zoom details, and the page under way goes on unless it is
+  one of them. An
   upscaler runs above the upscale threshold (100 % by default, never below
   50 %), an artifact-removal model
   above the cleanup threshold (50 % by default, or always), and a descreen
@@ -1292,7 +1296,18 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   first meanwhile is tried at once, a model download ending or failing wakes
   it, and a failed download is not retried until picked again); a page that
   times out or fails keeps its plain rendering. Vector books and pages drawn
-  in bands are not processed; a zoom renders its detail from the plain page.
+  in bands are not processed; a zoom renders their detail from the plain page.
+  A processed page keeps the last model's output at full size as its zoom
+  detail (`DetailStore.offer`), reduced evenly to the page's share of the
+  detail budget (a sixteenth of RAM, 32-200 MB, halved for each page of a
+  spread), and zooms render from it with the same resampler, never
+  sharpened. Such details are kept for the item read, the one before it and
+  up to five items after it, the farthest let go of first while the
+  details held exceed the budget, and none further. A processed page whose
+  detail was let go of, or that was read back from disk (which keeps only its
+  display size), zooms from the plain page while its detail is made again in
+  the background; the zoom redraws from it once made. At a new fit or
+  rotation a page whose detail is held is drawn from it, with no model run.
   The queue pauses while the reader is out of sight; models close when its UI
   hides and when no open book runs them. Processed pages are kept in
   `cache/ai-pages` (`ProcessedStore`) as lossless JPEG XL at effort 1 (PNG

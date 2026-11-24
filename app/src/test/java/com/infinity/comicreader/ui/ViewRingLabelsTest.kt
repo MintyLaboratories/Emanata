@@ -107,25 +107,25 @@ class ViewRingLabelsTest {
         val screen = box(list.window.decorView).let { RingGeometry.Box(it.left + bars.left, it.top + bars.top, it.right - bars.right, it.bottom - bars.bottom) }
         val want = RingGeometry.radius(options.size, 75f, 91f) * list.resources.displayMetrics.density
         assertTrue("$what: radius ${ring.ringRadius / want} of the one asked for", ring.ringRadius <= want * most + 0.5f)
-        val round = options.map { center(ring.button(it)!!) } + center(ring.hub()!!)
-        val labels = options.map { it to ring.label(it)!! }
-        for ((o, label) in labels) {
-            val layout = label.layout
-            val text = label.text.toString()
-            for (line in 0 until layout.lineCount) assertEquals("$what: $o \"$text\" whole", 0, layout.getEllipsisCount(line))
-            assertTrue("$what: $o \"$text\" on ${layout.lineCount} lines", layout.lineCount <= 3)
-            val l = box(label)
-            assertTrue("$what: $o $l on $screen", l.within(screen))
-            for ((x, y, r) in round) assertEquals("$what: $o \"$text\" on a button at $x, $y", 0f, l.overlap(x, y, r), 0f)
-            for ((p, other) in labels) if (p != o) assertEquals("$what: $o on $p", 0f, l.overlap(box(other)), 0f)
+        fun labelsClear(what: String) {
+            val round = options.map { center(ring.button(it)!!) } + center(ring.hub()!!)
+            val labels = options.map { it to ring.label(it)!! }
+            for ((o, label) in labels) {
+                val layout = label.layout
+                val text = label.text.toString()
+                for (line in 0 until layout.lineCount) assertEquals("$what: $o \"$text\" whole", 0, layout.getEllipsisCount(line))
+                assertTrue("$what: $o \"$text\" on ${layout.lineCount} lines", layout.lineCount <= 3)
+                val l = box(label)
+                assertTrue("$what: $o $l on $screen", l.within(screen))
+                for ((x, y, r) in round) assertEquals("$what: $o \"$text\" on a button at $x, $y", 0f, l.overlap(x, y, r), 0f)
+                for ((p, other) in labels) if (p != o) assertEquals("$what: $o on $p", 0f, l.overlap(box(other)), 0f)
+            }
         }
-        // A tap changes values in place; the labels still fit, clear of the bars.
+        labelsClear(what)
+        // A tap changes values in place; the labels still fit, clear of the buttons, the hub, each other and the bars.
         ring.button(RingOption.SORT)!!.performClick()
         settle()
-        for ((o, label) in labels) {
-            for (line in 0 until label.layout.lineCount) assertEquals("$what, after a tap: $o whole", 0, label.layout.getEllipsisCount(line))
-            assertTrue("$what, after a tap: $o on $screen", box(label).within(screen))
-        }
+        labelsClear("$what, after a tap")
         ring.close(animate = false)
     }
 

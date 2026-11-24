@@ -189,9 +189,9 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
         }
         this.items = items
         for (item in items) buttons[item.option]?.let { (button, label) -> bind(button, label, item) }
-        // The buttons stay; a label whose text grew may take another side or a shorter form.
+        // The buttons stay; a label whose text grew may take another side or a shorter form, every label's sides searched together where need be.
         val angles = angles()
-        val placed = fitLabels(all = true) { RingGeometry.place(angles, cx, cy, bounds, buttonSize().toFloat(), radius, reach(), pad(), it) }
+        val placed = fitLabels(all = true) { RingGeometry.place(angles, cx, cy, bounds, buttonSize().toFloat(), radius, reach(), pad(), it, exhaustive = true) }
         for ((i, pair) in buttons.values.withIndex()) placeLabel(pair.second, placed.boxes[i])
     }
 

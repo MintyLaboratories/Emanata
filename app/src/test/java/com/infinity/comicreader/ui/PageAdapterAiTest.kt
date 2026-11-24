@@ -325,11 +325,13 @@ class PageAdapterAiTest {
             idleUntil("page 1 processed") { adapter.processedOf(adapter.decoded(source)).size == 2 }
             assertEquals(listOf(0, 1), enhancer.asked.toList())
 
-            // Picked, page 0 shows plain and is processed anew; page 1 stays.
+            // Picked, page 0 is processed anew; page 1 stays. Its image keeps the old bitmap until a new one arrives.
+            val old = shownBitmap(rv, 0)
             adapter.aiReplanned { _, index, _, _, _ -> index == 0 }
             rv.layOut(600, 900)
-            idleUntil("page 0 processed anew") { enhancer.asked.toList() == listOf(0, 1, 0) && colorAt(rv, 0) == processed }
-            assertEquals(2, adapter.processedOf(adapter.decoded(source)).size)
+            idleUntil("page 0 processed anew") { enhancer.asked.toList() == listOf(0, 1, 0) && adapter.processedOf(adapter.decoded(source)).size == 2 }
+            assertEquals(processed, colorAt(rv, 0))
+            assertTrue("the new bitmap shows", shownBitmap(rv, 0) !== old)
             adapter.release()
         } finally {
             worker.shutdownNow()

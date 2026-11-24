@@ -558,6 +558,54 @@ class PageAdapterAiTest {
     }
 
     @Test
+    fun aHoldStopsThePageUnderWayOnceTheReaderHasPassedIt() {
+        val worker = Executors.newSingleThreadExecutor()
+        try {
+            val e = Enhancer(processed, worker.asCoroutineDispatcher())
+            val going = CountDownLatch(1)
+            e.onEnhance = { if (it == 3) going.await(Waits.LIVENESS_MS, TimeUnit.MILLISECONDS) }
+            val source = Source(8, plain)
+            val adapter = PageAdapter(
+                source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false, preload = 7, enhancer = e
+            )
+            val rv = RecyclerView(context).apply {
+                layoutManager = LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false)
+                this.adapter = adapter
+                layOut(600, 900)
+            }
+            idleUntil("page 0 shown plain") { colorAt(rv, 0) == plain }
+            settled(adapter)
+            // Turns 1 s apart, pages taking half that: no hold; the page read and the next are processed.
+            e.on = false
+            e.ms = 500
+            turns(adapter, 0 to 1_000L, 1 to 1_000L)
+            e.on = true
+            adapter.reading(2)
+            idleUntil("page 2 processed, page 3 under way") { adapter.processedOf(adapter.decoded(source)).size == 1 && 3 in e.asked }
+            // Pages take 5 s now: the next turn, 1 s on, holds AI for 1.2 s; page 3 is read and goes on.
+            e.ms = 5_000
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1_000))
+            adapter.reading(3)
+            shadowOf(Looper.getMainLooper()).idle()
+            assertFalse("the page read goes on", e.canceled.getValue(3)())
+            // Half a second on, still held, the reader passes page 3.
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(500))
+            adapter.reading(4)
+            shadowOf(Looper.getMainLooper()).idle()
+            assertTrue("the page passed stops", e.canceled.getValue(3)())
+            going.countDown()
+            // Whatever the queue starts next reaches the worker before this.
+            worker.submit {}.get(Waits.LIVENESS_MS, TimeUnit.MILLISECONDS)
+            shadowOf(Looper.getMainLooper()).idle()
+            worker.submit {}.get(Waits.LIVENESS_MS, TimeUnit.MILLISECONDS)
+            assertEquals("nothing new while held", listOf(2, 3), e.asked.toList())
+            adapter.release()
+        } finally {
+            worker.shutdownNow()
+        }
+    }
+
+    @Test
     fun thePagesAskedForAsAPageDoneAtOnceArrivesAreProcessed() {
         val e = Enhancer(processed, InlineOnce())
         val (adapter, rv) = reader(preload = 7, pages = 8, enhancer = e)

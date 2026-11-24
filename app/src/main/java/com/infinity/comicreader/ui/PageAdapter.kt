@@ -1666,7 +1666,8 @@ class PageAdapter(
                     val p = aiPages[key] ?: continue
                     if (e.stored(p.source, p.index, key.target, p.width, p.height)) keys += key
                 }
-                val ahead = (readingAt..readingAt + AiLead.MAX + 1).flatMap { aiCandidates(e, it).orEmpty() }
+                // The skip-ahead starts work at most AiLead.MAX + 1 items past the item before this one.
+                val ahead = (readingAt..readingAt + AiLead.MAX).flatMap { aiCandidates(e, it).orEmpty() }
                 ai?.current?.let { if (it in ahead && it !in keys) keys += it }
                 mainHandler.postDelayed(rethinkAi, hold)
             } else if (lead == 0) {

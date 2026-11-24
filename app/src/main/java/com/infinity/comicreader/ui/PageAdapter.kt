@@ -1665,8 +1665,9 @@ class PageAdapter(
 
     /**
      * Processes anew only the pages [replanned] picks, given each page's source, index, target
-     * and size as shown: those shown processed show plain again, those done, skipped or under
-     * way are worked on again; the rest, the page under way included, are left as they are.
+     * and size as shown: those shown processed show plain again and let go of their processed
+     * details, those done, skipped or under way are worked on again; the rest, the page under
+     * way included, are left as they are, processed details too.
      * After the shape of a book's pages changed.
      */
     fun aiReplanned(replanned: (source: PageSource, index: Int, target: Target, width: Int, height: Int) -> Boolean) {
@@ -1686,6 +1687,8 @@ class PageAdapter(
         ai?.again(::picked)
         for (key in dropped) cache.remove(key)
         processed -= dropped.toSet()
+        // Their processed details came from the models read before; the other pages keep theirs.
+        details.dropMade(dropped.map(::detailKey))
         if (dropped.isNotEmpty()) notifyItemRangeChanged(0, itemCount, RESIZE)
         wantAi()
     }

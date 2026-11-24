@@ -23,6 +23,7 @@ import com.infinity.comicreader.testing.idleUntil
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -328,6 +329,36 @@ class PageAdapterAiDetailTest {
         adapter.aiWake()
         idleUntil("page 0 made again") { enhancer.outputs.any { it.page == 0 } }
         assertTrue(near(tileColor(image), processed))
+        adapter.release()
+    }
+
+    @Test
+    fun aNewShapeLetsGoOfTheProcessedDetailsOfThePagesProcessedAnewOnly() {
+        // RAM enough for the largest budget: the budget lets none go.
+        shadowOf(context.getSystemService(ActivityManager::class.java)).setMemoryInfo(ActivityManager.MemoryInfo().apply { totalMem = 8L shl 30 })
+        val source = Source(4)
+        val enhancer = Enhancer(processed)
+        val (adapter, rv) = reader(source, enhancer)
+        idleUntil("page 0 shown plain") { shownColor(rv, 0) == plain }
+        adapter.reading(0)
+        idleUntil("pages 0 and 1 processed") { listOf(0, 1).all { p -> enhancer.outputs.any { it.page == p } } }
+
+        // Page 0 is read otherwise now, and put off: until it is processed anew it shows and zooms plain.
+        enhancer.later = true
+        adapter.aiReplanned { _, index, _, _, _ -> index == 0 }
+        idleUntil("page 0 shown plain again", step = { rv.layOut(600, 900) }) { shownColor(rv, 0) == plain }
+        idleUntil("page 0 asked for anew") { enhancer.asked.count { it.page == 0 } == 2 }
+        assertTrue("page 0's detail let go of", enhancer.outputs.single { it.page == 0 }.released)
+        assertTrue(near(tileColor(image(rv, 0)!!), plain))
+
+        enhancer.later = false
+        adapter.aiWake()
+        idleUntil("page 0 processed anew") { enhancer.outputs.count { it.page == 0 } == 2 }
+        assertTrue(near(tileColor(image(rv, 0)!!), processed))
+        shadowOf(Looper.getMainLooper()).idle()
+        // Page 1, read as before, keeps its detail and is not made again.
+        assertFalse("page 1's detail kept", enhancer.outputs.single { it.page == 1 }.released)
+        assertEquals(1, enhancer.asked.count { it.page == 1 })
         adapter.release()
     }
 

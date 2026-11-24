@@ -170,7 +170,10 @@ internal class DetailStore<K>(private val scope: CoroutineScope, private val io:
     }
 
     /** Drops every made detail, as when what made them changed. */
-    fun dropMade() = entries.filterValues { it.made }.keys.toList().forEach { drop(it) }
+    fun dropMade() = dropMade(entries.keys.toList())
+
+    /** Drops the made details of [keys], as when what made those changed; loaded ones stay. */
+    fun dropMade(keys: Collection<K>) = keys.forEach { if (entries[it]?.made == true) drop(it) }
 
     /** Drops every page, as when memory runs low. */
     fun clear() = entries.keys.toList().forEach { drop(it) }

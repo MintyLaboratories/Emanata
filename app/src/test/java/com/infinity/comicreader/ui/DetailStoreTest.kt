@@ -352,6 +352,25 @@ class DetailStoreTest {
     }
 
     @Test
+    fun madeDetailsNamedAreLetGoOfAloneLoadedOnesStay() {
+        val s = madeStore(1_000)
+        ranks["a"] = 0
+        ranks["b"] = 1
+        val a = FakeDetail("a")
+        val b = FakeDetail("b")
+        s.offer("a", a)
+        s.offer("b", b)
+        var done = 0
+        s.render("shown", listOf("shown"), loader("shown"), { it }) { done++ }
+        idleUntil("shown rendered") { done == 1 }
+        s.dropMade(listOf("a", "shown"))
+        assertTrue(a.released)
+        assertFalse(b.released)
+        assertFalse(detail("shown").released)
+        assertEquals(setOf("b", "shown"), s.keys)
+    }
+
+    @Test
     fun budgetIsASixteenthOfRamWithinBounds() {
         val gib = 1024L * 1024 * 1024
         assertEquals(DetailStore.MAX_BUDGET, DetailStore.budget(8 * gib))

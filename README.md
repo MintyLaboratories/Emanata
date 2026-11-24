@@ -1264,8 +1264,9 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   reduction and any model before it), decided for each render at its size;
   the reader tells each open book's class (`BookShape`) as its direction,
   ComicInfo and page sizes become known; when it changes, only the pages it
-  gives another class or other models (`ReaderAi.replanned`) show anew, and
-  the page under way goes on unless it is one of them. An
+  gives another class or other models (`ReaderAi.replanned`) show anew and
+  let go of their zoom details, and the page under way goes on unless it is
+  one of them. An
   upscaler runs above the upscale threshold (100 % by default, never below
   50 %), an artifact-removal model
   above the cleanup threshold (50 % by default, or always), and a descreen

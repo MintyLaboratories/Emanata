@@ -32,6 +32,9 @@ internal class TurnPace(private val clock: () -> Long = SystemClock::uptimeMilli
     /** Milliseconds on the item read now. */
     val dwellMs: Long get() = clock() - since
 
+    /** Milliseconds between the last turns in a row, oldest first; at most [SAMPLES]. */
+    val gapsMs: List<Long> get() = gaps.toList()
+
     companion object {
         const val SAMPLES = 3
         const val MIN_SAMPLES = 2
@@ -60,5 +63,24 @@ internal object AiLead {
         val shown = left + then * paceMs - pageMs
         val lead = if (2 * shown >= paceMs) then else then + 1
         return lead.toInt().coerceAtMost(MAX)
+    }
+}
+
+/** How long AI work holds off while the reader flips faster than pages are processed. */
+internal object AiHold {
+    /** The longest hold on one item. */
+    const val MAX_MS = 1_500L
+
+    /**
+     * Milliseconds AI work still holds off on the item read, [dwellMs] into it; 0 when not held.
+     * Held after the last two turns in a row ([gapsMs], oldest first) each came sooner than a
+     * page takes ([pageMs]), until the item has stayed up for the last turn's interval plus a
+     * fifth, at most [MAX_MS].
+     */
+    fun of(pageMs: Long, gapsMs: List<Long>, dwellMs: Long): Long {
+        if (pageMs <= 0 || gapsMs.size < 2) return 0
+        val last = gapsMs[gapsMs.size - 1]
+        if (last >= pageMs || gapsMs[gapsMs.size - 2] >= pageMs) return 0
+        return (minOf(last + last / 5, MAX_MS) - dwellMs).coerceAtLeast(0)
     }
 }

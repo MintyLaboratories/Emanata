@@ -97,7 +97,8 @@ import java.util.concurrent.atomic.AtomicInteger
  * same size, so it swaps in without a jump ([ZoomImageView.swapBitmap]), and its zooms draw from
  * the model's full-size output ([DetailStore.offer]), made again for a zoom once let go of
  * ([wantDetail]). Turning pages faster than they are processed, the work skips ahead to pages
- * the reader reaches once they are done ([AiLead]).
+ * the reader reaches once they are done ([AiLead]), and holds off until a page is dwelt on
+ * ([AiHold]).
  *
  * A [RecyclerView.Adapter] has a fixed item view type, so callers build a fresh
  * instance whenever the mode, spread, reading direction, [autoCrop], [linear]
@@ -1586,7 +1587,7 @@ class PageAdapter(
     /** The reader's pace of turns, which AI work keeps ahead of ([AiLead]). */
     private val pace = TurnPace()
 
-    /** Asks for AI work again once the reader has stayed on a page past its pace. */
+    /** Asks for AI work again once the reader has stayed on a page past its pace or a hold ([AiHold]). */
     private val rethinkAi = Runnable { wantAi() }
 
     private val aiPages = ConcurrentHashMap<PageKey, AiPage>()
@@ -1717,7 +1718,9 @@ class PageAdapter(
      * read goes first and AI work never competes with its decode. While the reader turns
      * faster than a page is processed ([AiLead]), the work starts at the first item it reaches
      * once a page is done instead; of the items before, only pages kept on disk are read back
-     * (at once), and the page under way goes on.
+     * (at once), and the page under way goes on. After two such turns in a row nothing new is
+     * worked on until the item read has stayed up a while ([AiHold]) but pages kept on disk of
+     * it and the next item, and the page under way while the reader has not passed it.
      */
     private fun wantAi() {
         val e = enhancer ?: return
@@ -1727,8 +1730,18 @@ class PageAdapter(
         val keys = ArrayList<PageKey>()
         if (read != null) {
             val pageMs = readSource()?.let { e.pageMs(it) } ?: 0L
+            val hold = AiHold.of(pageMs, pace.gapsMs, pace.dwellMs)
             val lead = AiLead.of(pageMs, pace.paceMs, pace.dwellMs)
-            if (lead == 0) {
+            if (hold > 0) {
+                for (key in read + aiCandidates(e, readingAt + 1).orEmpty()) {
+                    val p = aiPages[key] ?: continue
+                    if (e.stored(p.source, p.index, key.target, p.width, p.height)) keys += key
+                }
+                // The skip-ahead starts work at most AiLead.MAX + 1 items past the item before this one.
+                val ahead = (readingAt..readingAt + AiLead.MAX).flatMap { aiCandidates(e, it).orEmpty() }
+                ai?.current?.let { if (it in ahead && it !in keys) keys += it }
+                mainHandler.postDelayed(rethinkAi, hold)
+            } else if (lead == 0) {
                 keys += read
                 keys += aiCandidates(e, readingAt + 1).orEmpty()
             } else {

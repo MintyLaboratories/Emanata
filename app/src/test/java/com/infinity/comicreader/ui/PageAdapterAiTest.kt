@@ -326,11 +326,13 @@ class PageAdapterAiTest {
             idleUntil("page 1 processed") { adapter.processedOf(adapter.decoded(source)).size == 2 }
             assertEquals(listOf(0, 1), enhancer.asked.toList())
 
-            // Picked, page 0 shows plain and is processed anew; page 1 stays.
+            // Picked, page 0 is processed anew; page 1 stays. Its image keeps the old bitmap until a new one arrives.
+            val old = shownBitmap(rv, 0)
             adapter.aiReplanned { _, index, _, _, _ -> index == 0 }
             rv.layOut(600, 900)
-            idleUntil("page 0 processed anew") { enhancer.asked.toList() == listOf(0, 1, 0) && colorAt(rv, 0) == processed }
-            assertEquals(2, adapter.processedOf(adapter.decoded(source)).size)
+            idleUntil("page 0 processed anew") { enhancer.asked.toList() == listOf(0, 1, 0) && adapter.processedOf(adapter.decoded(source)).size == 2 }
+            assertEquals(processed, colorAt(rv, 0))
+            assertTrue("the new bitmap shows", shownBitmap(rv, 0) !== old)
             adapter.release()
         } finally {
             worker.shutdownNow()
@@ -357,12 +359,9 @@ class PageAdapterAiTest {
         val (adapter, rv) = reader(preload = 7, pages = 8)
         idleUntil("page 0 shown plain") { colorAt(rv, 0) == plain }
         settled(adapter)
-        // Three turns 3 s apart with nothing to process set the pace.
+        // Turns 3, 3 and 6 s apart with nothing to process: a pace of 3 s, the last turn too slow for a hold.
         enhancer.on = false
-        for (item in 0..2) {
-            adapter.reading(item)
-            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(3_000))
-        }
+        turns(adapter, 0 to 3_000L, 1 to 3_000L, 2 to 6_000L)
         enhancer.on = true
         enhancer.ms = 5_000
         enhancer.kept += 4
@@ -374,18 +373,248 @@ class PageAdapterAiTest {
         adapter.release()
     }
 
+    /** Reads each item for its milliseconds, in turn, on the looper's clock. */
+    private fun turns(adapter: PageAdapter, vararg items: Pair<Int, Long>) {
+        for ((item, ms) in items) {
+            adapter.reading(item)
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(ms))
+        }
+    }
+
+    @Test
+    fun flippingFasterThanPagesAreProcessedHoldsAiUntilThePageReadStaysUp() {
+        val (adapter, rv) = reader(preload = 7, pages = 8)
+        idleUntil("page 0 shown plain") { colorAt(rv, 0) == plain }
+        settled(adapter)
+        enhancer.on = false
+        turns(adapter, 0 to 1_000L, 1 to 1_000L, 2 to 1_000L)
+        enhancer.on = true
+        enhancer.ms = 5_000
+        enhancer.kept += listOf(4, 6)
+        adapter.reading(3)
+        idleUntil("the next item's kept page read back") { enhancer.asked.isNotEmpty() }
+        // Held for the last turn's 1 s plus a fifth; meanwhile only the next item's kept page is read back.
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1_199))
+        settled(adapter)
+        assertEquals(listOf(4), enhancer.asked.toList())
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1))
+        idleUntil("the page read processed") { enhancer.asked.size >= 2 }
+        settled(adapter)
+        assertEquals("the page dwelt on goes first", listOf(4, 3), enhancer.asked.toList())
+        adapter.release()
+    }
+
+    @Test
+    fun afterAHoldOfAtMostTheMaximumTheWorkSkipsAhead() {
+        val (adapter, rv) = reader(preload = 7, pages = 8)
+        idleUntil("page 0 shown plain") { colorAt(rv, 0) == plain }
+        settled(adapter)
+        enhancer.on = false
+        turns(adapter, 0 to 3_000L, 1 to 3_000L, 2 to 3_000L)
+        enhancer.on = true
+        enhancer.ms = 5_000
+        adapter.reading(3)
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(AiHold.MAX_MS - 1))
+        settled(adapter)
+        assertTrue("held: 3 s plus a fifth is past the maximum", enhancer.asked.isEmpty())
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1))
+        idleUntil("two pages processed") { enhancer.asked.size >= 2 }
+        settled(adapter)
+        // 1.5 s into page 3 at 3 s a page and 5 s a page: the next item would be done after the reader left it.
+        assertEquals(listOf(5, 6), enhancer.asked.toList())
+        adapter.release()
+    }
+
+    @Test
+    fun aHoldLetsThePageUnderWayGoOnWhileTheReaderHasNotPassedIt() {
+        val worker = Executors.newSingleThreadExecutor()
+        try {
+            val e = Enhancer(processed, worker.asCoroutineDispatcher())
+            val going = CountDownLatch(1)
+            e.onEnhance = { if (it == 3) going.await(Waits.LIVENESS_MS, TimeUnit.MILLISECONDS) }
+            val source = Source(8, plain)
+            val adapter = PageAdapter(
+                source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false, preload = 7, enhancer = e
+            )
+            val rv = RecyclerView(context).apply {
+                layoutManager = LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false)
+                this.adapter = adapter
+                layOut(600, 900)
+            }
+            idleUntil("page 0 shown plain") { colorAt(rv, 0) == plain }
+            settled(adapter)
+            // Turns 1 s apart, pages taking half that: no hold; the page read and the next are processed.
+            e.on = false
+            e.ms = 500
+            turns(adapter, 0 to 1_000L, 1 to 1_000L)
+            e.on = true
+            adapter.reading(2)
+            idleUntil("page 3 under way") { 3 in e.asked }
+            // Pages take 5 s now: the next turn, 1 s on, holds AI.
+            e.ms = 5_000
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1_000))
+            adapter.reading(3)
+            shadowOf(Looper.getMainLooper()).idle()
+            assertFalse("the page under way goes on", e.canceled.getValue(3)())
+            going.countDown()
+            idleUntil("page 3 processed") { adapter.processedOf(adapter.decoded(source)).size == 2 }
+            // Whatever the queue starts next reaches the worker before this.
+            shadowOf(Looper.getMainLooper()).idle()
+            worker.submit {}.get(Waits.LIVENESS_MS, TimeUnit.MILLISECONDS)
+            assertEquals("nothing new while held", listOf(2, 3), e.asked.toList())
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1_200))
+            idleUntil("page 4 processed") { adapter.processedOf(adapter.decoded(source)).size == 3 }
+            assertEquals(listOf(2, 3, 4), e.asked.toList())
+            adapter.release()
+        } finally {
+            worker.shutdownNow()
+        }
+    }
+
+    @Test
+    fun aHoldLetsASkippedAheadPageUnderWayGoOn() {
+        val worker = Executors.newSingleThreadExecutor()
+        try {
+            val e = Enhancer(processed, worker.asCoroutineDispatcher())
+            val going = CountDownLatch(1)
+            e.onEnhance = { if (it == 5) going.await(Waits.LIVENESS_MS, TimeUnit.MILLISECONDS) }
+            val source = Source(10, plain)
+            val adapter = PageAdapter(
+                source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false, preload = 9, enhancer = e
+            )
+            val rv = RecyclerView(context).apply {
+                layoutManager = LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false)
+                this.adapter = adapter
+                layOut(600, 900)
+            }
+            idleUntil("page 0 shown plain") { colorAt(rv, 0) == plain }
+            settled(adapter)
+            // Turns 3, 3 and 6 s apart: a pace of 3 s, no hold; at 5 s a page the work starts two items on, at 5.
+            e.on = false
+            turns(adapter, 0 to 3_000L, 1 to 3_000L, 2 to 6_000L)
+            e.on = true
+            e.ms = 5_000
+            adapter.reading(3)
+            idleUntil("page 5 under way") { 5 in e.asked }
+            // Pages take 7 s now: the next turn, 1 s on, holds AI with page 5 still ahead of the reader.
+            e.ms = 7_000
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1_000))
+            adapter.reading(4)
+            shadowOf(Looper.getMainLooper()).idle()
+            assertFalse("the page under way goes on", e.canceled.getValue(5)())
+            going.countDown()
+            idleUntil("page 5 processed") { adapter.processedOf(adapter.decoded(source)).size == 1 }
+            // Whatever the queue starts next reaches the worker before this.
+            shadowOf(Looper.getMainLooper()).idle()
+            worker.submit {}.get(Waits.LIVENESS_MS, TimeUnit.MILLISECONDS)
+            assertEquals("nothing new while held", listOf(5), e.asked.toList())
+            adapter.release()
+        } finally {
+            worker.shutdownNow()
+        }
+    }
+
+    @Test
+    fun aHoldLetsAPageUnderWayAsFarAheadAsTheSkipAheadGoesOn() {
+        val worker = Executors.newSingleThreadExecutor()
+        try {
+            val e = Enhancer(processed, worker.asCoroutineDispatcher())
+            val going = CountDownLatch(1)
+            e.onEnhance = { if (it == 8) going.await(Waits.LIVENESS_MS, TimeUnit.MILLISECONDS) }
+            val source = Source(10, plain)
+            val adapter = PageAdapter(
+                source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false, preload = 9, enhancer = e
+            )
+            val rv = RecyclerView(context).apply {
+                layoutManager = LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false)
+                this.adapter = adapter
+                layOut(600, 900)
+            }
+            idleUntil("page 0 shown plain") { colorAt(rv, 0) == plain }
+            settled(adapter)
+            // Turns 1, 1 and 10 s apart: a pace of 1 s, no hold; at 8 s a page the work starts the farthest on, at 7, then 8.
+            e.on = false
+            turns(adapter, 0 to 1_000L, 1 to 1_000L, 2 to 10_000L)
+            e.on = true
+            e.ms = 8_000
+            adapter.reading(3)
+            idleUntil("page 7 processed, page 8 under way") { adapter.processedOf(adapter.decoded(source)).size == 1 && 8 in e.asked }
+            assertEquals(listOf(7, 8), e.asked.toList())
+            // Pages take 12 s now: the next turn, 1 s on, holds AI with page 8 four items ahead of the reader.
+            e.ms = 12_000
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1_000))
+            adapter.reading(4)
+            shadowOf(Looper.getMainLooper()).idle()
+            assertFalse("the page under way goes on", e.canceled.getValue(8)())
+            going.countDown()
+            idleUntil("page 8 processed") { adapter.processedOf(adapter.decoded(source)).size == 2 }
+            // Whatever the queue starts next reaches the worker before this.
+            shadowOf(Looper.getMainLooper()).idle()
+            worker.submit {}.get(Waits.LIVENESS_MS, TimeUnit.MILLISECONDS)
+            assertEquals("nothing new while held", listOf(7, 8), e.asked.toList())
+            adapter.release()
+        } finally {
+            worker.shutdownNow()
+        }
+    }
+
+    @Test
+    fun aHoldStopsThePageUnderWayOnceTheReaderHasPassedIt() {
+        val worker = Executors.newSingleThreadExecutor()
+        try {
+            val e = Enhancer(processed, worker.asCoroutineDispatcher())
+            val going = CountDownLatch(1)
+            e.onEnhance = { if (it == 3) going.await(Waits.LIVENESS_MS, TimeUnit.MILLISECONDS) }
+            val source = Source(8, plain)
+            val adapter = PageAdapter(
+                source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false, preload = 7, enhancer = e
+            )
+            val rv = RecyclerView(context).apply {
+                layoutManager = LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false)
+                this.adapter = adapter
+                layOut(600, 900)
+            }
+            idleUntil("page 0 shown plain") { colorAt(rv, 0) == plain }
+            settled(adapter)
+            // Turns 1 s apart, pages taking half that: no hold; the page read and the next are processed.
+            e.on = false
+            e.ms = 500
+            turns(adapter, 0 to 1_000L, 1 to 1_000L)
+            e.on = true
+            adapter.reading(2)
+            idleUntil("page 2 processed, page 3 under way") { adapter.processedOf(adapter.decoded(source)).size == 1 && 3 in e.asked }
+            // Pages take 5 s now: the next turn, 1 s on, holds AI for 1.2 s; page 3 is read and goes on.
+            e.ms = 5_000
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1_000))
+            adapter.reading(3)
+            shadowOf(Looper.getMainLooper()).idle()
+            assertFalse("the page read goes on", e.canceled.getValue(3)())
+            // Half a second on, still held, the reader passes page 3.
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(500))
+            adapter.reading(4)
+            shadowOf(Looper.getMainLooper()).idle()
+            assertTrue("the page passed stops", e.canceled.getValue(3)())
+            going.countDown()
+            // Whatever the queue starts next reaches the worker before this.
+            worker.submit {}.get(Waits.LIVENESS_MS, TimeUnit.MILLISECONDS)
+            shadowOf(Looper.getMainLooper()).idle()
+            worker.submit {}.get(Waits.LIVENESS_MS, TimeUnit.MILLISECONDS)
+            assertEquals("nothing new while held", listOf(2, 3), e.asked.toList())
+            adapter.release()
+        } finally {
+            worker.shutdownNow()
+        }
+    }
+
     @Test
     fun thePagesAskedForAsAPageDoneAtOnceArrivesAreProcessed() {
         val e = Enhancer(processed, InlineOnce())
         val (adapter, rv) = reader(preload = 7, pages = 8, enhancer = e)
         idleUntil("page 0 shown plain") { colorAt(rv, 0) == plain }
         settled(adapter)
-        // Three turns 3 s apart with nothing to process set the pace.
+        // Turns 3, 3 and 6 s apart with nothing to process: a pace of 3 s, the last turn too slow for a hold.
         e.on = false
-        for (item in 0..2) {
-            adapter.reading(item)
-            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(3_000))
-        }
+        turns(adapter, 0 to 3_000L, 1 to 3_000L, 2 to 6_000L)
         e.on = true
         // Page 3 ends before the main thread waits for it; its time then puts the work two items on, at 5 and 6.
         e.onEnhance = { e.ms = 5_000 }

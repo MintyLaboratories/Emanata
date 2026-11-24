@@ -4,7 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
-/** The reader's pace of turns, and how far ahead AI work starts to keep up with it. */
+/** The reader's pace of turns, how far ahead AI work starts to keep up with it, and when it holds off. */
 class AiPaceTest {
     private var now = 0L
     private val pace = TurnPace { now }
@@ -64,5 +64,43 @@ class AiPaceTest {
         assertEquals(1, AiLead.of(3_400, 3_000, 0))
         assertEquals(1, AiLead.of(5_000, 8_000, 4_000))
         assertEquals("at most so far ahead", AiLead.MAX, AiLead.of(60_000, 1_000, 0))
+    }
+
+    @Test
+    fun theGapsAreTheLastTurnsInARowOldestFirst() {
+        turnEvery(1_000, 0)
+        turnEvery(2_000, 1)
+        turnEvery(3_000, 2)
+        turnEvery(4_000, 3, 4)
+        assertEquals(listOf(2_000L, 3_000L, 4_000L), pace.gapsMs)
+        pace.turned(3)
+        assertEquals("a turn back starts over", emptyList<Long>(), pace.gapsMs)
+    }
+
+    @Test
+    fun twoTurnsInARowFasterThanAPageHoldForTheLastTurnPlusAFifth() {
+        assertEquals(1_200L, AiHold.of(5_000, listOf(1_000, 1_000), 0))
+        assertEquals("the last turn's interval", 960L, AiHold.of(5_000, listOf(1_000, 800), 0))
+        assertEquals("the oldest gap left out", 960L, AiHold.of(5_000, listOf(9_000, 1_000, 800), 0))
+        assertEquals("less the time on the item", 200L, AiHold.of(5_000, listOf(1_000, 1_000), 1_000))
+        assertEquals("the item dwelt on releases it", 0L, AiHold.of(5_000, listOf(1_000, 1_000), 1_200))
+        assertEquals(0L, AiHold.of(5_000, listOf(1_000, 1_000), 9_000))
+    }
+
+    @Test
+    fun theHoldIsAtMostAMaximum() {
+        assertEquals(AiHold.MAX_MS, AiHold.of(5_000, listOf(3_000, 3_000), 0))
+        assertEquals(AiHold.MAX_MS - 1_000, AiHold.of(5_000, listOf(3_000, 3_000), 1_000))
+        assertEquals(1_440L, AiHold.of(5_000, listOf(3_000, 1_200), 0))
+    }
+
+    @Test
+    fun noHoldUnlessBothLastTurnsAreFasterThanAPage() {
+        assertEquals("one turn", 0L, AiHold.of(5_000, listOf(1_000), 0))
+        assertEquals("none", 0L, AiHold.of(5_000, emptyList(), 0))
+        assertEquals("the last one slower", 0L, AiHold.of(5_000, listOf(1_000, 5_000), 0))
+        assertEquals("the one before slower", 0L, AiHold.of(5_000, listOf(6_000, 1_000), 0))
+        assertEquals("the oldest of three faster alone", 0L, AiHold.of(5_000, listOf(1_000, 6_000, 1_000), 0))
+        assertEquals("a page time not known", 0L, AiHold.of(0, listOf(1_000, 1_000), 0))
     }
 }

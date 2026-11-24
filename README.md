@@ -927,8 +927,10 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   processed version takes its place at the same size when ready: the page
   read first, then the next screen's, one at a time; turning pages faster
   than they are processed, the work skips ahead to pages it can finish in
-  time. A book read right to left runs the Manga chain, others Everything
-  else, unless Reader settings → AI processing → **Default chain** picks one
+  time, and after two such turns in a row it waits until a page has stayed
+  up a little longer than the last turn (at most 1.5 s). A book read right
+  to left runs the Manga chain, others Everything else, unless Reader
+  settings → AI processing → **Default chain** picks one
   for its whole folder (**Same for the whole folder**, on by default) or for
   the book alone; both kept with the library's data. Each book can also run
   its own models (**This book**), kept with its other data; **Default**
@@ -1260,8 +1262,12 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   of the last three turns against the chain's measured page time), the work
   starts at the first page the reader will see processed for at least half a
   turn, pages kept on disk are read back first, and the page under way goes on
-  while the reader has not passed it. A page is decoded again at full detail
-  (up to 8 MP), run through the models its display size calls for, in turn
+  while the reader has not passed it. After the last two turns each came
+  sooner than a page takes (`AiHold`), no new page starts until the item read
+  has stayed up for the last turn's interval plus a fifth, at most 1.5 s; only
+  pages kept on disk of it and the next item are read back meanwhile. A page
+  is decoded again at full detail (up to 8 MP), run through the models its
+  display size calls for, in turn
   (`AiPages.steps`, `AiPages.chain`), and resampled to exactly the
   plain page's size and crop, so it swaps in without a jump; it replaces the
   plain page in the page cache. The display size is the reading size's side

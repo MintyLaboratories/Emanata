@@ -45,6 +45,10 @@ object Notices {
     const val SOURCE_URL = "https://github.com/MintyLaboratories/EmanataComicReader"
     const val TIP_URL = "https://ko-fi.com/mmeminty"
 
+    /** The libarchive fork the app builds, and its commit (LibarchivePin.cmake), shortened. */
+    const val LIBARCHIVE_FORK_URL = "https://github.com/MadameMinty/libarchive"
+    const val LIBARCHIVE_COMMIT = "9eec6bff14cc"
+
     /** Where the dot-pattern test picture of an import's before and after is from. */
     const val PREVIEW_DOTS_URL = "https://www.flickr.com/photos/seattlemunicipalarchives/44998418715/"
 
@@ -163,9 +167,10 @@ object Notices {
         ),
         Notice(
             "libarchive", BSD_2, "https://github.com/libarchive/libarchive", listOf("libarchive.txt"),
-            note = "Built from source; reads RAR archives (RAR 4 and 5) with its own code. Its RAR 4 reader is " +
-                "modified to read solid archives. Parts under the " +
-                "BSD 3-Clause License, CC0 and in the public domain, in the same text."
+            note = "Built from source, from commit $LIBARCHIVE_COMMIT of branch \"emanata\" of the fork " +
+                "$LIBARCHIVE_FORK_URL, which reads solid RAR 4 archives; reads RAR archives (RAR 4 and 5) with its " +
+                "own code. Parts under the BSD 3-Clause License, the Unicode License v3, CC0 and in the public " +
+                "domain, in the same text."
         ),
         Notice(
             "ncnn", BSD_3, "https://github.com/Tencent/ncnn", listOf("ncnn.txt"),

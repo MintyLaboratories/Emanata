@@ -103,6 +103,20 @@ class NoticesTest {
     }
 
     @Test
+    fun libarchivesCommitIsTheOneBuilt() {
+        val pin = File("src/main/cpp/LibarchivePin.cmake").readText()
+        val commit = checkNotNull(Regex("""set\(LIBARCHIVE_COMMIT ([0-9a-f]{40})\)""").find(pin)) { "no commit pinned" }.groupValues[1]
+        assertEquals(commit.take(12), Notices.LIBARCHIVE_COMMIT)
+        assertTrue(pin.contains("${Notices.LIBARCHIVE_FORK_URL}/archive/"))
+        val notice = Notices.all.single { it.name == "libarchive" }
+        assertTrue(notice.note!!.contains("commit ${Notices.LIBARCHIVE_COMMIT} "))
+        assertTrue(File("../README.md").readText().lines().single { it.startsWith("| [libarchive](") }.contains("commit `${Notices.LIBARCHIVE_COMMIT}`"))
+        val text = File(assetDir, "libarchive.txt").readText()
+        assertTrue(text.contains(Notices.LIBARCHIVE_FORK_URL))
+        assertTrue(text.contains("UNICODE LICENSE V3"))
+    }
+
+    @Test
     fun ncnnNoticeCarriesRuapusMitLicense() {
         val text = File(assetDir, "ncnn.txt").readText()
         assertTrue(text.contains("1. ruapu.h\nCopyright (c) 2024 nihui"))

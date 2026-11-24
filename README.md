@@ -984,7 +984,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 | jxl | `ImageSource` | libjxl as jxl-coder ships it, through our JNI binding (`jxl_page.c`); jxl-coder itself for images without an sRGB rendering |
 | tif/tiff | `ImageSource` | built-in `Tiff` (strips/tiles; none, PackBits, LZW, Deflate; JPEG via the platform) |
 | zip / cbz | `ArchiveSource` + `ZipReader` | `java.util.zip` |
-| rar / cbr | `ArchiveSource` + `RarReader` | libarchive 3.8, built from source, its RAR 4 reader modified to read solid archives (RAR 4 and 5; see RAR limits below) |
+| rar / cbr | `ArchiveSource` + `RarReader` | libarchive, built from source from a pinned commit of its fork that reads solid RAR 4 (RAR 4 and 5; see RAR limits below) |
 | 7z / cb7 | `ArchiveSource` + `SevenZipReader` | Apache Commons Compress |
 | tar / cbt | `ArchiveSource` + `TarReader` | Apache Commons Compress |
 | pdf | `PdfSource` | platform `PdfRenderer` |
@@ -1403,7 +1403,8 @@ The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`, the
 release APK to `app/build/outputs/apk/release/app-release.apk`.
 
 Tests: `./gradlew testDebugUnitTest` (JVM, Robolectric). Native logic that needs no
-Android (the JPEG XL thread pool, the GPU resampler's chunk order) has host tests in
+Android (the JPEG XL thread pool, the GPU resampler's chunk order, RCAS's plain C path,
+libarchive's RAR readers on the CC0 RAR test files) has host tests in
 `app/src/test/cpp`, built with CMake and a C compiler on Linux or WSL:
 
 ```bash
@@ -1708,7 +1709,7 @@ app shows each license and NOTICE text under Settings → About (files in
 | [libavif](https://github.com/AOMediaCodec/libavif), with parts of libyuv | BSD-2-Clause (libyuv: BSD-3-Clause) |
 | [dav1d](https://code.videolan.org/videolan/dav1d) | BSD-2-Clause |
 | [xxHash](https://github.com/Cyan4973/xxHash) | BSD-2-Clause |
-| [libarchive](https://github.com/libarchive/libarchive) (its read core and RAR readers; the RAR 4 reader modified to read solid archives, in `app/src/main/cpp/libarchive_rar/`) | BSD-2-Clause; parts BSD-3-Clause, CC0, public domain |
+| [libarchive](https://github.com/libarchive/libarchive) (its read core and RAR readers), from branch `emanata` of the fork [MadameMinty/libarchive](https://github.com/MadameMinty/libarchive), which reads solid RAR 4: commit `9eec6bff14cc` (`app/src/main/cpp/LibarchivePin.cmake`) | BSD-2-Clause; parts BSD-3-Clause, Unicode-3.0, CC0, public domain |
 | [ncnn](https://github.com/Tencent/ncnn), with parts under zlib and BSD-2-Clause, and ruapu (MIT) | BSD-3-Clause |
 | [glslang](https://github.com/KhronosGroup/glslang) (in the ncnn library) | BSD-3-Clause, BSD-2-Clause, MIT, Apache-2.0; parser GPL-3.0 with the Bison exception; preprocessor also NVIDIA's license |
 | Rust standard library; crates addr2line, gimli, libc, miniz_oxide, rustc-demangle (in jxl-coder) | MIT or Apache-2.0 |

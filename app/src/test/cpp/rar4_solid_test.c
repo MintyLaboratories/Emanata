@@ -1,9 +1,9 @@
-// The app's modified libarchive RAR 4 reader (src/main/cpp/libarchive_rar) on the CC0 RAR test
-// files (src/test/resources/rar): the same two images as RAR 4, solid RAR 4, RAR 5 and solid RAR 5.
+// libarchive's RAR readers as the app builds them (src/main/cpp/LibarchivePin.cmake) on the CC0 RAR
+// test files (src/test/resources/rar): the same two images as RAR 4, solid RAR 4, RAR 5 and solid RAR 5.
 // - Each file lists both entries in its own order, and every entry unpacks to the same bytes.
 // - Solid RAR 4: each entry reads back in order, reached by skipping the entries before it
-//   (which unpacks them), or after a partial read; with rar:solid-skip=consume, skipping jumps
-//   over the data and the solid entry after it is refused.
+//   (which unpacks them), or after a partial read; with rar:solid-fast-skip, skipping jumps
+//   over the data and the solid entry after it is refused; with the option unset again, skipping unpacks.
 // - Solid RAR 4 behind a stored entry (built from the solid file): the first compressed entry,
 //   flagged solid, starts the stream; flagged solid as an archive's first entry, it is refused.
 // Argument: the test files' folder.
@@ -52,11 +52,17 @@ static Buffer load(const char *dir, const char *name) {
     return b;
 }
 
-static struct archive *open_rar(Buffer in, int consume) {
+// fast: 0 the default skip, 1 with rar:solid-fast-skip (as the app lists), 2 with it set and then unset.
+static struct archive *open_rar(Buffer in, int fast) {
     struct archive *a = archive_read_new();
     archive_read_support_format_rar(a);
     archive_read_support_format_rar5(a);
-    if (consume) archive_read_set_format_option(a, "rar", "solid-skip", "consume");
+    if (fast)
+        CHECK(archive_read_set_format_option(a, "rar", "solid-fast-skip", "1") == ARCHIVE_OK, "solid-fast-skip: %s",
+              archive_error_string(a));
+    if (fast == 2)
+        CHECK(archive_read_set_format_option(a, "rar", "solid-fast-skip", NULL) == ARCHIVE_OK, "!solid-fast-skip: %s",
+              archive_error_string(a));
     if (archive_read_open_memory(a, in.bytes, in.size) != ARCHIVE_OK) {
         printf("FAIL: cannot open: %s\n", archive_error_string(a));
         failures++;
@@ -225,24 +231,25 @@ int main(int argc, char **argv) {
     const char *const solid_names[] = {"testfile.png", "testfile.jpg"};
     skip_to_each("solid RAR 4", solid4, solid_names, 2);
 
-    // solid-skip=consume: the headers list, the first entry reads, the solid one after a skip does not.
+    // solid-fast-skip: the headers list, the first entry reads, the solid one after a skip does not.
     a = open_rar(solid4, 1);
     if (!a) return 1;
-    CHECK(walk_to(a, solid_names, 1, 0), "consume: header 1: %s", archive_error_string(a));
-    CHECK(read_entry(a, -1, NULL, &crc, &size) == ARCHIVE_FAILED, "consume: the solid entry read after a skip");
+    CHECK(walk_to(a, solid_names, 1, 0), "fast skip: header 1: %s", archive_error_string(a));
+    CHECK(read_entry(a, -1, NULL, &crc, &size) == ARCHIVE_FAILED, "fast skip: the solid entry read after a skip");
     archive_read_free(a);
     a = open_rar(solid4, 1);
     if (!a) return 1;
-    CHECK(walk_to(a, solid_names, 0, 0), "consume: header 0: %s", archive_error_string(a));
-    CHECK(read_entry(a, -1, NULL, &crc, &size) == 0 && crc == want[PNG].crc, "consume: entry 0: %s",
+    CHECK(walk_to(a, solid_names, 0, 0), "fast skip: header 0: %s", archive_error_string(a));
+    CHECK(read_entry(a, -1, NULL, &crc, &size) == 0 && crc == want[PNG].crc, "fast skip: entry 0: %s",
           archive_error_string(a));
     archive_read_free(a);
 
-    // solid-skip takes only "consume".
-    a = archive_read_new();
-    archive_read_support_format_rar(a);
-    CHECK(archive_read_set_format_option(a, "rar", "solid-skip", "yes") == ARCHIVE_FAILED,
-          "solid-skip=yes accepted");
+    // solid-fast-skip set, then unset: skipping unpacks again, so the solid entry after a skip reads.
+    a = open_rar(solid4, 2);
+    if (!a) return 1;
+    CHECK(walk_to(a, solid_names, 1, 0), "unset: header 1: %s", archive_error_string(a));
+    CHECK(read_entry(a, -1, NULL, &crc, &size) == 0 && crc == want[1].crc, "unset: entry 1: %s",
+          archive_error_string(a));
     archive_read_free(a);
 
     // A stored entry first: the compressed entry after it, flagged solid, starts the stream.

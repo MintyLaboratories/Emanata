@@ -8,6 +8,7 @@
 #include <jni.h>
 #include <locale.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -101,7 +102,9 @@ static void free_reader(JNIEnv *env, Reader *r) {
 JNIEXPORT jstring JNICALL
 Java_com_infinity_comicreader_reader_LibArchive_nVersion(JNIEnv *env, jclass c) {
     (void) c;
-    return (*env)->NewStringUTF(env, archive_version_details());
+    char version[512];
+    snprintf(version, sizeof version, "%s (commit %s)", archive_version_details(), LIBARCHIVE_COMMIT);
+    return (*env)->NewStringUTF(env, version);
 }
 
 // A reader of the RAR the source holds, from the source's current position (its start). Listing:
@@ -140,7 +143,7 @@ Java_com_infinity_comicreader_reader_LibArchive_nOpen(JNIEnv *env, jclass c, job
     }
     archive_read_support_format_rar(r->a);
     archive_read_support_format_rar5(r->a);
-    if (listing && archive_read_set_format_option(r->a, "rar", "solid-skip", "consume") != ARCHIVE_OK) {
+    if (listing && archive_read_set_format_option(r->a, "rar", "solid-fast-skip", "1") != ARCHIVE_OK) {
         throw_archive(env, r);
         free_reader(env, r);
         return 0;

@@ -26,8 +26,8 @@ internal class RefusedRar(message: String) : IOException(message)
  *   A solid archive keeps its handle going forward; an entry at or before the last one read
  *   reopens it and unpacks every entry up to it ([ExtractingReader] reads them in order).
  * - A solid RAR 5 is listed by its headers ([Rar5Headers]): libarchive would unpack it whole to
- *   list it. A solid RAR 4 is listed by libarchive jumping over each entry's data (its RAR 4
- *   reader is modified to read solid archives, Libarchive.cmake). libarchive cannot read RAR 5
+ *   list it. A solid RAR 4 is listed by libarchive jumping over each entry's data (its fork that
+ *   reads solid RAR 4, LibarchivePin.cmake). libarchive cannot read RAR 5
  *   with a dictionary over 64 MiB: such an archive does not open.
  * - Paths use "/" whatever made the archive (RAR 4 stores "\"), as the other formats' do.
  * - A header that cannot be read ends the listing, keeping the entries before it. An archive

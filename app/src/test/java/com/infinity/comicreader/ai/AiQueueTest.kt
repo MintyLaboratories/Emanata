@@ -185,7 +185,8 @@ class AiQueueTest {
 
         w.held["d"] = CountDownLatch(1)
         q.want(listOf("d"))
-        idleUntil("d running") { q.current == "d" }
+        // Its work, not just the queue: a page stopped before its work starts never runs it.
+        idleUntil("d's work started") { w.started.contains("d") }
         q.again { it == "d" }
         idleUntil("d stopped") { w.canceled == listOf("d") }
         w.held.getValue("d").countDown()

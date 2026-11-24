@@ -514,6 +514,50 @@ class PageAdapterAiTest {
     }
 
     @Test
+    fun aHoldLetsAPageUnderWayAsFarAheadAsTheSkipAheadGoesOn() {
+        val worker = Executors.newSingleThreadExecutor()
+        try {
+            val e = Enhancer(processed, worker.asCoroutineDispatcher())
+            val going = CountDownLatch(1)
+            e.onEnhance = { if (it == 8) going.await(Waits.LIVENESS_MS, TimeUnit.MILLISECONDS) }
+            val source = Source(10, plain)
+            val adapter = PageAdapter(
+                source = source, mode = PageAdapter.Mode.PAGED, onTap = { _, _ -> }, doubleTapZoom = false, preload = 9, enhancer = e
+            )
+            val rv = RecyclerView(context).apply {
+                layoutManager = LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false)
+                this.adapter = adapter
+                layOut(600, 900)
+            }
+            idleUntil("page 0 shown plain") { colorAt(rv, 0) == plain }
+            settled(adapter)
+            // Turns 1, 1 and 10 s apart: a pace of 1 s, no hold; at 8 s a page the work starts the farthest on, at 7, then 8.
+            e.on = false
+            turns(adapter, 0 to 1_000L, 1 to 1_000L, 2 to 10_000L)
+            e.on = true
+            e.ms = 8_000
+            adapter.reading(3)
+            idleUntil("page 7 processed, page 8 under way") { adapter.processedOf(adapter.decoded(source)).size == 1 && 8 in e.asked }
+            assertEquals(listOf(7, 8), e.asked.toList())
+            // Pages take 12 s now: the next turn, 1 s on, holds AI with page 8 four items ahead of the reader.
+            e.ms = 12_000
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1_000))
+            adapter.reading(4)
+            shadowOf(Looper.getMainLooper()).idle()
+            assertFalse("the page under way goes on", e.canceled.getValue(8)())
+            going.countDown()
+            idleUntil("page 8 processed") { adapter.processedOf(adapter.decoded(source)).size == 2 }
+            // Whatever the queue starts next reaches the worker before this.
+            shadowOf(Looper.getMainLooper()).idle()
+            worker.submit {}.get(Waits.LIVENESS_MS, TimeUnit.MILLISECONDS)
+            assertEquals("nothing new while held", listOf(7, 8), e.asked.toList())
+            adapter.release()
+        } finally {
+            worker.shutdownNow()
+        }
+    }
+
+    @Test
     fun thePagesAskedForAsAPageDoneAtOnceArrivesAreProcessed() {
         val e = Enhancer(processed, InlineOnce())
         val (adapter, rv) = reader(preload = 7, pages = 8, enhancer = e)

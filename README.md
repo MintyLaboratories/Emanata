@@ -685,7 +685,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   (vector for PDF) at exact screen resolution and swapped in pixel for pixel.
   Only the zoomed page or spread is kept at full resolution, within a memory
   budget, and it is freed when the reader is hidden. A page processed by AI
-  zooms from the models' own output at full size, not the plain page.
+  zooms from the models' own output at full size (within that budget), not
+  the plain page.
 - **Fit modes:** fit screen, fit width, fit height, stretch. Each page is
   scaled with Lanczos3 to the exact size it fills on screen (a spread half, or
   the whole row for a lone page) and drawn pixel for pixel, unfiltered. A new
@@ -1304,7 +1305,8 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
   details held exceed the budget, and none further. A processed page whose
   detail was let go of, or that was read back from disk (which keeps only its
   display size), zooms from the plain page while its detail is made again in
-  the background; the zoom redraws from it once made.
+  the background; the zoom redraws from it once made. At a new fit or
+  rotation a page whose detail is held is drawn from it, with no model run.
   The queue pauses while the reader is out of sight; models close when its UI
   hides and when no open book runs them. Processed pages are kept in
   `cache/ai-pages` (`ProcessedStore`) as lossless JPEG XL at effort 1 (PNG

@@ -1,0 +1,33 @@
+# What the minified builds (bench, release) must keep although code reaches it in ways R8 cannot
+# see; MinifiedOutputsCheck checks it against R8's outputs (Gradle: checkBenchMinified,
+# checkReleaseMinified). One rule per line:
+#   <class>                  the class survives
+#   <class> <member>         its field or method survives
+#   ... same-name            and keeps its own name, and its class's (code reaches it by name)
+#   weak <type>              every field of the app holding a <type> (or a collection of them, or a
+#                            class implementing it) survives: what it is registered with holds it
+#                            only weakly
+# Besides these, every native method keeps its own name and its class's: JNI binds them by name.
+
+# SharedPreferences holds its change listeners in a WeakHashMap.
+weak android.content.SharedPreferences$OnSharedPreferenceChangeListener
+
+# The settings feed: the app-wide repository holds Prefs, which holds the listeners.
+com.infinity.comicreader.data.SettingsRepository instance
+com.infinity.comicreader.data.SettingsRepository prefs
+# The library screen holds the handle that holds its lists' listener (Library.watchLists).
+com.infinity.comicreader.ui.ListActivity listWatch
+
+# Called back by name from jxl_jni.c and resample_jni.c.
+com.infinity.comicreader.compact.LibJxl$Stop stop same-name
+com.infinity.comicreader.reader.PixelKernels$Stop stop same-name
+# Called back by name from archive_jni.c.
+com.infinity.comicreader.reader.LibArchive$Source read same-name
+com.infinity.comicreader.reader.LibArchive$Source seek same-name
+com.infinity.comicreader.reader.LibArchive$Source skip same-name
+
+# SmbFs reads this SMBJ field by reflection.
+com.hierynomus.smbj.connection.Connection sequenceWindow same-name
+
+# jxl-coder's native code finds its classes by name.
+com.awxkee.jxlcoder.JxlCoder same-name

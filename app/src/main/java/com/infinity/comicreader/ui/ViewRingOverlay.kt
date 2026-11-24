@@ -3,6 +3,7 @@ package com.infinity.comicreader.ui
 import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.res.ColorStateList
+import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.Typeface
 import android.text.SpannableStringBuilder
@@ -12,6 +13,8 @@ import android.text.TextUtils
 import android.text.style.ForegroundColorSpan
 import android.text.style.RelativeSizeSpan
 import android.text.style.StyleSpan
+import android.util.TypedValue
+import android.view.ContextThemeWrapper
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
@@ -40,7 +43,8 @@ import kotlin.math.roundToInt
  * button toward the screen's inside ([RingGeometry]), each with its setting's name and
  * what a tap does, "current→next", beside it: the current part muted, the next in the label
  * color. Each label takes the fullest of its value's forms that fits on two lines, shorter
- * ones where labels would overlap ([RingGeometry.fit]); cut with "…" only when none fits. A
+ * ones where labels would overlap ([RingGeometry.fit]), smaller text at large font scales
+ * where even those overlap ([lay]); cut with "…" only when none fits. A
  * tap on a button or its label runs [onTap] (the caller writes the setting and calls
  * [refresh]); a long press runs [onLongTap] where an item has a [Item.longLabel]. The hub in
  * the button's place, a tap on the scrim, or Back ([close]) closes it.
@@ -185,9 +189,9 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
         }
         this.items = items
         for (item in items) buttons[item.option]?.let { (button, label) -> bind(button, label, item) }
-        // The buttons stay; a label whose text grew may take another side or a shorter form.
+        // The buttons stay; a label whose text grew may take another side or a shorter form, every label's sides searched together where need be.
         val angles = angles()
-        val placed = fitLabels(all = true) { RingGeometry.place(angles, cx, cy, bounds, buttonSize().toFloat(), radius, reach(), pad(), it) }
+        val placed = fitLabels(all = true) { RingGeometry.place(angles, cx, cy, bounds, buttonSize().toFloat(), radius, reach(), pad(), it, exhaustive = true) }
         for ((i, pair) in buttons.values.withIndex()) placeLabel(pair.second, placed.boxes[i])
     }
 
@@ -436,8 +440,11 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
      * Lays [items] out around the hub: as wide as the spacing asks, but small enough that the
      * buttons and their labels stay within [bounds], labels clear of every button and of each
      * other ([RingGeometry.arrange]), each the fullest form that lets them. Only where even
-     * the shortest forms overlap does the ring grow: to the smallest radius that clears those,
-     * where labels then take the fullest forms that still fit.
+     * the shortest forms overlap does the ring grow: to the smallest radius up to [GROW] times
+     * that clears those, where labels then take the fullest forms that still fit. Where none
+     * does, the ring stays no larger than asked and its label text shrinks just enough ([shrunk]);
+     * where even the floor size does not clear them, every label's sides are searched together
+     * (exhaustive [RingGeometry.place]), else the labels at that size overlap least.
      */
     private fun lay(items: List<Item>) {
         val root = root ?: return
@@ -469,12 +476,13 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
         val angles = angles()
         val want = RingGeometry.radius(items.size, SPACING_DP * density, MIN_RADIUS_DP * density)
         val spacing = size + LABEL_GAP_DP * density
-        fun arrange(grow: Float, shortest: Boolean = false) =
-            fitLabels(all = true, shortest) { RingGeometry.arrange(angles, cx, cy, bounds, size.toFloat(), want, spacing, reach(), pad(), it, grow) }
-        val placed = arrange(1f).takeIf { it.overlap == 0f } ?: run {
-            val grown = arrange(GROW, shortest = true).takeIf { it.overlap == 0f } ?: arrange(Float.MAX_VALUE, shortest = true)
-            fitLabels(all = true) { RingGeometry.place(angles, cx, cy, bounds, size.toFloat(), grown.radius, reach(), pad(), it) }
-        }
+        fun arrange(grow: Float, shortest: Boolean = false, exhaustive: Boolean = false) =
+            fitLabels(all = true, shortest) { RingGeometry.arrange(angles, cx, cy, bounds, size.toFloat(), want, spacing, reach(), pad(), it, grow, exhaustive) }
+        fun refit(radius: Float) = fitLabels(all = true) { RingGeometry.place(angles, cx, cy, bounds, size.toFloat(), radius, reach(), pad(), it) }
+        val placed = arrange(1f).takeIf { it.overlap == 0f }
+            ?: arrange(GROW, shortest = true).takeIf { it.overlap == 0f }?.let { refit(it.radius) }
+            ?: shrunk { arrange(1f) }
+            ?: arrange(1f, exhaustive = true)
         radius = placed.radius
         for ((i, pair) in buttons.values.withIndex()) {
             val (button, label) = pair
@@ -484,6 +492,37 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
             place(button, cx + dx - size / 2f, cy + dy - size / 2f, size, size)
             placeLabel(label, placed.boxes[i])
         }
+    }
+
+    /**
+     * The labels' text made smaller in [TEXT_STEP]s, the last step exactly [textFloor], until
+     * [arrange] lays them out clear; that placement, or null with the text at the floor when
+     * none does (or as it was when it is already at or below the floor).
+     */
+    private fun shrunk(arrange: () -> RingGeometry.Placement): RingGeometry.Placement? {
+        val labels = buttons.values.map { it.second }
+        val base = labels.firstOrNull()?.textSize ?: return null
+        val floor = textFloor()
+        if (floor >= base) return null
+        var step = 1
+        while (true) {
+            val text = maxOf(base * (1f - step * TEXT_STEP), floor)
+            for (label in labels) label.setTextSize(TypedValue.COMPLEX_UNIT_PX, text)
+            arrange().takeIf { it.overlap == 0f }?.let { return it }
+            if (text == floor) return null
+            step++
+        }
+    }
+
+    /**
+     * A ring label's text size in pixels at font scale [TEXT_FLOOR_SCALE]: a plain text view
+     * under the activity's theme, measured with that font scale (nonlinear from Android 14).
+     */
+    internal fun textFloor(): Float {
+        val config = Configuration(activity.resources.configuration).apply { fontScale = TEXT_FLOOR_SCALE }
+        @Suppress("DEPRECATION") // Its flags-object replacement needs Android 13.
+        val theme = activity.packageManager.getActivityInfo(activity.componentName, 0).themeResource
+        return TextView(ContextThemeWrapper(activity.createConfigurationContext(config), theme)).textSize
     }
 
     /** Gives [button] and [label] what [item] shows. */
@@ -596,6 +635,12 @@ internal class ViewRingOverlay(private val activity: AppCompatActivity) {
 
         /** How much larger the ring grows first where even its shortest labels cannot clear each other. */
         const val GROW = 1.5f
+
+        /** How much smaller, as a share of its size, a label's text gets per step where even a grown ring's labels overlap. */
+        const val TEXT_STEP = 0.05f
+
+        /** The font scale below whose label size the text never shrinks; at or under it, the text keeps its size. */
+        const val TEXT_FLOOR_SCALE = 1.3f
         const val LABEL_GAP_DP = 8f
         const val LABEL_MAX_DP = 320f
 

@@ -282,6 +282,43 @@ class ViewRingTest {
         assertTrue(again.boxes.all { it.within(bounds) })
     }
 
+    /**
+     * Two buttons, up and right of the hub, in bounds too tight above and right of them for
+     * labels outward: placed in order, the first label takes the right of its button, where
+     * the second's only free place (above its button) overlaps it.
+     */
+    private fun tight(labels: List<Pair<Float, Float>>, right: Float = 500f, exhaustive: Boolean) =
+        RingGeometry.place(RingGeometry.angles(2, left = false), 300f, 500f, RingGeometry.Box(0f, 320f, right, 530f), 56f, 150f, 36f, 4f, labels, exhaustive)
+
+    @Test
+    fun anExhaustivePlacementTriesEverySideTogetherOnlyWhereInOrderLeavesAnOverlap() {
+        val labels = listOf(160f to 110f, 200f to 40f)
+        val greedy = tight(labels, exhaustive = false)
+        assertTrue("${greedy.overlap}", greedy.overlap > 0f)
+        val p = tight(labels, exhaustive = true)
+        assertEquals(0f, p.overlap, 0f)
+        assertEquals(150f, p.radius, 0f)
+        // The first label left of its button, the second above its own: both aside.
+        assertEquals(RingGeometry.Box(104f, 320f, 264f, 430f), p.boxes[0])
+        assertEquals(RingGeometry.Box(300f, 424f, 500f, 464f), p.boxes[1])
+        assertEquals(2, p.aside)
+        assertTrue(p.clashing.isEmpty())
+        val buttons = listOf(300f to 500f, 300f to 350f, 450f to 500f)
+        for ((i, l) in p.boxes.withIndex()) for ((j, b) in buttons.withIndex()) assertEquals("$i on $j", 0f, l.overlap(b.first, b.second, 28f, if (j == i + 1) 0f else 4f), 0f)
+        assertEquals(0f, p.boxes[0].overlap(p.boxes[1], 4f), 0f)
+        // Where placing in order clears them, nothing changes.
+        val roomy = tight(labels, right = 800f, exhaustive = false)
+        assertEquals(0f, roomy.overlap, 0f)
+        assertEquals(roomy.boxes, tight(labels, right = 800f, exhaustive = true).boxes)
+        // Where no layout clears them, the one placed in order stays.
+        val wide = listOf(160f to 110f, 400f to 40f)
+        val stuck = tight(wide, exhaustive = false)
+        val still = tight(wide, exhaustive = true)
+        assertTrue("${still.overlap}", still.overlap > 0f)
+        assertEquals(stuck.boxes, still.boxes)
+        assertEquals(stuck.overlap, still.overlap, 0f)
+    }
+
     @Test
     fun growingTakesTheSmallestRadiusThatClearsTheLabels() {
         val bounds = RingGeometry.Box(8f, 8f, 1840f, 2950f)

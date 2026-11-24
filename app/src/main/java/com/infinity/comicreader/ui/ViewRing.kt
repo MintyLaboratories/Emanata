@@ -192,27 +192,29 @@ internal object RingGeometry {
      * to center, the labels outward, clear of each other and of every button ([pad] apart).
      * Where no radius does and [grow] is above 1, the smallest radius up to [grow] times
      * [want] that keeps the labels clear, aside or not. Else the one whose labels overlap
-     * least, the fewest of them aside ([place]).
+     * least, the fewest of them aside ([place], with [exhaustive]).
      */
     fun arrange(
         angles: List<Double>, cx: Float, cy: Float, bounds: Box, button: Float, want: Float,
-        spacing: Float, reach: Float, pad: Float, labels: List<Pair<Float, Float>>, grow: Float = 1f
+        spacing: Float, reach: Float, pad: Float, labels: List<Pair<Float, Float>>, grow: Float = 1f,
+        exhaustive: Boolean = false
     ): Placement {
         val buttons = angles.minOfOrNull { room(it, cx, cy, bounds, 0f, 0f, button, button) } ?: want
         val most = min(want, max(buttons, button))
         val least = min(max(radius(angles.size, spacing, 0f), spacing), most)
         fun better(p: Placement, than: Placement) = p.overlap < than.overlap || (p.overlap == than.overlap && p.aside < than.aside)
-        var best = place(angles, cx, cy, bounds, button, most, reach, pad, labels)
+        fun at(radius: Float) = place(angles, cx, cy, bounds, button, radius, reach, pad, labels, exhaustive)
+        var best = at(most)
         if (best.overlap == 0f && best.aside == 0) return best
         for (s in 1..STEPS) {
-            val p = place(angles, cx, cy, bounds, button, most - (most - least) * s / STEPS, reach, pad, labels)
+            val p = at(most - (most - least) * s / STEPS)
             if (better(p, best)) best = p
             if (best.overlap == 0f && best.aside == 0) break
         }
         val top = min(want * grow, max(buttons, button))
         if (best.overlap == 0f || top <= most) return best
         for (s in 1..STEPS) {
-            val p = place(angles, cx, cy, bounds, button, most + (top - most) * s / STEPS, reach, pad, labels)
+            val p = at(most + (top - most) * s / STEPS)
             if (p.overlap == 0f) return p
             if (better(p, best)) best = p
         }
@@ -224,11 +226,12 @@ internal object RingGeometry {
      * order: outward when that lies within [bounds] clear of the hub, the buttons and the
      * labels before it ([pad] apart; its own button only untouched), slid along that side up
      * to half its size where need be ([SLIDES]); else the nearest side that does; else, moved
-     * within [bounds], the side where it overlaps least.
+     * within [bounds], the side where it overlaps least. With [exhaustive], where that leaves
+     * an overlap, the first layout [search] finds clear of it instead, if any.
      */
     fun place(
         angles: List<Double>, cx: Float, cy: Float, bounds: Box, button: Float, radius: Float,
-        reach: Float, pad: Float, labels: List<Pair<Float, Float>>
+        reach: Float, pad: Float, labels: List<Pair<Float, Float>>, exhaustive: Boolean = false
     ): Placement {
         val centers = angles.map { spot(it, radius).let { (dx, dy) -> (cx + dx) to (cy + dy) } }
         val round = listOf(cx to cy) + centers
@@ -237,40 +240,88 @@ internal object RingGeometry {
         var overlap = 0f
         var aside = 0
         for ((i, angle) in angles.withIndex()) {
-            val (w, h) = labels[i]
-            val (bx, by) = centers[i]
             var pick: Box? = null
             var least = Float.MAX_VALUE
             var out = true
-            search@ for ((k, side) in sides(angle).withIndex()) {
-                val (ox, oy) = labelCenter(side, reach, w, h)
-                // Beside the button to its left or right, a label may slide up or down; above or below it, sideways.
-                val beside = abs(cos(Math.toRadians(side))) >= abs(sin(Math.toRadians(side)))
-                for (slide in SLIDES) {
-                    val sx = if (beside) 0f else slide * w
-                    val sy = if (beside) slide * h else 0f
-                    val box = Box.around(bx + ox + sx, by + oy + sy, w, h).let { if (it.within(bounds)) it else it.movedInto(bounds) }
-                    val o = taken.sumOf { box.overlap(it, pad).toDouble() }.toFloat() +
-                        round.withIndex().sumOf { (j, c) -> box.overlap(c.first, c.second, button / 2, if (j == i + 1) 0f else pad).toDouble() }.toFloat()
-                    if (o < least) {
-                        pick = box
-                        least = o
-                        out = k == 0
-                    }
-                    if (o == 0f) break@search
+            for (spot in spots(angle, centers[i], reach, labels[i], bounds)) {
+                val o = taken.sumOf { spot.box.overlap(it, pad).toDouble() }.toFloat() + onRound(spot.box, i, round, button, pad)
+                if (o < least) {
+                    pick = spot.box
+                    least = o
+                    out = spot.out
                 }
+                if (o == 0f) break
             }
             boxes += pick!!
             taken += pick
             overlap += least
             if (!out) aside++
         }
+        if (overlap > 0f && exhaustive) search(angles, centers, round, bounds, button, reach, pad, labels)?.let { return Placement(radius, it.first, 0f, it.second) }
         val clashing = HashSet<Int>()
         for ((i, box) in boxes.withIndex()) {
             for (j in i + 1 until boxes.size) if (box.overlap(boxes[j], pad) > 0f) clashing += listOf(i, j)
-            if (round.withIndex().any { (j, c) -> box.overlap(c.first, c.second, button / 2, if (j == i + 1) 0f else pad) > 0f }) clashing += i
+            if (onRound(box, i, round, button, pad) > 0f) clashing += i
         }
         return Placement(radius, boxes, overlap, aside, clashing)
+    }
+
+    /** A place a label may take: its [box], and whether that lies [out]ward of its button. */
+    private class Spot(val box: Box, val out: Boolean)
+
+    /**
+     * The places, in order of preference, for a [label] (width to height) of a button at
+     * [angle] centered at [at]: each side ([sides]), the label slid along it ([SLIDES]),
+     * moved within [bounds] where need be.
+     */
+    private fun spots(angle: Double, at: Pair<Float, Float>, reach: Float, label: Pair<Float, Float>, bounds: Box): List<Spot> {
+        val (w, h) = label
+        val out = ArrayList<Spot>()
+        for ((k, side) in sides(angle).withIndex()) {
+            val (ox, oy) = labelCenter(side, reach, w, h)
+            // Beside the button to its left or right, a label may slide up or down; above or below it, sideways.
+            val beside = abs(cos(Math.toRadians(side))) >= abs(sin(Math.toRadians(side)))
+            for (slide in SLIDES) {
+                val sx = if (beside) 0f else slide * w
+                val sy = if (beside) slide * h else 0f
+                val box = Box.around(at.first + ox + sx, at.second + oy + sy, w, h).let { if (it.within(bounds)) it else it.movedInto(bounds) }
+                out += Spot(box, k == 0)
+            }
+        }
+        return out
+    }
+
+    /** How much label [i]'s [box] overlaps the hub and the buttons ([round]); its own button only when touching it. */
+    private fun onRound(box: Box, i: Int, round: List<Pair<Float, Float>>, button: Float, pad: Float): Float =
+        round.withIndex().sumOf { (j, c) -> box.overlap(c.first, c.second, button / 2, if (j == i + 1) 0f else pad).toDouble() }.toFloat()
+
+    /**
+     * Every label's places ([spots]) tried together, in order, backtracking from any that
+     * overlaps the hub, a button or a label before it ([pad] apart): the first layout clear
+     * of overlap, with how many labels sit aside; null when none is. Gives up as none after
+     * [SEARCH_NODES] places tried.
+     */
+    private fun search(
+        angles: List<Double>, centers: List<Pair<Float, Float>>, round: List<Pair<Float, Float>>, bounds: Box,
+        button: Float, reach: Float, pad: Float, labels: List<Pair<Float, Float>>
+    ): Pair<List<Box>, Int>? {
+        val free = angles.indices.map { i -> spots(angles[i], centers[i], reach, labels[i], bounds).filter { onRound(it.box, i, round, button, pad) == 0f }.distinctBy { it.box } }
+        if (free.any { it.isEmpty() }) return null
+        val chosen = arrayOfNulls<Spot>(angles.size)
+        var tried = 0
+        fun from(i: Int): Boolean {
+            if (i == angles.size) return true
+            for (spot in free[i]) {
+                if (++tried > SEARCH_NODES) return false
+                if ((0 until i).any { spot.box.overlap(chosen[it]!!.box, pad) > 0f }) continue
+                chosen[i] = spot
+                if (from(i + 1)) return true
+                if (tried > SEARCH_NODES) return false
+            }
+            return false
+        }
+        if (!from(0)) return null
+        return chosen.map { it!!.box } to chosen.count { !it!!.out }
     }
 
     /**
@@ -318,6 +369,9 @@ internal object RingGeometry {
     private const val EPS = 0.01f
     private const val AXIS = 1e-6
     private const val STEPS = 32
+
+    /** How many label places [search] tries before it gives up: bounds the time a ring takes to open. */
+    private const val SEARCH_NODES = 20_000
 
     /** How far a label may slide along its side, as shares of its own size, nearest first. */
     private val SLIDES = floatArrayOf(0f, -0.25f, 0.25f, -0.5f, 0.5f)

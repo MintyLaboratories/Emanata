@@ -5,6 +5,7 @@ import android.app.Application
 import android.os.Environment
 import android.os.Looper
 import android.view.View
+import android.widget.TextView
 import androidx.core.graphics.Insets
 import androidx.preference.PreferenceManager
 import androidx.test.core.app.ApplicationProvider
@@ -30,13 +31,15 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import org.robolectric.shadows.ShadowEnvironment
 import java.io.File
 import java.time.Duration
 
 /**
  * The view ring's longest labels, measured with real text: whole (no "…"), the value on at
  * most two lines, clear of every button, the hub, each other and (stood-in) system bars, at font
- * scales 1.0, 1.3 and 2.0 on a phone and a tablet, for both hands.
+ * scales 1.0, 1.3 and 2.0 on a phone and a tablet, for both hands; the phone at 2.0 also at
+ * common narrower widths and with Android 14's nonlinear font scaling.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29])
@@ -63,6 +66,11 @@ class ViewRingLabelsTest {
         prefs.setDetail(Prefs.TAB_BROWSE, DetailDisplay.COMFORTABLE)
         prefs.titleDisplay = TitleDisplay.SINGLE
         prefs.ringOptions = RingOptions.DEFAULT.with(RingOption.SECTIONS, false).with(RingOption.TITLE_LINES, true).moved(3, 0)
+    }
+
+    private companion object {
+        const val PHONE = "w400dp-h800dp-xxhdpi"
+        const val NARROW = "w360dp-h800dp-xxhdpi"
     }
 
     private fun settle() = repeat(3) {
@@ -99,40 +107,104 @@ class ViewRingLabelsTest {
         val screen = box(list.window.decorView).let { RingGeometry.Box(it.left + bars.left, it.top + bars.top, it.right - bars.right, it.bottom - bars.bottom) }
         val want = RingGeometry.radius(options.size, 75f, 91f) * list.resources.displayMetrics.density
         assertTrue("$what: radius ${ring.ringRadius / want} of the one asked for", ring.ringRadius <= want * most + 0.5f)
-        val round = options.map { center(ring.button(it)!!) } + center(ring.hub()!!)
-        val labels = options.map { it to ring.label(it)!! }
-        for ((o, label) in labels) {
-            val layout = label.layout
-            val text = label.text.toString()
-            for (line in 0 until layout.lineCount) assertEquals("$what: $o \"$text\" whole", 0, layout.getEllipsisCount(line))
-            assertTrue("$what: $o \"$text\" on ${layout.lineCount} lines", layout.lineCount <= 3)
-            val l = box(label)
-            assertTrue("$what: $o $l on $screen", l.within(screen))
-            for ((x, y, r) in round) assertEquals("$what: $o \"$text\" on a button at $x, $y", 0f, l.overlap(x, y, r), 0f)
-            for ((p, other) in labels) if (p != o) assertEquals("$what: $o on $p", 0f, l.overlap(box(other)), 0f)
+        fun labelsClear(what: String) {
+            val round = options.map { center(ring.button(it)!!) } + center(ring.hub()!!)
+            val labels = options.map { it to ring.label(it)!! }
+            for ((o, label) in labels) {
+                val layout = label.layout
+                val text = label.text.toString()
+                for (line in 0 until layout.lineCount) assertEquals("$what: $o \"$text\" whole", 0, layout.getEllipsisCount(line))
+                assertTrue("$what: $o \"$text\" on ${layout.lineCount} lines", layout.lineCount <= 3)
+                val l = box(label)
+                assertTrue("$what: $o $l on $screen", l.within(screen))
+                for ((x, y, r) in round) assertEquals("$what: $o \"$text\" on a button at $x, $y", 0f, l.overlap(x, y, r), 0f)
+                for ((p, other) in labels) if (p != o) assertEquals("$what: $o on $p", 0f, l.overlap(box(other)), 0f)
+            }
         }
-        // A tap changes values in place; the labels still fit, clear of the bars.
+        labelsClear(what)
+        // A tap changes values in place; the labels still fit, clear of the buttons, the hub, each other and the bars.
         ring.button(RingOption.SORT)!!.performClick()
         settle()
-        for ((o, label) in labels) {
-            for (line in 0 until label.layout.lineCount) assertEquals("$what, after a tap: $o whole", 0, label.layout.getEllipsisCount(line))
-            assertTrue("$what, after a tap: $o on $screen", box(label).within(screen))
-        }
+        labelsClear("$what, after a tap")
         ring.close(animate = false)
     }
 
     @Test
     fun aPhonesLongestLabelsFitAtEveryFontScale() {
-        for (scale in listOf(1.0f, 1.3f)) for (left in listOf(false, true)) check("w400dp-h800dp-xxhdpi", scale, left)
+        for (scale in listOf(1.0f, 1.3f)) for (left in listOf(false, true)) check(PHONE, scale, left)
         // At twice the font size, the default ring's five: short forms before the ring grows, and then no larger than the first ring.
         prefs.ringOptions = RingOptions.DEFAULT
-        for (left in listOf(false, true)) check("w400dp-h800dp-xxhdpi", 2.0f, left, count = 5, most = 1.5f)
+        for (left in listOf(false, true)) check(PHONE, 2.0f, left, count = 5, most = 1.5f)
     }
 
     @Test
-    @Ignore("Unmet: on a 400 dp phone at twice the font size, six of the longest labels overlap a button by about 2 dp with the ring at its tightest spacing; cutting labels with an ellipsis to clear them loses whole values")
     fun aPhonesSixLongestLabelsFitAtTwiceTheFontSize() {
-        for (left in listOf(false, true)) check("w400dp-h800dp-xxhdpi", 2.0f, left)
+        for (left in listOf(false, true)) check(PHONE, 2.0f, left)
+    }
+
+    /** Common phone widths and split-screen or pop-up windows on a tablet. */
+    @Test
+    fun narrowerWindowsSixLongestLabelsFitAtTwiceTheFontSize() {
+        for (width in listOf(360, 384, 393, 411)) for (left in listOf(false, true)) check("w${width}dp-h800dp-xxhdpi", 2.0f, left)
+    }
+
+    @Test
+    @Ignore("F243 gap: below about 348 dp at font scale 2.0, a label at the 130% text floor reaches over a button")
+    fun theNarrowestWindowsSixLongestLabelsFitAtTwiceTheFontSize() {
+        for (width in listOf(320, 340)) for (left in listOf(false, true)) check("w${width}dp-h800dp-xxhdpi", 2.0f, left)
+    }
+
+    /** Opens the ring on a screen of [qualifiers] at [scale] and returns a plain label's text size, the ring's text floor and each ring label's size. */
+    private fun textSizes(scale: Float, qualifiers: String = PHONE): Triple<Float, Float, List<Float>> {
+        RuntimeEnvironment.setQualifiers(qualifiers)
+        RuntimeEnvironment.setFontScale(scale)
+        val list = Robolectric.buildActivity(ListActivity::class.java).setup().get()
+        settle()
+        list.viewRing.barInsets = { bars(list) }
+        assertTrue(list.findViewById<FloatingActionButton>(R.id.fab).performLongClick())
+        settle()
+        val sizes = ViewRing.options(Prefs.TAB_BROWSE, prefs.ringOptions).map { list.viewRing.label(it)!!.textSize }
+        val floor = list.viewRing.textFloor()
+        list.viewRing.close(animate = false)
+        return Triple(TextView(list).textSize, floor, sizes)
+    }
+
+    @Test
+    fun labelTextShrinksOnlyWhereGrowingCannotClearTheLabels() {
+        // At 1.3, the text keeps its size, which is the floor.
+        val (plain13, floor13, at13) = textSizes(1.3f)
+        assertEquals(plain13, floor13, 0f)
+        for (size in at13) assertEquals(plain13, size, 0f)
+        // Six of the longest at twice the font size: all the same, smaller, and only as much as they need: above the floor.
+        val (plain, floor, six) = textSizes(2.0f)
+        assertEquals(plain13, floor, 0f)
+        for (size in six) assertTrue("$size of $plain, floor $plain13", size < plain && size > plain13 + 0.5f)
+        assertEquals(1, six.distinct().size)
+        // On a narrower phone the floor clears them only with every label's sides searched together.
+        val (plainNarrow, _, narrow) = textSizes(2.0f, NARROW)
+        assertTrue("floor $plain13 of $plainNarrow", plain13 < plainNarrow)
+        for (size in narrow) assertEquals("$size of $plainNarrow", plain13, size, 0f)
+        for (left in listOf(false, true)) check(NARROW, 2.0f, left)
+        // The default ring's five at twice the font size: the ring grows instead.
+        prefs.ringOptions = RingOptions.DEFAULT
+        val (plain5, _, five) = textSizes(2.0f)
+        for (size in five) assertEquals(plain5, size, 0f)
+    }
+
+    /** Android 14 scales text nonlinearly, so the floor is the real size at 1.3, not a share of the size at 2.0. */
+    @Test
+    @Config(sdk = [34])
+    fun aPhonesSixLongestLabelsFitAtTwiceTheFontSizeOnAndroid14() {
+        // From Android 11 the list asks for all-files access, which reads the first storage volume.
+        ShadowEnvironment.addExternalDir("emulated")
+        shadowOf(context).grantPermissions(Manifest.permission.MANAGE_EXTERNAL_STORAGE)
+        val (plain13, _, _) = textSizes(1.3f)
+        val (plain, floor, six) = textSizes(2.0f)
+        assertTrue("nonlinear: $plain at 2.0, $plain13 at 1.3", plain < plain13 * 2.0f / 1.3f - 1f)
+        assertEquals(plain13, floor, 0f)
+        for (size in six) assertTrue("$size of $plain, floor $plain13", size < plain && size >= plain13)
+        for (left in listOf(false, true)) check(PHONE, 2.0f, left)
+        for (left in listOf(false, true)) check(NARROW, 2.0f, left)
     }
 
     @Test

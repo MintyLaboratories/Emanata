@@ -17,7 +17,7 @@ features and customizability.
   the 2.4 MB cover text detector (to tell a wraparound cover's front or a
   book's reading direction). The app sends nothing else on its own.
 
-A fork of [ComicReader by infinity6901](https://github.com/infinity6901/ComicReader), which is MIT-licensed.
+Based on [ComicReader by infinity6901](https://github.com/infinity6901/ComicReader), which is MIT-licensed.
 
 ## Download
 

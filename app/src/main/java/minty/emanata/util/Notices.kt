@@ -42,7 +42,7 @@ object Notices {
     const val GLSLANG = "$BSD_3 and others"
 
     const val UPSTREAM_URL = "https://github.com/infinity6901/ComicReader"
-    const val SOURCE_URL = "https://github.com/MintyLaboratories/EmanataComicReader"
+    const val SOURCE_URL = "https://github.com/MintyLaboratories/Emanata"
     const val TIP_URL = "https://ko-fi.com/mmeminty"
 
     /** The libarchive fork the app builds, and its commit (LibarchivePin.cmake), shortened. */

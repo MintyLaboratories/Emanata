@@ -6,9 +6,9 @@ import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.RecyclerView
 import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
 import androidx.test.runner.lifecycle.Stage
+import kotlinx.coroutines.Job
 import minty.emanata.R
 import minty.emanata.testing.idleUntil
-import kotlinx.coroutines.Job
 
 /**
  * Waits until no screen left from the test still works in the background. Such work runs

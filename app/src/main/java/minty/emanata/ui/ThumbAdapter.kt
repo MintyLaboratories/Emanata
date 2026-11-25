@@ -11,12 +11,6 @@ import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
-import minty.emanata.R
-import minty.emanata.reader.Fit
-import minty.emanata.reader.PageSource
-import minty.emanata.reader.Scaling
-import minty.emanata.reader.Target
-import minty.emanata.util.AppDispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -29,6 +23,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import minty.emanata.R
+import minty.emanata.reader.Fit
+import minty.emanata.reader.PageSource
+import minty.emanata.reader.Scaling
+import minty.emanata.reader.Target
+import minty.emanata.util.AppDispatchers
 
 /**
  * Grid of page thumbnails used to jump to a page. Each is made at its view's exact

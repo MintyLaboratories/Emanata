@@ -25,12 +25,12 @@ import com.google.android.material.color.MaterialColors
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.progressindicator.CircularProgressIndicator
 import com.google.android.material.progressindicator.LinearProgressIndicator
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.launch
 import minty.emanata.R
 import minty.emanata.files.FileClipboard
 import minty.emanata.files.FileWork
 import minty.emanata.util.FileUtils
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.launch
 
 /** A bubble of the operation stack: a pick waiting to be pasted, or a queued operation. */
 internal sealed class Bubble {

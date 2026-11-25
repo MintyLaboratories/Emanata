@@ -2,10 +2,10 @@ package minty.emanata.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import minty.emanata.net.RemoteFile
-import minty.emanata.util.AppDispatchers
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
+import minty.emanata.net.RemoteFile
+import minty.emanata.util.AppDispatchers
 
 /**
  * The startup folder's share being waited for ([ListActivity]), kept across a recreate

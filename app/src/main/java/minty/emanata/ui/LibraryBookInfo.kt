@@ -7,6 +7,8 @@ import android.text.style.StyleSpan
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import minty.emanata.R
 import minty.emanata.data.BookEntry
 import minty.emanata.data.BookFactsCache
@@ -16,8 +18,6 @@ import minty.emanata.reader.ArchiveKind
 import minty.emanata.reader.BookFactsReader
 import minty.emanata.util.AppDispatchers
 import minty.emanata.util.FileUtils
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 /**
  * Book info from the library, without opening the book in the reader: the file, the folder

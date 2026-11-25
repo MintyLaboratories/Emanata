@@ -10,15 +10,6 @@ import android.widget.ImageView
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
-import minty.emanata.R
-import minty.emanata.data.CoverArt
-import minty.emanata.reader.Cancellation
-import minty.emanata.reader.Fit
-import minty.emanata.reader.Half
-import minty.emanata.reader.PageSource
-import minty.emanata.reader.Scaling
-import minty.emanata.reader.Target
-import minty.emanata.util.AppDispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -30,6 +21,15 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import minty.emanata.R
+import minty.emanata.data.CoverArt
+import minty.emanata.reader.Cancellation
+import minty.emanata.reader.Fit
+import minty.emanata.reader.Half
+import minty.emanata.reader.PageSource
+import minty.emanata.reader.Scaling
+import minty.emanata.reader.Target
+import minty.emanata.util.AppDispatchers
 
 /**
  * The seek bar's strip of page previews ([SeekStrip.Cell] each), [thumbHeight] pixels

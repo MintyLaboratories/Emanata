@@ -10,6 +10,8 @@ import android.view.View
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import minty.emanata.ai.AiOutcome
 import minty.emanata.ai.PageEnhancer
 import minty.emanata.reader.BitmapDetail
@@ -20,8 +22,6 @@ import minty.emanata.reader.Region
 import minty.emanata.reader.Scaling
 import minty.emanata.reader.Target
 import minty.emanata.testing.idleUntil
-import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.Dispatchers
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

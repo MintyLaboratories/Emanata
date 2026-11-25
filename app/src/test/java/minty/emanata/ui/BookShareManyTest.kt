@@ -10,6 +10,7 @@ import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.lifecycle.lifecycleScope
 import androidx.test.core.app.ApplicationProvider
+import kotlinx.coroutines.Job
 import minty.emanata.R
 import minty.emanata.data.BookEntry
 import minty.emanata.data.EntryType
@@ -18,7 +19,6 @@ import minty.emanata.data.ShareChoice
 import minty.emanata.files.BookUris
 import minty.emanata.testing.awaitUntil
 import minty.emanata.testing.idleUntil
-import kotlinx.coroutines.Job
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

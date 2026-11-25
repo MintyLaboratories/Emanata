@@ -18,6 +18,10 @@ import androidx.lifecycle.lifecycleScope
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import minty.emanata.R
 import minty.emanata.data.Library
 import minty.emanata.data.LocationSpace
@@ -29,10 +33,6 @@ import minty.emanata.net.Remotes
 import minty.emanata.net.ShareKind
 import minty.emanata.net.ShareStore
 import minty.emanata.util.AppDispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 /**
  * The location picker the app icon crumb opens: every storage root with its icon (a

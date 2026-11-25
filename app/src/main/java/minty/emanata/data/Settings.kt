@@ -7,6 +7,9 @@ import android.content.IntentFilter
 import android.os.PowerManager
 import androidx.annotation.VisibleForTesting
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import minty.emanata.ai.AiPicks
 import minty.emanata.ai.ChainKind
 import minty.emanata.net.NetPolicy
@@ -15,9 +18,6 @@ import minty.emanata.net.RemoteChannel
 import minty.emanata.reader.Adjustments
 import minty.emanata.reader.Scaling
 import minty.emanata.reader.TallPages
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 
 /** Library screen settings as one value, so a screen can diff what changed. */
 data class ListSettings(

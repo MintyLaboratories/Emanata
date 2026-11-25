@@ -5,6 +5,9 @@ import android.graphics.Bitmap
 import android.os.PowerManager
 import androidx.preference.PreferenceManager
 import androidx.test.core.app.ApplicationProvider
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import minty.emanata.data.BookId
 import minty.emanata.data.Prefs
 import minty.emanata.reader.PageSource
@@ -13,9 +16,6 @@ import minty.emanata.reader.Region
 import minty.emanata.reader.Scaling
 import minty.emanata.reader.Target
 import minty.emanata.testing.awaitJob
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

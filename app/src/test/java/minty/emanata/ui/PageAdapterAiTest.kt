@@ -10,6 +10,9 @@ import android.view.View
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.asCoroutineDispatcher
 import minty.emanata.ai.AiOutcome
 import minty.emanata.ai.Fallback
 import minty.emanata.ai.PageEnhancer
@@ -17,9 +20,6 @@ import minty.emanata.reader.PageSource
 import minty.emanata.reader.Target
 import minty.emanata.testing.Waits
 import minty.emanata.testing.idleUntil
-import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.asCoroutineDispatcher
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

@@ -9,7 +9,6 @@ import android.os.PowerManager
 import android.os.SystemClock
 import android.provider.OpenableColumns
 import android.util.Log
-import minty.emanata.reader.NativeResampler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -21,6 +20,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import minty.emanata.reader.NativeResampler
 import java.io.File
 import java.io.IOException
 import java.io.InputStream

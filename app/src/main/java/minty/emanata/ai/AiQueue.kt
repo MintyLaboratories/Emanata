@@ -1,7 +1,6 @@
 package minty.emanata.ai
 
 import android.graphics.Bitmap
-import minty.emanata.reader.PageDetail
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -11,6 +10,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import minty.emanata.reader.PageDetail
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** How a page's AI work ended. */

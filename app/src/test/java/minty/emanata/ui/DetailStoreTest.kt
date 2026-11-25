@@ -2,14 +2,14 @@ package minty.emanata.ui
 
 import android.app.Application
 import android.graphics.Bitmap
-import minty.emanata.reader.PageDetail
-import minty.emanata.reader.Region
-import minty.emanata.reader.Scaling
-import minty.emanata.testing.idleUntil
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import minty.emanata.reader.PageDetail
+import minty.emanata.reader.Region
+import minty.emanata.reader.Scaling
+import minty.emanata.testing.idleUntil
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

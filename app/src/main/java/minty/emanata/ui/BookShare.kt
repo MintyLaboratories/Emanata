@@ -17,6 +17,11 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import minty.emanata.R
 import minty.emanata.data.BookEntry
 import minty.emanata.data.Prefs
@@ -28,11 +33,6 @@ import minty.emanata.reader.Fit
 import minty.emanata.reader.Target
 import minty.emanata.util.AppDispatchers
 import minty.emanata.util.FileUtils
-import kotlinx.coroutines.Deferred
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
 

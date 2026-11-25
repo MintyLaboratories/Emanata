@@ -10,6 +10,7 @@ import android.view.View
 import androidx.preference.PreferenceManager
 import androidx.test.core.app.ApplicationProvider
 import androidx.viewpager2.widget.ViewPager2
+import kotlinx.coroutines.Job
 import minty.emanata.R
 import minty.emanata.data.Prefs
 import minty.emanata.data.ResumeMode
@@ -22,7 +23,6 @@ import minty.emanata.net.ShareSpeed
 import minty.emanata.reader.Fixtures
 import minty.emanata.testing.Waits
 import minty.emanata.testing.idleUntil
-import kotlinx.coroutines.Job
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

@@ -3,8 +3,8 @@ package minty.emanata.net
 import android.content.Context
 import android.net.ConnectivityManager
 import android.os.Looper
-import minty.emanata.util.Timing
 import kotlinx.coroutines.asContextElement
+import minty.emanata.util.Timing
 import java.io.File
 import java.io.InputStream
 import java.nio.channels.Channels

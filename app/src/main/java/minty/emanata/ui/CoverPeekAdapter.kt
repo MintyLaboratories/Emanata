@@ -10,11 +10,6 @@ import android.widget.ImageView
 import android.widget.TextView
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import minty.emanata.R
-import minty.emanata.data.BookEntry
-import minty.emanata.data.CoverStyle
-import minty.emanata.data.Thumbs
-import minty.emanata.util.AppDispatchers
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -24,6 +19,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import minty.emanata.R
+import minty.emanata.data.BookEntry
+import minty.emanata.data.CoverStyle
+import minty.emanata.data.Thumbs
+import minty.emanata.util.AppDispatchers
 
 /**
  * The covers of a folder's [entries], for peeking into the folder. Each is exactly

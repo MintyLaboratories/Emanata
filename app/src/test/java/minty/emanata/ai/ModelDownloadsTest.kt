@@ -1,11 +1,11 @@
 package minty.emanata.ai
 
 import android.app.Application
+import kotlinx.coroutines.Job
 import minty.emanata.net.Metered
 import minty.emanata.testing.Waits
 import minty.emanata.testing.awaitJob
 import minty.emanata.testing.awaitUntil
-import kotlinx.coroutines.Job
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse

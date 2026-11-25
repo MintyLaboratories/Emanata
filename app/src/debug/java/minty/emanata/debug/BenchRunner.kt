@@ -16,6 +16,12 @@ import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.Window
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import minty.emanata.data.BookCaches
 import minty.emanata.data.BookIds
 import minty.emanata.data.Prefs
@@ -29,12 +35,6 @@ import minty.emanata.ui.ListActivity
 import minty.emanata.ui.PageAdapter
 import minty.emanata.ui.ViewerActivity
 import minty.emanata.util.ReadProbes
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File

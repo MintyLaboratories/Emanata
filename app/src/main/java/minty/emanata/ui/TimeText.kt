@@ -4,12 +4,12 @@ import android.content.Context
 import android.view.View
 import android.widget.TextView
 import androidx.lifecycle.LifecycleCoroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import minty.emanata.R
 import minty.emanata.files.ConvertRates
 import minty.emanata.files.Span
 import minty.emanata.util.AppDispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.util.concurrent.Future
 
 /** Convert work's times as shown: how long it takes, before it starts, and the time left while it runs. */

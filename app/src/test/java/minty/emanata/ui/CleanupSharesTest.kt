@@ -13,6 +13,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
+import kotlinx.coroutines.Job
 import minty.emanata.R
 import minty.emanata.data.BookIds
 import minty.emanata.data.Prefs
@@ -25,7 +26,6 @@ import minty.emanata.reader.Fixtures
 import minty.emanata.reader.SyntheticArt
 import minty.emanata.testing.Xxh3Port
 import minty.emanata.testing.idleUntil
-import kotlinx.coroutines.Job
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull

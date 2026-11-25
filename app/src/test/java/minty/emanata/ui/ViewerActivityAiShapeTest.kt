@@ -12,6 +12,8 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
 import androidx.viewpager2.widget.ViewPager2
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.asCoroutineDispatcher
 import minty.emanata.R
 import minty.emanata.ai.AiOutcome
 import minty.emanata.ai.ChainKind
@@ -28,8 +30,6 @@ import minty.emanata.reader.Target
 import minty.emanata.reader.TestImages
 import minty.emanata.testing.Waits
 import minty.emanata.testing.idleUntil
-import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.asCoroutineDispatcher
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

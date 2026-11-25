@@ -14,15 +14,15 @@ import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
-import minty.emanata.R
-import minty.emanata.ui.ListActivity
-import minty.emanata.ui.TimeText
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import minty.emanata.R
+import minty.emanata.ui.ListActivity
+import minty.emanata.ui.TimeText
 
 /**
  * Keeps the app running while file operations wait or run ([FileWork]), so a copy goes on

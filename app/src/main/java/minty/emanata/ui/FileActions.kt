@@ -11,6 +11,10 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.google.android.material.materialswitch.MaterialSwitch
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import minty.emanata.R
 import minty.emanata.compact.PackFolders
 import minty.emanata.data.Library
@@ -25,10 +29,6 @@ import minty.emanata.net.ChangeRefused
 import minty.emanata.net.RemoteException
 import minty.emanata.util.AppDispatchers
 import minty.emanata.util.FileUtils
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Locale
 import java.util.concurrent.Future

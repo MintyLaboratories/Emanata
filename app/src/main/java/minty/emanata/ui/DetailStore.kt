@@ -1,8 +1,6 @@
 package minty.emanata.ui
 
 import android.util.Log
-import minty.emanata.reader.Cancellation
-import minty.emanata.reader.PageDetail
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -15,6 +13,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import minty.emanata.reader.Cancellation
+import minty.emanata.reader.PageDetail
 import java.util.concurrent.CancellationException
 
 /**

@@ -6,9 +6,9 @@ import android.util.Log
 import android.view.Gravity
 import android.view.WindowManager
 import android.widget.TextView
-import minty.emanata.data.Prefs
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
+import minty.emanata.data.Prefs
 
 /**
  * Debug builds only: runs a benchmark ([BenchPlan], [BenchRunner]) in the app's own

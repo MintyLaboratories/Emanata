@@ -6,6 +6,8 @@ import android.os.Build
 import android.os.Process
 import android.os.SystemClock
 import android.util.Log
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.asCoroutineDispatcher
 import minty.emanata.data.BookId
 import minty.emanata.data.BookIds
 import minty.emanata.data.Library
@@ -19,8 +21,6 @@ import minty.emanata.reader.Plan
 import minty.emanata.reader.ProcessedDetail
 import minty.emanata.reader.Target
 import minty.emanata.reader.Urgency
-import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.asCoroutineDispatcher
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors

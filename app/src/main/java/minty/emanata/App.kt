@@ -5,6 +5,7 @@ import android.content.ComponentCallbacks2
 import android.content.pm.ApplicationInfo
 import androidx.annotation.VisibleForTesting
 import androidx.appcompat.app.AppCompatDelegate
+import kotlinx.coroutines.runBlocking
 import minty.emanata.ai.ModelImports
 import minty.emanata.ai.ModelStore
 import minty.emanata.ai.ProcessedStore
@@ -35,7 +36,6 @@ import minty.emanata.ui.FileJobs
 import minty.emanata.util.FileUtils
 import minty.emanata.util.Locales
 import minty.emanata.util.Timing
-import kotlinx.coroutines.runBlocking
 import java.io.File
 import kotlin.concurrent.thread
 

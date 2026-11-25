@@ -3,8 +3,6 @@ package minty.emanata.ai
 import android.os.SystemClock
 import android.util.Log
 import androidx.annotation.VisibleForTesting
-import minty.emanata.net.NetPolicy
-import minty.emanata.net.NetWork
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -15,6 +13,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import minty.emanata.net.NetPolicy
+import minty.emanata.net.NetWork
 import okhttp3.OkHttpClient
 import java.util.concurrent.CancellationException
 

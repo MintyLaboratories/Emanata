@@ -31,7 +31,7 @@
             app:navigationIcon="@drawable/ic_close"
             app:subtitleTextAppearance="?attr/textAppearanceBodySmall" />
 
-        <com.infinity.comicreader.ui.FitTabLayout
+        <minty.emanata.ui.FitTabLayout
             android:id="@+id/tabs"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -60,9 +60,9 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/tab_bookmarks" />
-        </com.infinity.comicreader.ui.FitTabLayout>
+        </minty.emanata.ui.FitTabLayout>
 
-        <com.infinity.comicreader.ui.CrumbBar
+        <minty.emanata.ui.CrumbBar
             android:id="@+id/pathbar"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -203,7 +203,7 @@
         android:contentDescription="@string/menu_grid"
         android:src="@drawable/ic_grid_view"
         app:backgroundTint="?attr/colorPrimaryContainer"
-        app:layout_behavior="com.infinity.comicreader.ui.FixedBehavior"
+        app:layout_behavior="minty.emanata.ui.FixedBehavior"
         app:tint="?attr/colorOnPrimaryContainer" />
 
     <!-- Paste bubbles and operations under way or waiting, above the floating button's place, newest nearest it; filled in code ([OperationStack]). -->

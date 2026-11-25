@@ -22,7 +22,7 @@
         android:textAppearance="?attr/textAppearanceBodyMedium"
         android:textColor="?android:attr/textColorSecondary" />
 
-    <com.infinity.comicreader.ui.AiSizeSlider
+    <minty.emanata.ui.AiSizeSlider
         android:id="@+id/ai_sizes_slider"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

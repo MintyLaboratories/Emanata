@@ -1,5 +1,5 @@
 // Separable resampling of premultiplied RGBA8 pixels, as an Android ARGB_8888 bitmap
-// holds them in memory: the native twin of com.infinity.comicreader.reader.Resampler run
+// holds them in memory: the native twin of minty.emanata.reader.Resampler run
 // with premultiplied rows, on the CPU (resample.c: NEON on arm64, plain C elsewhere) or
 // on the GPU (resample_gpu.c: OpenGL ES 3.1 compute).
 

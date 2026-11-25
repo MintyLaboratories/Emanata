@@ -11,7 +11,7 @@
     android:orientation="vertical"
     android:padding="24dp">
 
-    <com.infinity.comicreader.ui.PanelTunerView
+    <minty.emanata.ui.PanelTunerView
         android:id="@+id/calibration_page"
         android:layout_width="match_parent"
         android:layout_height="0dp"
@@ -87,7 +87,7 @@
                 </LinearLayout>
             </LinearLayout>
 
-            <com.infinity.comicreader.ui.ButtonRow
+            <minty.emanata.ui.ButtonRow
                 android:id="@+id/calibration_buttons"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -137,7 +137,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginStart="8dp"
                     android:text="@string/close" />
-            </com.infinity.comicreader.ui.ButtonRow>
+            </minty.emanata.ui.ButtonRow>
         </LinearLayout>
     </ScrollView>
 </LinearLayout>

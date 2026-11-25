@@ -8,7 +8,7 @@
         app:summary="@string/pref_keep_simple_desc"
         app:title="@string/pref_keep_simple" />
 
-    <com.infinity.comicreader.ui.SectionCategory
+    <minty.emanata.ui.SectionCategory
         app:key="section_general"
         app:title="@string/pref_cat_general">
         <ListPreference
@@ -36,9 +36,9 @@
                 android:name="advanced"
                 android:value="true" />
         </ListPreference>
-    </com.infinity.comicreader.ui.SectionCategory>
+    </minty.emanata.ui.SectionCategory>
 
-    <com.infinity.comicreader.ui.CollapsibleCategory
+    <minty.emanata.ui.CollapsibleCategory
         app:key="section_appearance"
         app:title="@string/pref_cat_appearance">
         <ListPreference
@@ -105,9 +105,9 @@
             app:key="pref_handed"
             app:title="@string/pref_handed"
             app:useSimpleSummaryProvider="true" />
-    </com.infinity.comicreader.ui.CollapsibleCategory>
+    </minty.emanata.ui.CollapsibleCategory>
 
-    <com.infinity.comicreader.ui.CollapsibleCategory
+    <minty.emanata.ui.CollapsibleCategory
         app:key="section_reader"
         app:title="@string/pref_cat_reader">
         <SwitchPreferenceCompat
@@ -320,9 +320,9 @@
             app:key="pref_auto_scroll_speed"
             app:title="@string/pref_auto_speed"
             app:useSimpleSummaryProvider="true" />
-    </com.infinity.comicreader.ui.CollapsibleCategory>
+    </minty.emanata.ui.CollapsibleCategory>
 
-    <com.infinity.comicreader.ui.CollapsibleCategory
+    <minty.emanata.ui.CollapsibleCategory
         app:key="section_adjustments"
         app:title="@string/pref_cat_adjustments">
         <SeekBarPreference
@@ -346,9 +346,9 @@
             app:min="-100"
             app:showSeekBarValue="true"
             app:title="@string/adjust_saturation" />
-    </com.infinity.comicreader.ui.CollapsibleCategory>
+    </minty.emanata.ui.CollapsibleCategory>
 
-    <com.infinity.comicreader.ui.CollapsibleCategory
+    <minty.emanata.ui.CollapsibleCategory
         app:key="section_ai"
         app:title="@string/pref_cat_ai">
         <SwitchPreferenceCompat
@@ -361,7 +361,7 @@
           unless it has its own.
           Entries come from the model catalog; only choices are stored, no defaults (SettingsFragment).
         -->
-        <com.infinity.comicreader.ui.AiChainPreference
+        <minty.emanata.ui.AiChainPreference
             app:dependency="pref_ai"
             app:key="ai_chain_manga"
             app:summary="@string/ai_chain_manga_desc"
@@ -386,10 +386,10 @@
             app:dependency="pref_ai"
             app:key="pref_ai_manga_upscale"
             app:title="@string/pref_ai_upscale" />
-        <com.infinity.comicreader.ui.AiLoadPreference
+        <minty.emanata.ui.AiLoadPreference
             app:dependency="pref_ai"
             app:key="ai_load_manga" />
-        <com.infinity.comicreader.ui.AiChainPreference
+        <minty.emanata.ui.AiChainPreference
             app:dependency="pref_ai"
             app:key="ai_chain_other"
             app:summary="@string/ai_chain_other_desc"
@@ -414,11 +414,11 @@
             app:dependency="pref_ai"
             app:key="pref_ai_upscale"
             app:title="@string/pref_ai_upscale" />
-        <com.infinity.comicreader.ui.AiLoadPreference
+        <minty.emanata.ui.AiLoadPreference
             app:dependency="pref_ai"
             app:key="ai_load_other" />
         <!-- Stores Prefs.aiThresholds itself, under two keys. -->
-        <com.infinity.comicreader.ui.AiSizePreference
+        <minty.emanata.ui.AiSizePreference
             app:dependency="pref_ai"
             app:key="pref_ai_sizes"
             app:summary="@string/pref_ai_sizes_desc"
@@ -426,7 +426,7 @@
             <extra
                 android:name="advanced"
                 android:value="true" />
-        </com.infinity.comicreader.ui.AiSizePreference>
+        </minty.emanata.ui.AiSizePreference>
         <SwitchPreferenceCompat
             app:defaultValue="false"
             app:key="pref_ai_dot"
@@ -440,9 +440,9 @@
             app:key="ai_models"
             app:persistent="false"
             app:title="@string/pref_ai_models" />
-    </com.infinity.comicreader.ui.CollapsibleCategory>
+    </minty.emanata.ui.CollapsibleCategory>
 
-    <com.infinity.comicreader.ui.CollapsibleCategory
+    <minty.emanata.ui.CollapsibleCategory
         app:key="section_gestures"
         app:title="@string/pref_cat_gestures">
         <ListPreference
@@ -474,9 +474,9 @@
             app:key="pref_fling"
             app:summary="@string/pref_fling_desc"
             app:title="@string/pref_fling" />
-    </com.infinity.comicreader.ui.CollapsibleCategory>
+    </minty.emanata.ui.CollapsibleCategory>
 
-    <com.infinity.comicreader.ui.CollapsibleCategory
+    <minty.emanata.ui.CollapsibleCategory
         app:key="section_library"
         app:title="@string/pref_cat_list">
         <ListPreference
@@ -571,9 +571,9 @@
             app:key="pref_pinch_peek"
             app:title="@string/pref_pinch_peek"
             app:useSimpleSummaryProvider="true" />
-    </com.infinity.comicreader.ui.CollapsibleCategory>
+    </minty.emanata.ui.CollapsibleCategory>
 
-    <com.infinity.comicreader.ui.CollapsibleCategory
+    <minty.emanata.ui.CollapsibleCategory
         app:key="section_network"
         app:title="@string/pref_cat_network">
         <ListPreference
@@ -620,9 +620,9 @@
             app:key="pref_slow_skip"
             app:persistent="false"
             app:title="@string/pref_slow_skip" />
-    </com.infinity.comicreader.ui.CollapsibleCategory>
+    </minty.emanata.ui.CollapsibleCategory>
 
-    <com.infinity.comicreader.ui.CollapsibleCategory
+    <minty.emanata.ui.CollapsibleCategory
         app:key="section_battery"
         app:title="@string/pref_cat_battery">
         <Preference
@@ -650,18 +650,18 @@
             app:key="pref_saver_ai"
             app:summary="@string/pref_saver_ai_desc"
             app:title="@string/pref_saver_ai" />
-    </com.infinity.comicreader.ui.CollapsibleCategory>
+    </minty.emanata.ui.CollapsibleCategory>
 
-    <com.infinity.comicreader.ui.CollapsibleCategory
+    <minty.emanata.ui.CollapsibleCategory
         app:key="section_performance"
         app:title="@string/pref_cat_performance">
         <Preference
             app:key="pref_recalibrate"
             app:persistent="false"
             app:title="@string/pref_recalibrate" />
-    </com.infinity.comicreader.ui.CollapsibleCategory>
+    </minty.emanata.ui.CollapsibleCategory>
 
-    <com.infinity.comicreader.ui.CollapsibleCategory
+    <minty.emanata.ui.CollapsibleCategory
         app:key="section_data"
         app:title="@string/pref_cat_data">
         <Preference
@@ -684,9 +684,9 @@
             app:persistent="false"
             app:summary="@string/pref_forget_missing_desc"
             app:title="@string/pref_forget_missing" />
-    </com.infinity.comicreader.ui.CollapsibleCategory>
+    </minty.emanata.ui.CollapsibleCategory>
 
-    <com.infinity.comicreader.ui.CollapsibleCategory
+    <minty.emanata.ui.CollapsibleCategory
         app:key="section_cache"
         app:title="@string/pref_cat_cache">
         <Preference
@@ -710,14 +710,14 @@
         <Preference
             app:key="pref_reset"
             app:title="@string/pref_reset" />
-    </com.infinity.comicreader.ui.CollapsibleCategory>
+    </minty.emanata.ui.CollapsibleCategory>
 
-    <com.infinity.comicreader.ui.CollapsibleCategory
+    <minty.emanata.ui.CollapsibleCategory
         app:key="section_about"
         app:title="@string/about">
         <Preference
             app:key="pref_about"
             app:title="@string/pref_about" />
-    </com.infinity.comicreader.ui.CollapsibleCategory>
+    </minty.emanata.ui.CollapsibleCategory>
 
 </PreferenceScreen>

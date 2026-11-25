@@ -100,7 +100,7 @@ static void free_reader(JNIEnv *env, Reader *r) {
 }
 
 JNIEXPORT jstring JNICALL
-Java_com_infinity_comicreader_reader_LibArchive_nVersion(JNIEnv *env, jclass c) {
+Java_minty_emanata_reader_LibArchive_nVersion(JNIEnv *env, jclass c) {
     (void) c;
     char version[512];
     snprintf(version, sizeof version, "%s (commit %s)", archive_version_details(), LIBARCHIVE_COMMIT);
@@ -110,7 +110,7 @@ Java_com_infinity_comicreader_reader_LibArchive_nVersion(JNIEnv *env, jclass c) 
 // A reader of the RAR the source holds, from the source's current position (its start). Listing:
 // moving past an entry of a solid RAR 4 jumps over its data instead of unpacking it.
 JNIEXPORT jlong JNICALL
-Java_com_infinity_comicreader_reader_LibArchive_nOpen(JNIEnv *env, jclass c, jobject source, jboolean listing) {
+Java_minty_emanata_reader_LibArchive_nOpen(JNIEnv *env, jclass c, jobject source, jboolean listing) {
     (void) c;
     Reader *r = calloc(1, sizeof(Reader));
     if (!r) {
@@ -167,7 +167,7 @@ Java_com_infinity_comicreader_reader_LibArchive_nOpen(JNIEnv *env, jclass c, job
 // The next header: its name as UTF-8 bytes, with meta = {size or -1, file type, header
 // position, 1 when its data or the header itself is encrypted}; null at the end of the archive.
 JNIEXPORT jbyteArray JNICALL
-Java_com_infinity_comicreader_reader_LibArchive_nNext(JNIEnv *env, jclass c, jlong handle, jlongArray meta) {
+Java_minty_emanata_reader_LibArchive_nNext(JNIEnv *env, jclass c, jlong handle, jlongArray meta) {
     (void) c;
     Reader *r = (Reader *) (intptr_t) handle;
     r->env = env;
@@ -226,7 +226,7 @@ static int next_block(JNIEnv *env, Reader *r) {
 
 // Up to len bytes of the current entry into dst at off; -1 at its end.
 JNIEXPORT jint JNICALL
-Java_com_infinity_comicreader_reader_LibArchive_nRead(JNIEnv *env, jclass c, jlong handle, jbyteArray dst, jint off, jint len) {
+Java_minty_emanata_reader_LibArchive_nRead(JNIEnv *env, jclass c, jlong handle, jbyteArray dst, jint off, jint len) {
     (void) c;
     Reader *r = (Reader *) (intptr_t) handle;
     r->env = env;
@@ -244,7 +244,7 @@ Java_com_infinity_comicreader_reader_LibArchive_nRead(JNIEnv *env, jclass c, jlo
 }
 
 JNIEXPORT void JNICALL
-Java_com_infinity_comicreader_reader_LibArchive_nClose(JNIEnv *env, jclass c, jlong handle) {
+Java_minty_emanata_reader_LibArchive_nClose(JNIEnv *env, jclass c, jlong handle) {
     (void) c;
     Reader *r = (Reader *) (intptr_t) handle;
     if (!r) return;

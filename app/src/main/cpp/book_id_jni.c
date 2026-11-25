@@ -1,4 +1,4 @@
-// JNI binding over xxHash's XXH3-64 for com.infinity.comicreader.data.LibXxh3: one
+// JNI binding over xxHash's XXH3-64 for minty.emanata.data.LibXxh3: one
 // call hashes the bytes of a Book ID (BookIdBytes) as they lie in one Java array,
 // pinned for the call, not copied. xxhash.h is compiled in whole (XXH_INLINE_ALL),
 // with its NEON code path on arm64 and SSE2 on x86_64.
@@ -12,7 +12,7 @@
 #define EXPORT JNIEXPORT __attribute__((visibility("default")))
 
 // XXH3-64 (seed 0) of the first `length` bytes of `data`; 0 when `length` is out of range.
-EXPORT jlong JNICALL Java_com_infinity_comicreader_data_LibXxh3_nHash(JNIEnv * env, jclass clazz, jbyteArray data, jint length)
+EXPORT jlong JNICALL Java_minty_emanata_data_LibXxh3_nHash(JNIEnv * env, jclass clazz, jbyteArray data, jint length)
 {
     (void)clazz;
     if (length < 0 || length > (*env)->GetArrayLength(env, data)) {
@@ -28,7 +28,7 @@ EXPORT jlong JNICALL Java_com_infinity_comicreader_data_LibXxh3_nHash(JNIEnv * e
 }
 
 // Which vector code XXH3 was built with (XXH_VECTOR: 0 scalar, 1 SSE2, 4 NEON), for the device check.
-EXPORT jint JNICALL Java_com_infinity_comicreader_data_LibXxh3_nVector(JNIEnv * env, jclass clazz)
+EXPORT jint JNICALL Java_minty_emanata_data_LibXxh3_nVector(JNIEnv * env, jclass clazz)
 {
     (void)env;
     (void)clazz;

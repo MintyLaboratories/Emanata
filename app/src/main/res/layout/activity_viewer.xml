@@ -221,7 +221,7 @@
             android:textSize="15sp"
             tools:text="Brightness +12" />
 
-        <com.infinity.comicreader.ui.SignedBar
+        <minty.emanata.ui.SignedBar
             android:id="@+id/brightness_bar"
             android:layout_width="160dp"
             android:layout_height="4dp"

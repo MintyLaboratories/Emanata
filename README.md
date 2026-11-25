@@ -1386,7 +1386,7 @@ in ComicReader (Settings → Your data) and restore the file in Emanata.
 ## Project layout
 
 ```
-app/src/main/java/com/infinity/comicreader/
+app/src/main/java/minty/emanata/
   App.kt                     application; applies theme + locale
   compact/                   Compact, Make compatible, Repack and Pack: Compactor
                              (flat CBZ), OutputMarks (comment marks), PageWork

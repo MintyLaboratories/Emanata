@@ -18,7 +18,7 @@
         android:orientation="horizontal"
         android:padding="8dp">
 
-        <com.infinity.comicreader.ui.CoverBox
+        <minty.emanata.ui.CoverBox
             android:id="@+id/box"
             android:layout_width="@dimen/list_thumb_w"
             android:layout_height="@dimen/list_thumb_h"
@@ -54,7 +54,7 @@
                 android:visibility="gone"
                 tools:text="12/40"
                 tools:visibility="visible" />
-        </com.infinity.comicreader.ui.CoverBox>
+        </minty.emanata.ui.CoverBox>
 
         <LinearLayout
             android:layout_width="0dp"
@@ -63,7 +63,7 @@
             android:layout_weight="1"
             android:orientation="vertical">
 
-            <com.infinity.comicreader.ui.TitleView
+            <minty.emanata.ui.TitleView
                 android:id="@+id/title"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

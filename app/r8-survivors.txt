@@ -13,18 +13,18 @@
 weak android.content.SharedPreferences$OnSharedPreferenceChangeListener
 
 # The settings feed: the app-wide repository holds Prefs, which holds the listeners.
-com.infinity.comicreader.data.SettingsRepository instance
-com.infinity.comicreader.data.SettingsRepository prefs
+minty.emanata.data.SettingsRepository instance
+minty.emanata.data.SettingsRepository prefs
 # The library screen holds the handle that holds its lists' listener (Library.watchLists).
-com.infinity.comicreader.ui.ListActivity listWatch
+minty.emanata.ui.ListActivity listWatch
 
 # Called back by name from jxl_jni.c and resample_jni.c.
-com.infinity.comicreader.compact.LibJxl$Stop stop same-name
-com.infinity.comicreader.reader.PixelKernels$Stop stop same-name
+minty.emanata.compact.LibJxl$Stop stop same-name
+minty.emanata.reader.PixelKernels$Stop stop same-name
 # Called back by name from archive_jni.c.
-com.infinity.comicreader.reader.LibArchive$Source read same-name
-com.infinity.comicreader.reader.LibArchive$Source seek same-name
-com.infinity.comicreader.reader.LibArchive$Source skip same-name
+minty.emanata.reader.LibArchive$Source read same-name
+minty.emanata.reader.LibArchive$Source seek same-name
+minty.emanata.reader.LibArchive$Source skip same-name
 
 # SmbFs reads this SMBJ field by reflection.
 com.hierynomus.smbj.connection.Connection sequenceWindow same-name

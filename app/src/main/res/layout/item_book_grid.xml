@@ -17,12 +17,12 @@
         android:padding="4dp">
 
         <!-- The cover area; the box inside is the largest of the cover shape that fits. -->
-        <com.infinity.comicreader.ui.CoverFrame
+        <minty.emanata.ui.CoverFrame
             android:id="@+id/cover"
             android:layout_width="match_parent"
             android:layout_height="wrap_content">
 
-            <com.infinity.comicreader.ui.CoverBox
+            <minty.emanata.ui.CoverBox
                 android:id="@+id/box"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
@@ -87,10 +87,10 @@
                     android:visibility="gone"
                     app:tint="@color/star_active"
                     tools:visibility="visible" />
-            </com.infinity.comicreader.ui.CoverBox>
-        </com.infinity.comicreader.ui.CoverFrame>
+            </minty.emanata.ui.CoverBox>
+        </minty.emanata.ui.CoverFrame>
 
-        <com.infinity.comicreader.ui.TitleView
+        <minty.emanata.ui.TitleView
             android:id="@+id/title"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

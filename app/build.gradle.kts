@@ -25,7 +25,7 @@ val keystoreProps = Properties().apply {
 }
 
 android {
-    namespace = "com.infinity.comicreader"
+    namespace = "minty.emanata"
     compileSdk = 36
     ndkVersion = "30.0.16248370"
 

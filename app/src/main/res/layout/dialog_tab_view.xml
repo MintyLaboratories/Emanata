@@ -41,7 +41,7 @@
             android:text="@string/grid_size"
             android:textAppearance="?attr/textAppearanceTitleSmall" />
 
-        <com.infinity.comicreader.ui.GridPicker
+        <minty.emanata.ui.GridPicker
             android:id="@+id/grid_size"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

@@ -1,6 +1,6 @@
 // RCAS, the sharpening pass of AMD FidelityFX Super Resolution 1 (MIT; Copyright (c) 2021
 // Advanced Micro Devices, Inc.; the notice is under About), on an ARGB_8888 bitmap in
-// place: the native twin of com.infinity.comicreader.reader.Rcas, bit for bit (rcas.c).
+// place: the native twin of minty.emanata.reader.Rcas, bit for bit (rcas.c).
 
 #ifndef RCAS_H
 #define RCAS_H

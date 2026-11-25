@@ -388,7 +388,7 @@ static void count(int failed, int hung)
 }
 
 // "renderer\tfloat bytes\tmax side\tunits\tGL version", starting the context; NULL when unusable.
-EXPORT jstring JNICALL Java_com_infinity_comicreader_ai_GlesShaders_nInit(JNIEnv * env, jclass clazz)
+EXPORT jstring JNICALL Java_minty_emanata_ai_GlesShaders_nInit(JNIEnv * env, jclass clazz)
 {
     (void)clazz;
     pthread_mutex_lock(&sh_lock);
@@ -401,7 +401,7 @@ EXPORT jstring JNICALL Java_com_infinity_comicreader_ai_GlesShaders_nInit(JNIEnv
     return ok ? (*env)->NewStringUTF(env, info) : NULL;
 }
 
-EXPORT jboolean JNICALL Java_com_infinity_comicreader_ai_GlesShaders_nUsable(JNIEnv * env, jclass clazz)
+EXPORT jboolean JNICALL Java_minty_emanata_ai_GlesShaders_nUsable(JNIEnv * env, jclass clazz)
 {
     (void)env;
     (void)clazz;
@@ -409,7 +409,7 @@ EXPORT jboolean JNICALL Java_com_infinity_comicreader_ai_GlesShaders_nUsable(JNI
 }
 
 // Holds the runner off, as failures would turn it off, until called again with off false.
-EXPORT void JNICALL Java_com_infinity_comicreader_ai_GlesShaders_nHoldOff(JNIEnv * env, jclass clazz, jboolean off)
+EXPORT void JNICALL Java_minty_emanata_ai_GlesShaders_nHoldOff(JNIEnv * env, jclass clazz, jboolean off)
 {
     (void)env;
     (void)clazz;
@@ -528,7 +528,7 @@ static void save_cache(const chain * c, int n, const char * path)
 // 0 when one does not compile. With `cache` (a file path), the programs load from it when this
 // driver made it, else compile and are written to it. A JNI call that fails (out of memory)
 // leaves its exception pending: nothing more is asked of JNI but releases, and 0 returns.
-EXPORT jlong JNICALL Java_com_infinity_comicreader_ai_GlesShaders_nOpen(JNIEnv * env, jclass clazz, jobjectArray sources, jintArray binds, jstring cache)
+EXPORT jlong JNICALL Java_minty_emanata_ai_GlesShaders_nOpen(JNIEnv * env, jclass clazz, jobjectArray sources, jintArray binds, jstring cache)
 {
     (void)clazz;
     const int n = (*env)->GetArrayLength(env, sources);
@@ -771,7 +771,7 @@ static int run(JNIEnv * env, chain * c, const jint * plan, int plan_len, jobject
 #undef NEED
 }
 
-EXPORT jint JNICALL Java_com_infinity_comicreader_ai_GlesShaders_nRun(
+EXPORT jint JNICALL Java_minty_emanata_ai_GlesShaders_nRun(
     JNIEnv * env, jclass clazz, jlong handle, jintArray plan, jobject src, jint ix, jint iy, jint iw, jint ih,
     jobject dst, jint cx, jint cy, jint cw, jint ch, jint dx, jint dy)
 {
@@ -803,7 +803,7 @@ EXPORT jint JNICALL Java_com_infinity_comicreader_ai_GlesShaders_nRun(
 }
 
 // Frees the chain's textures; its programs stay.
-EXPORT void JNICALL Java_com_infinity_comicreader_ai_GlesShaders_nTrim(JNIEnv * env, jclass clazz, jlong handle)
+EXPORT void JNICALL Java_minty_emanata_ai_GlesShaders_nTrim(JNIEnv * env, jclass clazz, jlong handle)
 {
     (void)env;
     (void)clazz;
@@ -820,7 +820,7 @@ EXPORT void JNICALL Java_com_infinity_comicreader_ai_GlesShaders_nTrim(JNIEnv * 
 }
 
 // The most bytes the chain's textures held since the last call, which starts counting from what they hold now.
-EXPORT jlong JNICALL Java_com_infinity_comicreader_ai_GlesShaders_nPeak(JNIEnv * env, jclass clazz, jlong handle)
+EXPORT jlong JNICALL Java_minty_emanata_ai_GlesShaders_nPeak(JNIEnv * env, jclass clazz, jlong handle)
 {
     (void)env;
     (void)clazz;
@@ -833,7 +833,7 @@ EXPORT jlong JNICALL Java_com_infinity_comicreader_ai_GlesShaders_nPeak(JNIEnv *
     return peak;
 }
 
-EXPORT void JNICALL Java_com_infinity_comicreader_ai_GlesShaders_nClose(JNIEnv * env, jclass clazz, jlong handle)
+EXPORT void JNICALL Java_minty_emanata_ai_GlesShaders_nClose(JNIEnv * env, jclass clazz, jlong handle)
 {
     (void)env;
     (void)clazz;

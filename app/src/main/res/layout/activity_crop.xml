@@ -12,7 +12,7 @@
         app:navigationIcon="@drawable/ic_back"
         app:title="@string/crop_title" />
 
-    <com.infinity.comicreader.ui.CropView
+    <minty.emanata.ui.CropView
         android:id="@+id/crop_view"
         android:layout_width="match_parent"
         android:layout_height="0dp"

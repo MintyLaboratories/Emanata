@@ -2,98 +2,98 @@
 <resources>
 
     <!-- ================= Shapes ================= -->
-    <style name="Shape.ComicReader.Small" parent="ShapeAppearance.Material3.Corner.Small">
+    <style name="Shape.Emanata.Small" parent="ShapeAppearance.Material3.Corner.Small">
         <item name="cornerSize">@dimen/corner_sm</item>
     </style>
 
-    <style name="Shape.ComicReader.Medium" parent="ShapeAppearance.Material3.Corner.Medium">
+    <style name="Shape.Emanata.Medium" parent="ShapeAppearance.Material3.Corner.Medium">
         <item name="cornerSize">@dimen/corner_md</item>
     </style>
 
-    <style name="Shape.ComicReader.Large" parent="ShapeAppearance.Material3.Corner.Large">
+    <style name="Shape.Emanata.Large" parent="ShapeAppearance.Material3.Corner.Large">
         <item name="cornerSize">@dimen/corner_lg</item>
     </style>
 
-    <style name="Shape.ComicReader.Thumb" parent="">
+    <style name="Shape.Emanata.Thumb" parent="">
         <item name="cornerFamily">rounded</item>
         <item name="cornerSize">@dimen/corner_sm</item>
     </style>
 
     <!-- The operation stack's bubbles: round, as their progress ring. -->
-    <style name="Shape.ComicReader.Circle" parent="">
+    <style name="Shape.Emanata.Circle" parent="">
         <item name="cornerFamily">rounded</item>
         <item name="cornerSize">50%</item>
     </style>
 
-    <style name="Shape.ComicReader.Cover" parent="">
+    <style name="Shape.Emanata.Cover" parent="">
         <item name="cornerFamily">rounded</item>
         <item name="cornerSize">@dimen/corner_md</item>
     </style>
 
     <!-- ================= Type ================= -->
-    <style name="TextAppearance.ComicReader.AppTitle" parent="TextAppearance.Material3.TitleLarge">
+    <style name="TextAppearance.Emanata.AppTitle" parent="TextAppearance.Material3.TitleLarge">
         <item name="android:fontFamily">sans-serif-medium</item>
         <item name="android:textSize">20sp</item>
     </style>
 
-    <style name="TextAppearance.ComicReader.ItemTitle" parent="TextAppearance.Material3.TitleMedium">
+    <style name="TextAppearance.Emanata.ItemTitle" parent="TextAppearance.Material3.TitleMedium">
         <item name="android:fontFamily">sans-serif-medium</item>
         <item name="android:textSize">15sp</item>
     </style>
 
-    <style name="TextAppearance.ComicReader.ItemSubtitle" parent="TextAppearance.Material3.BodySmall">
+    <style name="TextAppearance.Emanata.ItemSubtitle" parent="TextAppearance.Material3.BodySmall">
         <item name="android:textSize">12.5sp</item>
         <item name="android:textColor">?attr/colorOnSurfaceVariant</item>
     </style>
 
-    <style name="TextAppearance.ComicReader.Crumb" parent="TextAppearance.Material3.BodyMedium">
+    <style name="TextAppearance.Emanata.Crumb" parent="TextAppearance.Material3.BodyMedium">
         <item name="android:fontFamily">sans-serif-medium</item>
         <item name="android:textSize">17sp</item>
     </style>
 
-    <style name="TextAppearance.ComicReader.Label" parent="TextAppearance.Material3.LabelLarge">
+    <style name="TextAppearance.Emanata.Label" parent="TextAppearance.Material3.LabelLarge">
         <item name="android:textSize">12sp</item>
         <item name="android:letterSpacing">0.03</item>
     </style>
 
-    <style name="TextAppearance.ComicReader.Empty" parent="TextAppearance.Material3.TitleMedium">
+    <style name="TextAppearance.Emanata.Empty" parent="TextAppearance.Material3.TitleMedium">
         <item name="android:textColor">?attr/colorOnSurfaceVariant</item>
     </style>
 
     <!-- ================= Widgets ================= -->
-    <style name="Widget.ComicReader.Card" parent="Widget.Material3.CardView.Elevated">
+    <style name="Widget.Emanata.Card" parent="Widget.Material3.CardView.Elevated">
         <item name="cardCornerRadius">@dimen/corner_md</item>
         <item name="cardElevation">0dp</item>
         <item name="android:stateListAnimator">@null</item>
         <item name="cardBackgroundColor">?attr/colorSurfaceContainerLow</item>
     </style>
 
-    <style name="Widget.ComicReader.Toolbar" parent="Widget.Material3.Toolbar">
-        <item name="titleTextAppearance">@style/TextAppearance.ComicReader.AppTitle</item>
+    <style name="Widget.Emanata.Toolbar" parent="Widget.Material3.Toolbar">
+        <item name="titleTextAppearance">@style/TextAppearance.Emanata.AppTitle</item>
         <item name="android:background">?attr/colorSurface</item>
     </style>
 
     <!-- ================= Reader settings sheet ================= -->
     <!-- A group heading: Layout, Color, Behavior. -->
-    <style name="Widget.ComicReader.SheetSection" parent="">
+    <style name="Widget.Emanata.SheetSection" parent="">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:layout_marginTop">@dimen/space_6</item>
-        <item name="android:textAppearance">@style/TextAppearance.ComicReader.ItemTitle</item>
+        <item name="android:textAppearance">@style/TextAppearance.Emanata.ItemTitle</item>
         <item name="android:textColor">?attr/colorPrimary</item>
     </style>
 
     <!-- The name of one option above its control. -->
-    <style name="Widget.ComicReader.SheetLabel" parent="">
+    <style name="Widget.Emanata.SheetLabel" parent="">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:layout_marginTop">@dimen/space_3</item>
-        <item name="android:textAppearance">@style/TextAppearance.ComicReader.Label</item>
+        <item name="android:textAppearance">@style/TextAppearance.Emanata.Label</item>
         <item name="android:textColor">?attr/colorOnSurfaceVariant</item>
     </style>
 
     <!-- A single choice as segmented buttons, one always selected. -->
-    <style name="Widget.ComicReader.SheetSegments" parent="">
+    <style name="Widget.Emanata.SheetSegments" parent="">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:layout_marginTop">@dimen/space_1</item>
@@ -101,7 +101,7 @@
         <item name="selectionRequired">true</item>
     </style>
 
-    <style name="Widget.ComicReader.SheetSegment" parent="Widget.Material3.Button.OutlinedButton">
+    <style name="Widget.Emanata.SheetSegment" parent="Widget.Material3.Button.OutlinedButton">
         <item name="android:layout_width">0dp</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:layout_weight">1</item>
@@ -111,7 +111,7 @@
     </style>
 
     <!-- A choice from a list: the choice shown, a tap opens the list. -->
-    <style name="Widget.ComicReader.SheetPicker" parent="Widget.Material3.Button.OutlinedButton">
+    <style name="Widget.Emanata.SheetPicker" parent="Widget.Material3.Button.OutlinedButton">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:layout_marginTop">@dimen/space_1</item>
@@ -123,7 +123,7 @@
 
     <!-- ================= Reader chrome ================= -->
     <!-- Always-dark overlay for the reader bars, whatever the app theme. -->
-    <style name="ThemeOverlay.ComicReader.Reader" parent="ThemeOverlay.Material3.Dark">
+    <style name="ThemeOverlay.Emanata.Reader" parent="ThemeOverlay.Material3.Dark">
         <item name="colorOnSurface">@android:color/white</item>
         <item name="colorOnSurfaceVariant">@color/reader_on_surface_dim</item>
         <item name="colorControlNormal">@android:color/white</item>
@@ -131,6 +131,6 @@
     </style>
 
     <!-- The reader overflow menu follows the app's day/night setting. -->
-    <style name="ThemeOverlay.ComicReader.Popup" parent="ThemeOverlay.Material3.Light" />
+    <style name="ThemeOverlay.Emanata.Popup" parent="ThemeOverlay.Material3.Light" />
 
 </resources>

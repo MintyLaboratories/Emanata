@@ -22,7 +22,7 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34])
 class ModelTextTest {
 
-    private val context = ApplicationProvider.getApplicationContext<Application>().apply { setTheme(R.style.Theme_ComicReader) }
+    private val context = ApplicationProvider.getApplicationContext<Application>().apply { setTheme(R.style.Theme_Emanata) }
 
     private fun blurb(id: String) = ModelText.blurb(context, ModelCatalog.byId(id)!!)
 

@@ -2,7 +2,7 @@
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
-    style="@style/Widget.ComicReader.Card"
+    style="@style/Widget.Emanata.Card"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_marginHorizontal="@dimen/list_side_padding"
@@ -30,7 +30,7 @@
                 android:layout_height="match_parent"
                 android:contentDescription="@null"
                 android:scaleType="center"
-                app:shapeAppearanceOverlay="@style/Shape.ComicReader.Thumb" />
+                app:shapeAppearanceOverlay="@style/Shape.Emanata.Thumb" />
 
             <ImageView
                 android:id="@+id/placeholder"
@@ -67,7 +67,7 @@
                 android:id="@+id/title"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:textAppearance="@style/TextAppearance.ComicReader.ItemTitle" />
+                android:textAppearance="@style/TextAppearance.Emanata.ItemTitle" />
 
             <TextView
                 android:id="@+id/subtitle"
@@ -76,7 +76,7 @@
                 android:layout_marginTop="2dp"
                 android:ellipsize="end"
                 android:maxLines="1"
-                android:textAppearance="@style/TextAppearance.ComicReader.ItemSubtitle"
+                android:textAppearance="@style/TextAppearance.Emanata.ItemSubtitle"
                 tools:text="42.1 MB · 24 pages" />
         </LinearLayout>
 

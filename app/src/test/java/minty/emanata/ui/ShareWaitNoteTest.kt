@@ -17,7 +17,7 @@ import org.robolectric.annotation.Config
 class ShareWaitNoteTest {
     @Test
     fun readerNoteSaysWaitingForNetworkLocation() {
-        val context = ContextThemeWrapper(ApplicationProvider.getApplicationContext(), R.style.Theme_ComicReader_Viewer)
+        val context = ContextThemeWrapper(ApplicationProvider.getApplicationContext(), R.style.Theme_Emanata_Viewer)
         val root = LayoutInflater.from(context).inflate(R.layout.activity_viewer, null)
         val note = root.findViewById<TextView>(R.id.viewer_share_wait_text)
         assertEquals("Waiting for network location…", note.text.toString())

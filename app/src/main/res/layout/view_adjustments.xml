@@ -17,7 +17,7 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:text="@string/menu_adjustments"
-            android:textAppearance="@style/TextAppearance.ComicReader.Label"
+            android:textAppearance="@style/TextAppearance.Emanata.Label"
             android:textColor="?attr/colorPrimary" />
 
         <com.google.android.material.button.MaterialButton
@@ -33,7 +33,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="@string/adjust_brightness"
-        android:textAppearance="@style/TextAppearance.ComicReader.Label"
+        android:textAppearance="@style/TextAppearance.Emanata.Label"
         tools:text="Brightness · 0" />
 
     <com.google.android.material.slider.Slider
@@ -51,7 +51,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="@string/adjust_contrast"
-        android:textAppearance="@style/TextAppearance.ComicReader.Label"
+        android:textAppearance="@style/TextAppearance.Emanata.Label"
         tools:text="Contrast · 0" />
 
     <com.google.android.material.slider.Slider
@@ -69,7 +69,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="@string/adjust_saturation"
-        android:textAppearance="@style/TextAppearance.ComicReader.Label"
+        android:textAppearance="@style/TextAppearance.Emanata.Label"
         tools:text="Saturation · 0" />
 
     <com.google.android.material.slider.Slider

@@ -26,7 +26,7 @@ class AiSizeSliderFitTest {
     private fun slider(fontScale: Float, widthDp: Int): AiSizeSlider {
         RuntimeEnvironment.setQualifiers("w400dp-h800dp-xxhdpi")
         RuntimeEnvironment.setFontScale(fontScale)
-        val context = ContextThemeWrapper(ApplicationProvider.getApplicationContext<Application>(), R.style.Theme_ComicReader)
+        val context = ContextThemeWrapper(ApplicationProvider.getApplicationContext<Application>(), R.style.Theme_Emanata)
         val width = (widthDp * context.resources.displayMetrics.density).toInt()
         return AiSizeSlider(context).apply {
             measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))

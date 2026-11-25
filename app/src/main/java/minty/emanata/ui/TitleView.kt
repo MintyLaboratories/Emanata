@@ -110,11 +110,11 @@ class TitleView @JvmOverloads constructor(
 
     init {
         val a = context.obtainStyledAttributes(attrs, ATTRS)
-        val appearance = a.getResourceId(0, R.style.TextAppearance_ComicReader_ItemTitle)
+        val appearance = a.getResourceId(0, R.style.TextAppearance_Emanata_ItemTitle)
         val size = a.getDimension(1, 0f)
         a.recycle()
         titlePaint = paintFrom(appearance).apply { if (size > 0f) textSize = size }
-        detailPaint = paintFrom(R.style.TextAppearance_ComicReader_ItemSubtitle).apply {
+        detailPaint = paintFrom(R.style.TextAppearance_Emanata_ItemSubtitle).apply {
             textSize = titlePaint.textSize * DETAIL_SCALE
             color = MaterialColors.getColor(this@TitleView, com.google.android.material.R.attr.colorOnSurfaceVariant)
             fontFeatureSettings = "tnum"

@@ -19,7 +19,7 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34])
 class GridPickerTest {
 
-    private val context = ContextThemeWrapper(ApplicationProvider.getApplicationContext<Application>(), R.style.Theme_ComicReader)
+    private val context = ContextThemeWrapper(ApplicationProvider.getApplicationContext<Application>(), R.style.Theme_Emanata)
     private val picker = GridPicker(context)
     private var picked: Pair<Int, Int>? = null
 

@@ -34,7 +34,7 @@
             android:layout_height="wrap_content"
             android:ellipsize="end"
             android:maxLines="1"
-            android:textAppearance="@style/TextAppearance.ComicReader.ItemTitle"
+            android:textAppearance="@style/TextAppearance.Emanata.ItemTitle"
             tools:text="Drive A" />
 
         <TextView
@@ -42,7 +42,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:maxLines="1"
-            android:textAppearance="@style/TextAppearance.ComicReader.ItemSubtitle"
+            android:textAppearance="@style/TextAppearance.Emanata.ItemSubtitle"
             tools:text="12 GB free of 64 GB" />
     </LinearLayout>
 </LinearLayout>

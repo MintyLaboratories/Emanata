@@ -14,7 +14,7 @@
         android:background="@drawable/bg_thumb_placeholder"
         android:contentDescription="@string/pages_title"
         android:scaleType="center"
-        app:shapeAppearanceOverlay="@style/Shape.ComicReader.Thumb"
+        app:shapeAppearanceOverlay="@style/Shape.Emanata.Thumb"
         app:strokeWidth="0dp" />
 
     <TextView

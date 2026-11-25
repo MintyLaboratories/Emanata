@@ -46,7 +46,7 @@ class SeekPreviewAdapterTest {
         SeekStrip.Cell(listOf(PageLayout.Part(page, Half.WHOLE)), "${page + 1}", listOf(SeekStrip.DEFAULT_ASPECT), listOf(true))
 
     private fun stripShowing(adapter: SeekPreviewAdapter): RecyclerView {
-        val context = ContextThemeWrapper(ApplicationProvider.getApplicationContext<Application>(), R.style.Theme_ComicReader)
+        val context = ContextThemeWrapper(ApplicationProvider.getApplicationContext<Application>(), R.style.Theme_Emanata)
         return RecyclerView(context).apply {
             layoutManager = LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false)
             this.adapter = adapter

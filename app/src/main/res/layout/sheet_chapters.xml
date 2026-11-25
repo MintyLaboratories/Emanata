@@ -15,7 +15,7 @@
         android:paddingHorizontal="@dimen/space_6"
         android:paddingTop="@dimen/space_6"
         android:paddingBottom="@dimen/space_3"
-        android:textAppearance="@style/TextAppearance.ComicReader.AppTitle"
+        android:textAppearance="@style/TextAppearance.Emanata.AppTitle"
         tools:text="Book" />
 
     <androidx.recyclerview.widget.RecyclerView

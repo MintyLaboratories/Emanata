@@ -129,7 +129,7 @@ class CrumbBar @JvmOverloads constructor(
     }
 
     private fun crumbView(): TextView = TextView(context).apply {
-        setTextAppearance(R.style.TextAppearance_ComicReader_Crumb)
+        setTextAppearance(R.style.TextAppearance_Emanata_Crumb)
         maxLines = 1
         minHeight = dp(MIN_TOUCH_DP)
         val h = dp(12)
@@ -139,7 +139,7 @@ class CrumbBar @JvmOverloads constructor(
     }
 
     private fun separatorView(ahead: Boolean): TextView = TextView(context).apply {
-        setTextAppearance(R.style.TextAppearance_ComicReader_Crumb)
+        setTextAppearance(R.style.TextAppearance_Emanata_Crumb)
         text = "/"
         setTextColor(MaterialColors.getColor(this@CrumbBar, com.google.android.material.R.attr.colorOnSurfaceVariant))
         if (ahead) alpha = AHEAD_ALPHA

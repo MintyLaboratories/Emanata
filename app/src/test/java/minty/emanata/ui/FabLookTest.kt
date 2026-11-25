@@ -22,7 +22,7 @@ class FabLookTest {
         val config = android.content.res.Configuration(app.resources.configuration)
         config.uiMode = (config.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK.inv()) or
             (if (night) android.content.res.Configuration.UI_MODE_NIGHT_YES else android.content.res.Configuration.UI_MODE_NIGHT_NO)
-        return ContextThemeWrapper(app.createConfigurationContext(config), R.style.Theme_ComicReader)
+        return ContextThemeWrapper(app.createConfigurationContext(config), R.style.Theme_Emanata)
     }
 
     private fun Context.color(attr: Int): Int = obtainStyledAttributes(intArrayOf(attr)).use { it.getColor(0, 0) }

@@ -21,7 +21,7 @@
             android:layout_height="match_parent"
             android:contentDescription="@null"
             android:scaleType="center"
-            app:shapeAppearanceOverlay="@style/Shape.ComicReader.Cover" />
+            app:shapeAppearanceOverlay="@style/Shape.Emanata.Cover" />
 
         <ImageView
             android:id="@+id/peek_icon"

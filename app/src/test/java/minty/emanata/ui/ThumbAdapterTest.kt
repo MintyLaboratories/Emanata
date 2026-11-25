@@ -105,7 +105,7 @@ class ThumbAdapterTest {
     }
 
     private fun listShowing(adapter: ThumbAdapter): RecyclerView {
-        val context = ContextThemeWrapper(ApplicationProvider.getApplicationContext<Application>(), R.style.Theme_ComicReader)
+        val context = ContextThemeWrapper(ApplicationProvider.getApplicationContext<Application>(), R.style.Theme_Emanata)
         return RecyclerView(context).apply {
             layoutManager = LinearLayoutManager(context)
             this.adapter = adapter

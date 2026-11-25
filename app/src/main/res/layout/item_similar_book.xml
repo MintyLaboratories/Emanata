@@ -20,7 +20,7 @@
             android:layout_height="match_parent"
             android:contentDescription="@null"
             android:scaleType="center"
-            app:shapeAppearanceOverlay="@style/Shape.ComicReader.Thumb" />
+            app:shapeAppearanceOverlay="@style/Shape.Emanata.Thumb" />
 
         <ImageView
             android:id="@+id/placeholder"

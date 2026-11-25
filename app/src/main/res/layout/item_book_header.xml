@@ -7,7 +7,7 @@
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
-    style="@style/Widget.ComicReader.Card"
+    style="@style/Widget.Emanata.Card"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_marginHorizontal="@dimen/list_side_padding"
@@ -51,7 +51,7 @@
                 android:layout_height="wrap_content"
                 android:ellipsize="end"
                 android:maxLines="1"
-                android:textAppearance="@style/TextAppearance.ComicReader.ItemTitle"
+                android:textAppearance="@style/TextAppearance.Emanata.ItemTitle"
                 tools:text="@string/recent" />
 
             <TextView
@@ -61,7 +61,7 @@
                 android:layout_marginTop="2dp"
                 android:ellipsize="start"
                 android:maxLines="1"
-                android:textAppearance="@style/TextAppearance.ComicReader.ItemSubtitle"
+                android:textAppearance="@style/TextAppearance.Emanata.ItemSubtitle"
                 tools:text="MangaFire (EN)/Teenage Mercenary" />
         </LinearLayout>
 

@@ -24,7 +24,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="@string/menu_reader_settings"
-            android:textAppearance="@style/TextAppearance.ComicReader.ItemTitle"
+            android:textAppearance="@style/TextAppearance.Emanata.ItemTitle"
             android:textSize="17sp" />
 
         <!-- Apply to -->
@@ -35,21 +35,21 @@
             android:orientation="vertical">
 
             <TextView
-                style="@style/Widget.ComicReader.SheetLabel"
+                style="@style/Widget.Emanata.SheetLabel"
                 android:text="@string/sheet_apply_to" />
 
             <com.google.android.material.button.MaterialButtonToggleGroup
                 android:id="@+id/sheet_scope"
-                style="@style/Widget.ComicReader.SheetSegments">
+                style="@style/Widget.Emanata.SheetSegments">
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btn_scope_folder"
-                    style="@style/Widget.ComicReader.SheetSegment"
+                    style="@style/Widget.Emanata.SheetSegment"
                     android:text="@string/scope_folder" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btn_scope_all"
-                    style="@style/Widget.ComicReader.SheetSegment"
+                    style="@style/Widget.Emanata.SheetSegment"
                     android:text="@string/scope_all" />
             </com.google.android.material.button.MaterialButtonToggleGroup>
 
@@ -58,60 +58,60 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_1"
-                android:textAppearance="@style/TextAppearance.ComicReader.ItemSubtitle"
+                android:textAppearance="@style/TextAppearance.Emanata.ItemSubtitle"
                 tools:text="@string/scope_all_hint" />
         </LinearLayout>
 
         <!-- Layout -->
         <TextView
-            style="@style/Widget.ComicReader.SheetSection"
+            style="@style/Widget.Emanata.SheetSection"
             android:text="@string/sheet_layout" />
 
         <TextView
-            style="@style/Widget.ComicReader.SheetLabel"
+            style="@style/Widget.Emanata.SheetLabel"
             android:text="@string/menu_page_mode" />
 
         <com.google.android.material.button.MaterialButtonToggleGroup
             android:id="@+id/sheet_page_mode"
-            style="@style/Widget.ComicReader.SheetSegments">
+            style="@style/Widget.Emanata.SheetSegments">
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_mode_paged"
-                style="@style/Widget.ComicReader.SheetSegment"
+                style="@style/Widget.Emanata.SheetSegment"
                 android:text="@string/page_mode_paged" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_mode_continuous"
-                style="@style/Widget.ComicReader.SheetSegment"
+                style="@style/Widget.Emanata.SheetSegment"
                 android:text="@string/page_mode_continuous" />
         </com.google.android.material.button.MaterialButtonToggleGroup>
 
         <TextView
-            style="@style/Widget.ComicReader.SheetLabel"
+            style="@style/Widget.Emanata.SheetLabel"
             android:text="@string/menu_reading_dir" />
 
         <com.google.android.material.button.MaterialButtonToggleGroup
             android:id="@+id/sheet_dir"
-            style="@style/Widget.ComicReader.SheetSegments">
+            style="@style/Widget.Emanata.SheetSegments">
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_dir_ltr"
-                style="@style/Widget.ComicReader.SheetSegment"
+                style="@style/Widget.Emanata.SheetSegment"
                 android:text="@string/reading_ltr" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_dir_rtl"
-                style="@style/Widget.ComicReader.SheetSegment"
+                style="@style/Widget.Emanata.SheetSegment"
                 android:text="@string/reading_rtl" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_dir_ttb"
-                style="@style/Widget.ComicReader.SheetSegment"
+                style="@style/Widget.Emanata.SheetSegment"
                 android:text="@string/reading_ttb" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_dir_auto"
-                style="@style/Widget.ComicReader.SheetSegment"
+                style="@style/Widget.Emanata.SheetSegment"
                 android:text="@string/reading_auto" />
         </com.google.android.material.button.MaterialButtonToggleGroup>
 
@@ -120,59 +120,59 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/space_1"
-            android:textAppearance="@style/TextAppearance.ComicReader.ItemSubtitle"
+            android:textAppearance="@style/TextAppearance.Emanata.ItemSubtitle"
             tools:text="@string/direction_info" />
 
         <TextView
-            style="@style/Widget.ComicReader.SheetLabel"
+            style="@style/Widget.Emanata.SheetLabel"
             android:text="@string/menu_fit" />
 
         <com.google.android.material.button.MaterialButtonToggleGroup
             android:id="@+id/sheet_fit"
-            style="@style/Widget.ComicReader.SheetSegments">
+            style="@style/Widget.Emanata.SheetSegments">
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_fit_screen"
-                style="@style/Widget.ComicReader.SheetSegment"
+                style="@style/Widget.Emanata.SheetSegment"
                 android:text="@string/fit_screen_short" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_fit_width"
-                style="@style/Widget.ComicReader.SheetSegment"
+                style="@style/Widget.Emanata.SheetSegment"
                 android:text="@string/fit_width_short" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_fit_height"
-                style="@style/Widget.ComicReader.SheetSegment"
+                style="@style/Widget.Emanata.SheetSegment"
                 android:text="@string/fit_height_short" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_fit_stretch"
-                style="@style/Widget.ComicReader.SheetSegment"
+                style="@style/Widget.Emanata.SheetSegment"
                 android:text="@string/menu_fit_stretch" />
         </com.google.android.material.button.MaterialButtonToggleGroup>
 
         <TextView
-            style="@style/Widget.ComicReader.SheetLabel"
+            style="@style/Widget.Emanata.SheetLabel"
             android:text="@string/menu_two_page" />
 
         <com.google.android.material.button.MaterialButtonToggleGroup
             android:id="@+id/sheet_two_page"
-            style="@style/Widget.ComicReader.SheetSegments">
+            style="@style/Widget.Emanata.SheetSegments">
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_two_off"
-                style="@style/Widget.ComicReader.SheetSegment"
+                style="@style/Widget.Emanata.SheetSegment"
                 android:text="@string/two_page_off" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_two_on"
-                style="@style/Widget.ComicReader.SheetSegment"
+                style="@style/Widget.Emanata.SheetSegment"
                 android:text="@string/two_page_on" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_two_landscape"
-                style="@style/Widget.ComicReader.SheetSegment"
+                style="@style/Widget.Emanata.SheetSegment"
                 android:text="@string/two_page_landscape" />
         </com.google.android.material.button.MaterialButtonToggleGroup>
 
@@ -184,21 +184,21 @@
             android:text="@string/menu_shift_pairs" />
 
         <TextView
-            style="@style/Widget.ComicReader.SheetLabel"
+            style="@style/Widget.Emanata.SheetLabel"
             android:text="@string/menu_spreads" />
 
         <com.google.android.material.button.MaterialButtonToggleGroup
             android:id="@+id/sheet_spreads"
-            style="@style/Widget.ComicReader.SheetSegments">
+            style="@style/Widget.Emanata.SheetSegments">
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_spreads_split"
-                style="@style/Widget.ComicReader.SheetSegment"
+                style="@style/Widget.Emanata.SheetSegment"
                 android:text="@string/spreads_split" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_spreads_merge"
-                style="@style/Widget.ComicReader.SheetSegment"
+                style="@style/Widget.Emanata.SheetSegment"
                 android:text="@string/spreads_merge" />
         </com.google.android.material.button.MaterialButtonToggleGroup>
 
@@ -227,7 +227,7 @@
 
         <TextView
             android:id="@+id/sheet_spacing_value"
-            style="@style/Widget.ComicReader.SheetLabel"
+            style="@style/Widget.Emanata.SheetLabel"
             android:text="@string/menu_page_spacing"
             tools:text="Page spacing · 0 dp" />
 
@@ -242,11 +242,11 @@
 
         <!-- Color -->
         <TextView
-            style="@style/Widget.ComicReader.SheetSection"
+            style="@style/Widget.Emanata.SheetSection"
             android:text="@string/sheet_color" />
 
         <TextView
-            style="@style/Widget.ComicReader.SheetLabel"
+            style="@style/Widget.Emanata.SheetLabel"
             android:text="@string/menu_filters" />
 
         <com.google.android.material.chip.ChipGroup
@@ -311,21 +311,21 @@
           the book or its whole folder
         -->
         <TextView
-            style="@style/Widget.ComicReader.SheetSection"
+            style="@style/Widget.Emanata.SheetSection"
             android:text="@string/sheet_ai" />
 
         <com.google.android.material.button.MaterialButtonToggleGroup
             android:id="@+id/sheet_ai_scope"
-            style="@style/Widget.ComicReader.SheetSegments">
+            style="@style/Widget.Emanata.SheetSegments">
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_ai_book"
-                style="@style/Widget.ComicReader.SheetSegment"
+                style="@style/Widget.Emanata.SheetSegment"
                 android:text="@string/ai_scope_book" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_ai_default"
-                style="@style/Widget.ComicReader.SheetSegment"
+                style="@style/Widget.Emanata.SheetSegment"
                 android:text="@string/ai_scope_default" />
         </com.google.android.material.button.MaterialButtonToggleGroup>
 
@@ -336,21 +336,21 @@
             android:orientation="vertical">
 
             <TextView
-                style="@style/Widget.ComicReader.SheetLabel"
+                style="@style/Widget.Emanata.SheetLabel"
                 android:text="@string/ai_kind_label" />
 
             <com.google.android.material.button.MaterialButtonToggleGroup
                 android:id="@+id/sheet_ai_kind"
-                style="@style/Widget.ComicReader.SheetSegments">
+                style="@style/Widget.Emanata.SheetSegments">
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btn_ai_manga"
-                    style="@style/Widget.ComicReader.SheetSegment"
+                    style="@style/Widget.Emanata.SheetSegment"
                     android:text="@string/ai_chain_manga" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btn_ai_other"
-                    style="@style/Widget.ComicReader.SheetSegment"
+                    style="@style/Widget.Emanata.SheetSegment"
                     android:text="@string/ai_chain_other" />
             </com.google.android.material.button.MaterialButtonToggleGroup>
 
@@ -367,40 +367,40 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/space_1"
-            android:textAppearance="@style/TextAppearance.ComicReader.ItemSubtitle"
+            android:textAppearance="@style/TextAppearance.Emanata.ItemSubtitle"
             tools:text="@string/ai_scope_default_hint" />
 
         <TextView
             android:id="@+id/sheet_ai_artifacts_label"
-            style="@style/Widget.ComicReader.SheetLabel"
+            style="@style/Widget.Emanata.SheetLabel"
             android:text="@string/ai_step_artifacts" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/sheet_ai_artifacts"
-            style="@style/Widget.ComicReader.SheetPicker" />
+            style="@style/Widget.Emanata.SheetPicker" />
 
         <TextView
             android:id="@+id/sheet_ai_descreen_label"
-            style="@style/Widget.ComicReader.SheetLabel"
+            style="@style/Widget.Emanata.SheetLabel"
             android:text="@string/ai_step_descreen" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/sheet_ai_descreen"
-            style="@style/Widget.ComicReader.SheetPicker" />
+            style="@style/Widget.Emanata.SheetPicker" />
 
         <TextView
-            style="@style/Widget.ComicReader.SheetLabel"
+            style="@style/Widget.Emanata.SheetLabel"
             android:text="@string/ai_step_upscale" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/sheet_ai_upscale"
-            style="@style/Widget.ComicReader.SheetPicker" />
+            style="@style/Widget.Emanata.SheetPicker" />
 
         <include layout="@layout/view_ai_load" />
 
         <!-- Behavior -->
         <TextView
-            style="@style/Widget.ComicReader.SheetSection"
+            style="@style/Widget.Emanata.SheetSection"
             android:text="@string/sheet_behavior" />
 
         <com.google.android.material.materialswitch.MaterialSwitch
@@ -412,7 +412,7 @@
 
         <TextView
             android:id="@+id/sheet_auto_speed_value"
-            style="@style/Widget.ComicReader.SheetLabel"
+            style="@style/Widget.Emanata.SheetLabel"
             android:text="@string/pref_auto_speed"
             tools:text="Auto-scroll speed · 3 screens/min · 20 s a page" />
 
@@ -440,50 +440,50 @@
             android:text="@string/menu_fullscreen" />
 
         <TextView
-            style="@style/Widget.ComicReader.SheetLabel"
+            style="@style/Widget.Emanata.SheetLabel"
             android:text="@string/menu_orientation" />
 
         <com.google.android.material.button.MaterialButtonToggleGroup
             android:id="@+id/sheet_orientation"
-            style="@style/Widget.ComicReader.SheetSegments">
+            style="@style/Widget.Emanata.SheetSegments">
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_orient_default"
-                style="@style/Widget.ComicReader.SheetSegment"
+                style="@style/Widget.Emanata.SheetSegment"
                 android:text="@string/orientation_default" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_orient_portrait"
-                style="@style/Widget.ComicReader.SheetSegment"
+                style="@style/Widget.Emanata.SheetSegment"
                 android:text="@string/orientation_portrait" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_orient_landscape"
-                style="@style/Widget.ComicReader.SheetSegment"
+                style="@style/Widget.Emanata.SheetSegment"
                 android:text="@string/orientation_landscape" />
         </com.google.android.material.button.MaterialButtonToggleGroup>
 
         <TextView
-            style="@style/Widget.ComicReader.SheetLabel"
+            style="@style/Widget.Emanata.SheetLabel"
             android:text="@string/pref_wide_pages" />
 
         <com.google.android.material.button.MaterialButtonToggleGroup
             android:id="@+id/sheet_wide_pages"
-            style="@style/Widget.ComicReader.SheetSegments">
+            style="@style/Widget.Emanata.SheetSegments">
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_wide_nothing"
-                style="@style/Widget.ComicReader.SheetSegment"
+                style="@style/Widget.Emanata.SheetSegment"
                 android:text="@string/wide_pages_nothing" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_wide_orientation"
-                style="@style/Widget.ComicReader.SheetSegment"
+                style="@style/Widget.Emanata.SheetSegment"
                 android:text="@string/wide_pages_orientation" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_wide_image"
-                style="@style/Widget.ComicReader.SheetSegment"
+                style="@style/Widget.Emanata.SheetSegment"
                 android:text="@string/wide_pages_image" />
         </com.google.android.material.button.MaterialButtonToggleGroup>
 

@@ -63,10 +63,10 @@
         android:layout_width="match_parent"
         android:layout_height="?attr/actionBarSize"
         android:background="@drawable/bg_reader_top"
-        android:theme="@style/ThemeOverlay.ComicReader.Reader"
+        android:theme="@style/ThemeOverlay.Emanata.Reader"
         app:navigationIcon="@drawable/ic_back"
         app:navigationIconTint="@android:color/white"
-        app:popupTheme="@style/ThemeOverlay.ComicReader.Popup"
+        app:popupTheme="@style/ThemeOverlay.Emanata.Popup"
         app:subtitleTextColor="@color/reader_on_surface_dim"
         app:titleTextColor="@android:color/white" />
 
@@ -260,7 +260,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_3"
                 android:text="@string/chapter_end_title"
-                android:textAppearance="@style/TextAppearance.ComicReader.ItemTitle"
+                android:textAppearance="@style/TextAppearance.Emanata.ItemTitle"
                 android:textColor="@android:color/white" />
 
             <TextView

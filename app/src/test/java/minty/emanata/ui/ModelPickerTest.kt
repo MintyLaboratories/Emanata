@@ -44,7 +44,7 @@ import kotlin.math.roundToInt
 class ModelPickerTest {
 
     private val app = ApplicationProvider.getApplicationContext<Application>()
-    private val context = ContextThemeWrapper(app, R.style.Theme_ComicReader)
+    private val context = ContextThemeWrapper(app, R.style.Theme_Emanata)
 
     private val picks = ArrayList<Pair<String?, Boolean>>()
 
@@ -386,7 +386,7 @@ class ModelPickerTest {
     @Test
     fun rowsFitANarrowWindowAtLargeFontSizes() {
         val config = Configuration(app.resources.configuration).apply { fontScale = 2f }
-        val big = ContextThemeWrapper(app.createConfigurationContext(config), R.style.Theme_ComicReader)
+        val big = ContextThemeWrapper(app.createConfigurationContext(config), R.style.Theme_Emanata)
         val p = picker(AiStep.UPSCALE, ctx = big)
         val width = (320 * big.resources.displayMetrics.density).roundToInt()
         val row = rowOf(p, "Anime4K Upscale + Denoise 2×")

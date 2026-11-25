@@ -80,7 +80,7 @@ object SortDialog {
         private val byColumn = column()
         private val thenColumn = column()
         private val summary = TextView(context).apply {
-            setTextAppearance(R.style.TextAppearance_ComicReader_ItemSubtitle)
+            setTextAppearance(R.style.TextAppearance_Emanata_ItemSubtitle)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
             setPadding(0, dp(8), 0, 0)
         }
@@ -148,7 +148,7 @@ object SortDialog {
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
 
         private fun header(@StringRes text: Int) = TextView(context).apply {
-            setTextAppearance(R.style.TextAppearance_ComicReader_Label)
+            setTextAppearance(R.style.TextAppearance_Emanata_Label)
             setTextColor(color(com.google.android.material.R.attr.colorOnSurfaceVariant))
             setText(text)
             setPadding(dp(12), dp(8), dp(12), dp(4))

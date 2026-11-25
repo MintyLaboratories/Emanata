@@ -5,7 +5,7 @@
       Common Material 3 role mapping lives in the Base theme so that the light
       and night variants only need to override the few config-specific items.
     -->
-    <style name="Theme.ComicReader.Base" parent="Theme.Material3.DayNight.NoActionBar">
+    <style name="Theme.Emanata.Base" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="colorPrimary">@color/md_primary</item>
         <item name="colorOnPrimary">@color/md_on_primary</item>
         <item name="colorPrimaryContainer">@color/md_primary_container</item>
@@ -60,9 +60,9 @@
         <item name="colorOnSurfaceInverse">@color/md_inverse_on_surface</item>
         <item name="colorPrimaryInverse">@color/md_inverse_primary</item>
 
-        <item name="shapeAppearanceSmallComponent">@style/Shape.ComicReader.Small</item>
-        <item name="shapeAppearanceMediumComponent">@style/Shape.ComicReader.Medium</item>
-        <item name="shapeAppearanceLargeComponent">@style/Shape.ComicReader.Large</item>
+        <item name="shapeAppearanceSmallComponent">@style/Shape.Emanata.Small</item>
+        <item name="shapeAppearanceMediumComponent">@style/Shape.Emanata.Medium</item>
+        <item name="shapeAppearanceLargeComponent">@style/Shape.Emanata.Large</item>
 
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
@@ -73,14 +73,14 @@
     </style>
 
     <!-- Light -->
-    <style name="Theme.ComicReader" parent="Theme.ComicReader.Base">
+    <style name="Theme.Emanata" parent="Theme.Emanata.Base">
         <item name="android:windowBackground">@color/md_surface</item>
         <item name="android:windowLightStatusBar">true</item>
         <item name="android:windowLightNavigationBar" tools:targetApi="27">true</item>
     </style>
 
     <!-- The reader is always dark-on-black, whatever the app theme. -->
-    <style name="Theme.ComicReader.Viewer" parent="Theme.ComicReader">
+    <style name="Theme.Emanata.Viewer" parent="Theme.Emanata">
         <item name="android:windowBackground">@color/reader_bg</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowLightNavigationBar" tools:targetApi="27">false</item>

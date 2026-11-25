@@ -43,7 +43,7 @@ class LargeBookWarningTest {
     /** Counts the books it is told to open, in every instance. */
     class HostActivity : AppCompatActivity(), LargeBookWarning.Host {
         override fun onCreate(savedInstanceState: Bundle?) {
-            setTheme(R.style.Theme_ComicReader)
+            setTheme(R.style.Theme_Emanata)
             super.onCreate(savedInstanceState)
         }
 

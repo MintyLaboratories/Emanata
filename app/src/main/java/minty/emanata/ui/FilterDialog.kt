@@ -110,7 +110,7 @@ object FilterDialog {
 
         private fun section(@StringRes title: Int) {
             root.addView(TextView(context).apply {
-                setTextAppearance(R.style.TextAppearance_ComicReader_Label)
+                setTextAppearance(R.style.TextAppearance_Emanata_Label)
                 setTextColor(MaterialColors.getColor(root, com.google.android.material.R.attr.colorOnSurfaceVariant))
                 setText(title)
                 setPadding(0, dp(12), 0, dp(2))

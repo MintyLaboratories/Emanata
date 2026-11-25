@@ -58,7 +58,7 @@ class BookAdapterRefreshTest {
         prefs = Prefs(context)
         prefs.thumbnails = false
         val activity = Robolectric.buildActivity(AppCompatActivity::class.java).setup().get()
-        activity.setTheme(R.style.Theme_ComicReader)
+        activity.setTheme(R.style.Theme_Emanata)
         recycler = RecyclerView(activity).apply { layoutManager = LinearLayoutManager(activity) }
         activity.setContentView(FrameLayout(activity).apply { addView(recycler) })
         adapter = BookAdapter(grid = false, prefs = prefs, onClick = {}, onLongClick = {}, onStarClick = {})

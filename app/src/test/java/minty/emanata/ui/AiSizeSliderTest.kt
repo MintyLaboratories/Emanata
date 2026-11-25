@@ -31,7 +31,7 @@ class AiSizeSliderTest {
 
     @Before
     fun setUp() {
-        val context = ContextThemeWrapper(ApplicationProvider.getApplicationContext<Application>(), R.style.Theme_ComicReader)
+        val context = ContextThemeWrapper(ApplicationProvider.getApplicationContext<Application>(), R.style.Theme_Emanata)
         slider = AiSizeSlider(context)
         slider.onChange = { t, done -> changes += t to done }
         slider.measure(View.MeasureSpec.makeMeasureSpec(1000, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))

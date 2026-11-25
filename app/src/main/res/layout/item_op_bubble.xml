@@ -29,7 +29,7 @@
         android:layout_gravity="center"
         app:fabCustomSize="@dimen/op_button_size"
         app:maxImageSize="@dimen/op_icon_size"
-        app:shapeAppearanceOverlay="@style/Shape.ComicReader.Circle" />
+        app:shapeAppearanceOverlay="@style/Shape.Emanata.Circle" />
 
     <ImageView
         android:id="@+id/op_badge"

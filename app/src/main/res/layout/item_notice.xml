@@ -17,13 +17,13 @@
         android:id="@+id/title"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:textAppearance="@style/TextAppearance.ComicReader.ItemTitle"
+        android:textAppearance="@style/TextAppearance.Emanata.ItemTitle"
         tools:text="Apache Commons Compress" />
 
     <TextView
         android:id="@+id/subtitle"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:textAppearance="@style/TextAppearance.ComicReader.ItemSubtitle"
+        android:textAppearance="@style/TextAppearance.Emanata.ItemSubtitle"
         tools:text="Apache License 2.0" />
 </LinearLayout>

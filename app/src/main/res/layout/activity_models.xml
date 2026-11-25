@@ -34,7 +34,7 @@
                 android:layout_height="wrap_content"
                 android:paddingHorizontal="16dp"
                 android:text="@string/ai_models_intro"
-                android:textAppearance="@style/TextAppearance.ComicReader.ItemSubtitle" />
+                android:textAppearance="@style/TextAppearance.Emanata.ItemSubtitle" />
 
             <TextView
                 android:id="@+id/models_used"
@@ -42,7 +42,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
                 android:paddingHorizontal="16dp"
-                android:textAppearance="@style/TextAppearance.ComicReader.ItemSubtitle" />
+                android:textAppearance="@style/TextAppearance.Emanata.ItemSubtitle" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/models_import"
@@ -59,7 +59,7 @@
                 android:layout_height="wrap_content"
                 android:paddingHorizontal="16dp"
                 android:text="@string/ai_import_hint"
-                android:textAppearance="@style/TextAppearance.ComicReader.ItemSubtitle" />
+                android:textAppearance="@style/TextAppearance.Emanata.ItemSubtitle" />
         </LinearLayout>
     </ScrollView>
 

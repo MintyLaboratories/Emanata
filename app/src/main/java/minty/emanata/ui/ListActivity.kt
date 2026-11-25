@@ -1,0 +1,3617 @@
+package minty.emanata.ui
+
+import android.Manifest
+import android.annotation.SuppressLint
+import android.content.Intent
+import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
+import android.content.res.ColorStateList
+import android.content.res.Configuration
+import android.net.Uri
+import android.provider.OpenableColumns
+import android.os.Build
+import android.os.Bundle
+import android.os.Environment
+import android.os.SystemClock
+import android.util.Log
+import android.util.LruCache
+import android.provider.Settings
+import android.text.InputType
+import android.view.Menu
+import android.view.MenuItem
+import android.view.MotionEvent
+import android.view.View
+import android.view.ViewGroup
+import android.widget.CheckBox
+import android.widget.EditText
+import android.widget.FrameLayout
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.PopupWindow
+import android.widget.ProgressBar
+import android.widget.TextView
+import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
+import androidx.appcompat.app.AlertDialog
+import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.widget.SearchView
+import androidx.coordinatorlayout.widget.CoordinatorLayout
+import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.accessibility.AccessibilityNodeInfoCompat.AccessibilityActionCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.core.view.doOnPreDraw
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.lifecycle.withResumed
+import androidx.lifecycle.withStarted
+import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.appbar.MaterialToolbar
+import com.google.android.material.bottomsheet.BottomSheetBehavior
+import com.google.android.material.bottomsheet.BottomSheetDialog
+import com.google.android.material.chip.Chip
+import com.google.android.material.color.MaterialColors
+import com.google.android.material.shape.MaterialShapeDrawable
+import com.google.android.material.floatingactionbutton.FloatingActionButton
+import com.google.android.material.snackbar.Snackbar
+import com.google.android.material.tabs.TabLayout
+import minty.emanata.R
+import minty.emanata.ai.CoverTextDetectors
+import minty.emanata.compact.OutputMarks
+import minty.emanata.compact.PackFolders
+import minty.emanata.compact.RebuildTargets
+import minty.emanata.data.BookEntry
+import minty.emanata.data.BookFactsCache
+import minty.emanata.data.Bookmark
+import minty.emanata.data.Crumb
+import minty.emanata.data.EntryType
+import minty.emanata.data.EntryValues
+import minty.emanata.data.FavoriteClassifier
+import minty.emanata.data.FavoriteKind
+import minty.emanata.data.FavoriteKindCache
+import minty.emanata.data.FavoriteLabels
+import minty.emanata.data.FileStat
+import minty.emanata.data.FolderReads
+import minty.emanata.data.FolderSize
+import minty.emanata.data.ForwardCrumbs
+import minty.emanata.data.HistoryItem
+import minty.emanata.data.Library
+import minty.emanata.data.LibraryList
+import minty.emanata.data.LibraryFilter
+import minty.emanata.data.BookId
+import minty.emanata.data.BookIds
+import minty.emanata.data.Xxh3
+import minty.emanata.data.BookRef
+import minty.emanata.data.LibrarySnapshot
+import minty.emanata.data.LibrarySort
+import minty.emanata.data.ListSettings
+import minty.emanata.data.LocationSpace
+import minty.emanata.data.MissingFolder
+import minty.emanata.data.MoreAction
+import minty.emanata.data.Prefs
+import minty.emanata.data.Presence
+import minty.emanata.data.PresenceCheck
+import minty.emanata.data.RemovalNotices
+import minty.emanata.data.ResumeMode
+import minty.emanata.data.RingOption
+import minty.emanata.data.SettingsRepository
+import minty.emanata.data.SortKey
+import minty.emanata.data.SortValues
+import minty.emanata.data.StartupLocation
+import minty.emanata.data.StorageRoot
+import minty.emanata.data.StorageRoots
+import minty.emanata.data.TabSort
+import minty.emanata.data.TabView
+import minty.emanata.data.ToolbarButton
+import minty.emanata.data.withDetectedDirection
+import minty.emanata.data.Years
+import minty.emanata.files.BookUris
+import minty.emanata.files.FileClipboard
+import minty.emanata.files.FileSpaces
+import minty.emanata.files.FileWork
+import minty.emanata.files.Transfer
+import minty.emanata.net.NetPolicy
+import minty.emanata.net.NetWork
+import minty.emanata.net.RemoteException
+import minty.emanata.net.RemoteFile
+import minty.emanata.net.RemoteStat
+import minty.emanata.net.Remotes
+import minty.emanata.reader.BookFactsReader
+import minty.emanata.util.AppDispatchers
+import minty.emanata.util.FileUtils
+import minty.emanata.util.Formats
+import minty.emanata.util.NaturalOrder
+import minty.emanata.util.Timing
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.selects.select
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import java.io.File
+
+class ListActivity : AppCompatActivity(), LocationSheet.Host, TabDialogFragment.Host, LargeBookWarning.Host {
+
+    private lateinit var prefs: Prefs
+    private lateinit var library: Library
+    private lateinit var settings: SettingsRepository
+
+    /** The settings the screen currently shows; changes are diffed against it. */
+    private lateinit var applied: ListSettings
+    private lateinit var adapter: BookAdapter
+    private lateinit var recycler: RecyclerView
+    private lateinit var toolbar: MaterialToolbar
+    private lateinit var tabs: TabLayout
+    private lateinit var pathbar: CrumbBar
+    private lateinit var fab: FloatingActionButton
+
+    /** What [fab] does now; null while it is hidden. */
+    private var fabShows: SelectionActions.Fab? = null
+
+    /** The quick view options a long press on the grid/list button fans out. */
+    internal val viewRing = ViewRingOverlay(this)
+    private val ringLabels = RingLabels(this)
+
+    /** Where the finger on [fab] is in the window, while one is down. */
+    private var fabFinger: Pair<Float, Float>? = null
+
+    /** Whether [fab]'s touches go to the view ring till the finger lifts. */
+    private var ringFollows = false
+
+    /** [fab]'s place in the window, read on each of its touches. */
+    private val fabAt = IntArray(2)
+
+    /** The items selected: selecting swaps the toolbar for [selectionBar] and shows [selectionActions]. */
+    internal val selection = Selection()
+
+    /** X, "n selected" with their size, and Select all, in the toolbar's place while selecting. */
+    private lateinit var selectionBar: MaterialToolbar
+
+    /** The floating bar of what the selection can do, centered at the bottom. */
+    private lateinit var selectionActions: LinearLayout
+
+    /** The bar's buttons, by what they do. */
+    private val barViews = LinkedHashMap<SelectionActions.Bar, View>()
+
+    /** The selection's ⋮ menu while it shows. */
+    private var morePopup: PopupWindow? = null
+
+    /** Looking at what the folders selected hold before the ⋮ menu shows. */
+    internal var moreLook: Job? = null
+        private set
+
+    /** The ⋮ menu's own items, and its "Repack ›" submenu's, while it shows: one of them at a time. */
+    private var moreMain: ViewGroup? = null
+    private var moreSub: ViewGroup? = null
+
+    /** Above [fab]: a Paste bubble for each pick ([FileClipboard]) and a bubble for each operation queued. */
+    internal lateinit var stack: OperationStack
+    internal lateinit var fileActions: FileActions
+        private set
+    private lateinit var bookShare: BookShare
+
+    /** Whether device items checked since the list was made are there, by path ([isThere]). */
+    private val present = HashMap<String, Boolean>()
+
+    /** Finds whether items in Favorites, History and Bookmarks are where they were last seen; tests stand in their own. */
+    internal var presenceCheck = PresenceCheck.live()
+
+    /** What was found for each item Favorites, History or Bookmarks lists, by path. */
+    private val presences = HashMap<String, PresenceCheck.Found>()
+
+    /** Asks shares whether the items listed are there ([checkPresence]). */
+    internal var presenceJob: Job? = null
+        private set
+
+    /** The sheet of a missing item while it shows ([showMissing]). */
+    internal var missingSheet: BottomSheetDialog? = null
+
+    /** Lists the tab again on return from "Forget missing books". */
+    private var relistOnResume = false
+
+    private lateinit var filterChip: Chip
+    private lateinit var calibration: CalibrationBanner
+    private lateinit var peek: PeekOverlay
+    private lateinit var pinch: PinchPeek
+
+    /** A detached "Recent" row, measured to size grid rows around the real one. */
+    private var headerProbe: View? = null
+
+    /** A detached section header, measured to size grid rows around the real ones. */
+    private var sectionProbe: View? = null
+
+    /** Cells in each Favorites section shown, 0 for a collapsed one; empty when not grouped. */
+    private var sectionItems: List<Int> = emptyList()
+
+    /** The tab and view the list is laid out for ([applyView]); null before the first layout. */
+    private var shownTab: Int? = null
+    private var shownView: TabView? = null
+
+    /**
+     * Where the list was in the layout it last switched away from ([applyLayoutManager]), to switch back to;
+     * null once the reader scrolls, the items change or another tab or folder shows.
+     */
+    private var switchBack: Place? = null
+
+    /** True while a switch between grid and list scrolls the new layout into place. */
+    private var placing = false
+
+    /** A row shown first: its first item, where the row starts ([offset], negative above the list's top) and its height. */
+    private data class Place(val position: Int, val offset: Int, val height: Int)
+
+    /** What the rows shown were listed with ([launchListing]) and ordered by ([applyFilterAndSort]); null before. */
+    private var listedWith: Listing? = null
+    private var sortedWith: Sorting? = null
+
+    /** The settings a listing of tab [mode] depends on. */
+    private data class Listing(val mode: Int, val showHidden: Boolean, val shortenPrefixes: Boolean)
+
+    /** The settings the order and sections of tab [mode] depend on. */
+    private data class Sorting(val mode: Int, val sort: TabSort, val filter: LibraryFilter, val grouped: Boolean, val detectDirection: Boolean)
+    private lateinit var progress: ProgressBar
+    private lateinit var emptyView: LinearLayout
+    private lateinit var emptyIcon: ImageView
+    private lateinit var emptyText: TextView
+    private lateinit var emptySubtitle: TextView
+    private lateinit var retryButton: View
+
+    /** Why the folder browsed could not be listed (its share is unreachable); null when it was. */
+    private var listError: RemoteException? = null
+
+    /** Says a share's kept listing shows because the share failed, with Retry; gone with the next listing. */
+    private var keptNote: Snackbar? = null
+
+    /**
+     * The last note on share books held back from the facts ([showFactsNote]), with why. Held here:
+     * Material keeps a note waiting behind another only weakly, so one nothing holds can be
+     * collected before it shows.
+     */
+    private var factsNote: Pair<NetPolicy.Why, Snackbar>? = null
+
+    private var currentDir: File? = null
+
+    /** The deepest folder of the branch browsed, shown as forward crumbs past [currentDir]. */
+    private var trail: String? = null
+
+    /** Mounted storage volumes, refreshed whenever the screen resumes. */
+    private var roots: List<StorageRoot> = emptyList()
+
+    /** Lists the storage roots; tests stand in drives. */
+    internal var listRoots: () -> List<StorageRoot> = { StorageRoots.list(this) }
+
+    /** Whether a folder can be written; tests stand in read-only ones. Blocking. */
+    internal var canWrite: (File) -> Boolean = { it.canWrite() }
+
+    /** A drive plugged in that the location picker has not shown yet. */
+    private var pluggedDrive: String? = null
+    private var mode = TAB_BROWSE
+    private var query = ""
+    private var resumedOnce = false
+    private var started = false
+
+    /** The state to come back to after a recreate, until [startUp] uses it. */
+    private var restored: Bundle? = null
+
+    /** Overrides the startup tab setting for the first [startUp]. */
+    private var startTab: Int? = null
+
+    /** True when the app is starting afresh: the first [startUp] offers the book read last ([offerResume]). */
+    private var appStart = false
+
+    /** The startup folder's share being waited for ([openStartDirectory]), kept across a recreate. */
+    private val startupWait: StartupWait by viewModels()
+
+    /** The startup offer ([offerResume]) while it waits for an answer; asked again after a recreate. */
+    private var resumeOffer: AlertDialog? = null
+
+    /** A folder handed in by another app, browsed by the first [startUp] instead of the startup location. */
+    private var incomingDir: File? = null
+    /** The options menu shown, so searching can hide the other toolbar buttons without rebuilding it. */
+    private var menu: Menu? = null
+
+    /** The search field is open. */
+    private var searching = false
+    private var deepJob: Job? = null
+    private var deepResults: List<BookEntry>? = null
+    private val allEntries = ArrayList<BookEntry>()
+
+    /** Known sections of the favorites shown; a missing path is still being classified. */
+    private var favoriteKinds: Map<String, FavoriteKind> = emptyMap()
+
+    /** Classifying the favorites shown ([classifyPending]). */
+    internal var classifyJob: Job? = null
+        private set
+
+    private lateinit var factsCache: BookFactsCache
+
+    /** Reading [factsCache] from storage as the screen is made; tests wait for it. */
+    internal var factsLoad: Job? = null
+        private set
+
+    /** Folder totals found so far, by path. */
+    private val folderSizes = HashMap<String, Long>()
+
+    /** Books that could not be read, by path, with the size they failed at; retried next launch. */
+    private val factsFailed = HashMap<String, Long>()
+
+    /** Finds values the sort needs in the background ([scheduleFacts]). */
+    internal var factsJob: Job? = null
+        private set
+
+    /** What [factsJob] covers while it runs. */
+    private var factsWork: FactsWork? = null
+
+    /** The facts job waiting at [awaitStartedForFacts], if any. */
+    private var factsGated: Job? = null
+
+    /** True while [factsJob] waits for the screen to be started; tests wait for it. */
+    internal val factsAwaitingStart get() = factsGated?.isActive == true
+
+    /** Counts listings shown, so background work knows which one it serves. */
+    private var listing = 0
+
+    /** The values the list was last sorted by. */
+    private var sortValues: SortValues? = null
+
+    /** The listing being loaded; a newer one cancels it, so only the latest is shown. */
+    internal var listJob: Job? = null
+        private set
+
+    /** Compact or Make compatible finding the books in selected folders; taps wait for it, and ending the selection stops it. */
+    private var rebuildWalk: Job? = null
+
+    /** Keeps the "Recent" row on the book opened last, as the reader records it, and notes [listsChangedAway]. */
+    private var listWatch: AutoCloseable? = null
+
+    /** True when the favorites, history or bookmarks were written while out of sight (Settings, the reader): Favorites, History and Bookmarks list again on return. */
+    private var listsChangedAway = false
+    private lateinit var kindCache: FavoriteKindCache
+
+    /** Follows drives as they are plugged in and pulled out, while started. */
+    private lateinit var storageWatcher: StorageWatcher
+    private val shown = ArrayList<BookEntry>()
+
+    /** The series name left out of titles in the Set browsed, or null. */
+    private var setPrefix: String? = null
+
+    /** Kinds of folders browsed that their listing did not settle, with the modification time found at. */
+    private val folderKinds = LruCache<String, Pair<Long, FavoriteKind>>(256)
+
+    private val permissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
+            // Only read access is required to browse; write access (old Android) is a bonus.
+            if (result[Manifest.permission.READ_EXTERNAL_STORAGE] == true) startUp()
+        }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        prefs = Prefs(this)
+        library = Library(this)
+        settings = SettingsRepository.get(this)
+        kindCache = FavoriteKindCache(this)
+        factsCache = BookFactsCache(this)
+        listWatch = library.watchLists { list ->
+            if (list == LibraryList.HISTORY && started && mode == TAB_BROWSE) updateRecentHeader()
+            if (!lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) listsChangedAway = true
+        }
+        factsLoad = lifecycleScope.launch {
+            withContext(AppDispatchers.io) { factsCache.load() }
+            // A list shown before the facts were in sorts again with them.
+            if (allEntries.isNotEmpty()) applyFilterAndSort()
+        }
+        applied = settings.listNow()
+        setContentView(R.layout.activity_list)
+
+        toolbar = findViewById(R.id.toolbar)
+        tabs = findViewById(R.id.tabs)
+        pathbar = findViewById(R.id.pathbar)
+        recycler = findViewById(R.id.recycler)
+        fab = findViewById(R.id.fab)
+        selectionBar = findViewById(R.id.selection_bar)
+        selectionActions = findViewById(R.id.selection_actions)
+        stack = OperationStack(this, findViewById(R.id.operation_stack), fab, ::pasteInto) {
+            fileActions.drop(it)
+            toast(R.string.paste_canceled)
+        }
+        stack.setLeftHanded(prefs.leftHanded)
+        filterChip = findViewById(R.id.filter_chip)
+        calibration = CalibrationBanner(this, findViewById(R.id.calibration_banner)) {
+            hasWindowFocus() && hasStorageAccess() && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+        }
+        filterChip.setOnClickListener { TabDialogFragment.show(this, TabDialogFragment.Kind.FILTER, tabName()) }
+        filterChip.setOnCloseIconClickListener {
+            prefs.setFilter(tabName(), LibraryFilter.NONE)
+            showCurrentContent()
+        }
+        filterChip.closeIconContentDescription = getString(R.string.filter_clear)
+        progress = findViewById(R.id.progress)
+        emptyView = findViewById(R.id.empty_view)
+        emptyIcon = findViewById(R.id.empty_icon)
+        emptyText = findViewById(R.id.empty_text)
+        emptySubtitle = findViewById(R.id.empty_subtitle)
+        retryButton = findViewById(R.id.empty_retry)
+        retryButton.setOnClickListener { retryListing() }
+
+        setSupportActionBar(toolbar)
+        supportActionBar?.setDisplayShowTitleEnabled(true)
+        toolbar.setTitle(R.string.app_name)
+
+        adapter = BookAdapter(
+            grid = view.grid,
+            prefs = prefs,
+            onClick = { onEntryClick(it) },
+            onLongClick = { onEntryLongClick(it) },
+            onStarClick = { if (selection.active) toggleSelected(it) else toggleFavorite(it) }
+        )
+        adapter.isSelected = { it in selection }
+        adapter.onSectionClick = { toggleSection(it.kind) }
+        // A place kept for switching back would show other items.
+        adapter.onRowsMoved = { switchBack = null }
+        adapter.hiddenPages = library::hiddenAll
+        adapter.firstLayerOnly = settings.list.value.thrift.firstLayerCovers
+        // Folder peeks from list rows reuse the grid's covers at this size.
+        adapter.onGridCover = { w, h -> prefs.setGridCover(resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE, w, h) }
+        recycler.adapter = adapter
+        // Laid out for the tab as its view is: the first start finds nothing to catch up on.
+        applyView()
+        setUpPeek()
+        recycler.setHasFixedSize(false)
+        recycler.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+            override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+                // Scrolled by the reader: switching goes on from where the list is now.
+                if (dy != 0 && !placing) switchBack = null
+            }
+        })
+        recycler.addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+            val widthChanged = right - left != oldRight - oldLeft
+            // The keyboard shrinks the list while searching: cells keep their size.
+            val heightChanged = bottom - top != oldBottom - oldTop && !keyboardVisible()
+            // Not from inside a layout pass: resizing cells rebinds them.
+            if (widthChanged || heightChanged) recycler.post { updateCellSize() }
+        }
+
+        tabs.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
+            override fun onTabSelected(tab: TabLayout.Tab) = onTabChanged(tab.position)
+
+            override fun onTabUnselected(tab: TabLayout.Tab) {
+                // Intentionally empty: only the newly selected tab needs handling.
+            }
+
+            override fun onTabReselected(tab: TabLayout.Tab) {
+                recycler.scrollToPosition(0)
+            }
+        })
+
+        fab.setOnClickListener { onFabClick() }
+        fab.setOnLongClickListener { openViewRing() }
+        fab.setOnTouchListener { v, e -> onFabTouch(v, e) }
+        viewRing.onTap = ::onRingTap
+        viewRing.onLongTap = ::onRingLongTap
+        setUpSelection()
+        placeButton()
+        fileActions = FileActions(this, library, prefs, ::locationName, ::fileWorkDone, {}, ::folderName)
+        bookShare = BookShare(this, prefs) { adapter.shownCover(recycler, it.path) }
+        updateFab()
+        pathbar.visibility = if (prefs.listPathView) View.VISIBLE else View.GONE
+        pathbar.onCrumbClick = { openCrumb(it) }
+        pathbar.onLocationsClick = { showRootChooser() }
+        roots = listRoots()
+        storageWatcher = StorageWatcher(this) { refreshRoots() }
+
+        // Settings changed here, in the settings screen or anywhere else apply live;
+        // changes made while this screen was stopped arrive when it starts again,
+        // checked against the stored settings rather than what the feed last brought.
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                settings.list.collect { applySettings(settings.listNow()) }
+            }
+        }
+        // Covers on screen are made again when the cover text detector's model arrives.
+        lifecycleScope.launch {
+            val detectors = CoverTextDetectors.shared(this@ListActivity)
+            var seen = detectors.changes.value
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                detectors.changes.collect {
+                    if (it != seen) {
+                        seen = it
+                        adapter.notifyDataSetChanged()
+                    }
+                }
+            }
+        }
+
+        restored = savedInstanceState
+        // What another app hands in is shown on Browse, not on the startup tab; a
+        // recreate restores the screen instead of handling it again.
+        if (savedInstanceState == null) {
+            incomingDir = handleIncoming(intent)
+            if (intent.data != null) startTab = TAB_BROWSE
+            appStart = intent.data == null
+        }
+
+        if (!hasStorageAccess()) {
+            requestStorageAccess()
+        } else {
+            startUp()
+        }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putInt(STATE_MODE, mode)
+        currentDir?.let { outState.putString(STATE_DIR, it.absolutePath) }
+        trail?.let { outState.putString(STATE_TRAIL, it) }
+        if (resumeOffer?.isShowing == true) outState.putBoolean(STATE_OFFER, true)
+        if (selection.active) outState.putStringArrayList(STATE_SELECTED, ArrayList(selection.keys))
+    }
+
+    override fun onResume() {
+        super.onResume()
+        applyStatusBarSetting()
+        // A drive may have come or gone while stopped.
+        val left = refreshRoots()
+        showPluggedDrive()
+        if (left) return
+        if (!hasStorageAccess()) return
+        calibration.update()
+        if (!resumedOnce) {
+            // Right after onCreate's listing, or after access was granted to start up with.
+            resumedOnce = true
+            if (!started) startUp()
+            return
+        }
+        // Refresh so files added/removed outside the app (or from the viewer)
+        // appear immediately.
+        if (mode == TAB_BROWSE) currentDir?.let { loadDirectory(it) }
+        else if (relistOnResume || listsChangedAway) refreshCurrent()
+        relistOnResume = false
+        listsChangedAway = false
+    }
+
+    /** The first calibration's screen waits for the library to show, dialogs over it gone. */
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) calibration.update()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // What changed elsewhere shows before the first frame, whatever the settings feed brings.
+        showCurrentView()
+        showCurrentContent()
+        adapter.stopped = false
+        storageWatcher.start()
+        calibration.start()
+        NetPolicy.listen(netChanged)
+        adapter.retryHeld()
+    }
+
+    override fun onStop() {
+        viewRing.close(animate = false)
+        adapter.stopped = true
+        storageWatcher.stop()
+        calibration.stop()
+        NetPolicy.unlisten(netChanged)
+        super.onStop()
+    }
+
+    /** Covers held back ([NetPolicy]) are asked for again once the connection or a share's speed changes. */
+    private val netChanged: () -> Unit = { runOnUiThread { if (!isDestroyed) adapter.retryHeld() } }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        listWatch?.close()
+        resumeOffer?.dismiss()
+        missingSheet?.dismiss()
+        stack.release()
+        hideMore()
+        peek.hide()
+        adapter.release()
+    }
+
+    /**
+     * Lists the storage roots again ([now]). When the drive of the folder being browsed is
+     * gone, says so and goes to the device's storage; returns true then. Otherwise
+     * the crumbs and an open location picker follow the new list. A drive plugged in
+     * opens the location picker with it highlighted, at once in the foreground, else
+     * on the next return ([showPluggedDrive]).
+     */
+    internal fun refreshRoots(now: List<StorageRoot> = listRoots()): Boolean {
+        val before = roots
+        roots = now
+        LocationSheet.find(this)?.update(roots)
+        if (roots == before) return false
+        StorageRoot.added(before, roots)?.let { pluggedDrive = it.path }
+        if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) showPluggedDrive()
+        val dir = currentDir ?: return false
+        val gone = StorageRoot.removed(dir.absolutePath, before, roots)
+        if (gone != null) {
+            // The reader closing a book on this drive has just said so.
+            if (!RemovalNotices.alreadyTold(gone)) toast(getString(R.string.location_removed, gone.name))
+            trail = null
+            currentDir = null
+            if (mode == TAB_BROWSE && hasStorageAccess()) {
+                loadDirectory(File(roots.first().path))
+                return true
+            }
+            return false
+        }
+        if (mode == TAB_BROWSE) showCrumbs(dir)
+        return false
+    }
+
+    /** Re-applies whatever changed since the settings last shown. */
+    private fun applySettings(s: ListSettings) {
+        // Checked against the screen, not the settings last heard: the list follows whatever it missed.
+        showCurrentView()
+        showCurrentContent()
+        val old = applied
+        if (old == s) return
+        applied = s
+        adapter.firstLayerOnly = s.thrift.firstLayerCovers
+        if (s.showHidden != old.showHidden) invalidateOptionsMenu()
+        if (s.thumbnails != old.thumbnails || s.charset != old.charset ||
+            s.linearLight != old.linearLight || s.thumbFit != old.thumbFit || s.cropAnchor != old.cropAnchor ||
+            s.thumbScaling.shrinkKey != old.thumbScaling.shrinkKey
+        ) {
+            adapter.notifyDataSetChanged()
+        }
+        if (s.pathView != old.pathView && mode == TAB_BROWSE) {
+            pathbar.visibility = if (s.pathView) View.VISIBLE else View.GONE
+        }
+        if (s.statusBar != old.statusBar) applyStatusBarSetting()
+        if (s.toolbarButtons != old.toolbarButtons) invalidateOptionsMenu()
+        // Through the selection: with items selected the button shows what the bar allows.
+        if (s.quickFab != old.quickFab || s.fabTap != old.fabTap || s.fabOne != old.fabOne || s.fabMany != old.fabMany) updateSelection()
+        if (s.leftHanded != old.leftHanded) stack.setLeftHanded(s.leftHanded)
+    }
+
+    private fun applyStatusBarSetting() {
+        val controller = WindowCompat.getInsetsController(window, window.decorView)
+        if (prefs.listStatusBar) {
+            controller.show(WindowInsetsCompat.Type.statusBars())
+        } else {
+            controller.hide(WindowInsetsCompat.Type.statusBars())
+            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
+    }
+
+    // ------------------------------------------------------------------ storage
+
+    private fun hasStorageAccess(): Boolean =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Environment.isExternalStorageManager()
+        } else {
+            ContextCompat.checkSelfPermission(
+                this, Manifest.permission.READ_EXTERNAL_STORAGE
+            ) == PackageManager.PERMISSION_GRANTED
+        }
+
+    private fun requestStorageAccess() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            AlertDialog.Builder(this)
+                .setMessage(R.string.all_files_access)
+                .setPositiveButton(R.string.grant_access) { _, _ ->
+                    runCatching {
+                        startActivity(
+                            Intent(
+                                Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                                Uri.parse("package:$packageName")
+                            )
+                        )
+                    }.onFailure {
+                        startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+                    }
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        } else {
+            val wanted = if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
+                arrayOf(
+                    Manifest.permission.READ_EXTERNAL_STORAGE,
+                    Manifest.permission.WRITE_EXTERNAL_STORAGE
+                )
+            } else {
+                arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+            }
+            permissionLauncher.launch(wanted)
+        }
+    }
+
+    /**
+     * Opens the screen as it was before a recreate, else on the startup tab with
+     * Browse behind it at the folder handed in, or else the startup location.
+     */
+    private fun startUp() {
+        val state = restored
+        restored = null
+        val savedDir = state?.getString(STATE_DIR)?.let { Remotes.file(it) }?.takeIf { it.isDirectory }
+        trail = state?.getString(STATE_TRAIL)
+        // Selected again once listed.
+        state?.getStringArrayList(STATE_SELECTED)?.let { selection.restore(it) }
+        val tab = state?.getInt(STATE_MODE, TAB_BROWSE) ?: startTab ?: tabOf(prefs.startupTab)
+        startTab = null
+        started = true
+        val dir = savedDir ?: incomingDir
+        incomingDir = null
+        if (appStart || state?.getBoolean(STATE_OFFER) == true) {
+            appStart = false
+            offerResume()
+        }
+        if (tab == TAB_BROWSE) {
+            if (dir != null) loadDirectory(dir) else openStartDirectory()
+            keepTryingBehind()
+            return
+        }
+        currentDir = dir
+        keepTryingBehind()
+        if (dir == null) {
+            lifecycleScope.launch {
+                val start = withContext(AppDispatchers.io) { startDirectory() }
+                if (currentDir == null) currentDir = start
+            }
+        }
+        when (tab) {
+            TAB_FAVORITES -> showFavorites()
+            TAB_HISTORY -> showHistory()
+            else -> showBookmarks()
+        }
+    }
+
+    /**
+     * As the app starts, reopens the book read last where it was left, asking first unless
+     * the setting says always: Yes / No, with "Don't ask again" making the answer the
+     * setting ([ResumeMode.afterAnswer]). Nothing is offered for a finished book, nor for
+     * one that is gone.
+     */
+    private fun offerResume() {
+        val mode = prefs.startupResume
+        if (mode == ResumeMode.NO) return
+        val last = library.history().firstOrNull { it.path.isNotEmpty() } ?: return
+        if (library.isRead(last.id) || Remotes.isOrphan(last.path)) return
+        val file = Remotes.file(last.path, askNetwork = false)
+        if (!file.exists()) return
+        val page = last.page.coerceAtLeast(0)
+        if (mode == ResumeMode.YES) {
+            openViewer(file, page)
+            return
+        }
+        val extra = layoutInflater.inflate(R.layout.dialog_resume, null)
+        val dontAsk = extra.findViewById<CheckBox>(R.id.resume_dont_ask)
+        fun answer(resume: Boolean) {
+            prefs.startupResume = prefs.startupResume.afterAnswer(resume, dontAsk.isChecked)
+            if (resume) openViewer(file, page)
+        }
+        val message = if (last.total > 0) {
+            val percent = ((page + 1) * 100f / last.total).toInt().coerceIn(1, 100)
+            last.name + "\n" + getString(R.string.resume_progress, page + 1, last.total, percent)
+        } else {
+            last.name
+        }
+        resumeOffer = AlertDialog.Builder(this)
+            .setTitle(R.string.startup_resume_title)
+            .setMessage(message)
+            .setView(extra)
+            .setPositiveButton(R.string.resume_yes) { _, _ -> answer(resume = true) }
+            .setNegativeButton(R.string.resume_no) { _, _ -> answer(resume = false) }
+            .show()
+    }
+
+    private fun tabOf(value: String): Int = when (value) {
+        Prefs.TAB_FAVORITES -> TAB_FAVORITES
+        Prefs.TAB_HISTORY -> TAB_HISTORY
+        Prefs.TAB_BOOKMARKS -> TAB_BOOKMARKS
+        else -> TAB_BROWSE
+    }
+
+    /** The startup location; checks folders, so not on the main thread. */
+    private fun startDirectory(): File {
+        val path = StartupLocation.resolve(
+            choice = prefs.startupLocation,
+            custom = prefs.startupPath,
+            last = prefs.lastPath,
+            shown = { LibraryOrder.favorites(this, prefs, roots).map { it.path } },
+            added = { library.favorites() },
+            history = { library.history().map { it.path } },
+            // A share's folder is taken as it is; browsing it says when it cannot be reached.
+            isDir = { Remotes.file(it, askNetwork = false).isDirectory },
+            reachable = { nearestFolder(it) != null }
+        )
+        return path?.let { Remotes.file(it) } ?: deviceStart()
+    }
+
+    /** Where the device's storage opens ([Prefs.locationStart]). */
+    private fun deviceStart(): File = File(prefs.locationStart(Environment.getExternalStorageDirectory().absolutePath))
+
+    /** Browses the startup location, unless another listing starts while it is worked out. */
+    private fun openStartDirectory() {
+        showProgress(true)
+        // Debug builds can start elsewhere and stand in a share slow to answer, to try the wait on a device.
+        val debug = debuggable
+        val startPath = intent.getStringExtra(EXTRA_START_PATH)?.takeIf { debug }
+        val slowMs = if (debug) intent.getLongExtra(EXTRA_SLOW_SHARE_MS, 0) else 0
+        val wait = startupWait
+        launchListing {
+            // A wait under way before a recreate, as by a rotation, goes on where it was.
+            val waited = wait.dir
+            val dir = waited ?: startPath?.let { Remotes.file(it) } ?: withContext(AppDispatchers.io) { startDirectory() }
+            if (dir !is RemoteFile) {
+                loadDirectory(dir)
+                return@launchListing
+            }
+            val attempt = wait.attempt.takeIf { waited != null } ?: wait.start(dir, SystemClock.uptimeMillis()) {
+                delay(slowMs)
+                listShare(dir)
+            }
+            val waitedMs = SystemClock.uptimeMillis() - wait.since
+            // The share has the whole network timeout to answer, with its listing or why not (shown by browsing it).
+            val device = CompletableDeferred<Unit>()
+            var asked: AlertDialog? = null
+            val ask = launch {
+                delay(SHARE_DIALOG_MS - waitedMs)
+                // Never over the offer to resume reading, nor while the reader it opened is on top.
+                while (resumeOffer?.isShowing == true || !lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) delay(SHARE_DIALOG_CHECK_MS)
+                if (!wait.waitChosen) asked = askToWait(locationName(dir.absolutePath), wait = { wait.waitChosen = true }) { device.complete(Unit) }
+            }
+            val answer = try {
+                withTimeoutOrNull((Remotes.answerMs - waitedMs).coerceAtLeast(1)) {
+                    select<Result<List<RemoteFile>>?> {
+                        attempt.onAwait { it }
+                        device.onAwait { null }
+                    }
+                }
+            } finally {
+                ask.cancel()
+                asked?.dismiss()
+                // Kept only for the screen made anew after this one.
+                if (lifecycle.currentState != Lifecycle.State.DESTROYED) wait.end()
+            }
+            when {
+                device.isCompleted -> startOnDevice(dir, attempt, say = false)
+                answer == null || reasonOf(answer) == RemoteException.Reason.UNREACHABLE -> startOnDevice(dir, attempt, say = true)
+                else -> loadDirectory(dir, prelisted = answer.getOrNull())
+            }
+        }
+    }
+
+    /**
+     * Says the startup folder's share [name] is being waited for, offering to wait on ("Wait"
+     * only closes it, the list spinning on; [wait] hears it) or to open the device now ([device]).
+     */
+    private fun askToWait(name: String, wait: () -> Unit, device: () -> Unit): AlertDialog =
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.network_waiting_named, name))
+            .setPositiveButton(R.string.network_wait) { _, _ -> wait() }
+            .setNegativeButton(R.string.network_open_device) { _, _ -> device() }
+            .show()
+
+    /** Why listing a share failed ([listShare]); null when it worked. */
+    private fun reasonOf(answer: Result<*>): RemoteException.Reason? =
+        answer.exceptionOrNull()?.let { (it as? RemoteException)?.reason ?: RemoteException.Reason.UNREACHABLE }
+
+    /** The name of the location [path] is on: a root's, else its share's; Device's for a device path under no root. */
+    private fun locationName(path: String): String =
+        StorageRoot.of(path, roots)?.name
+            ?: Remotes.idOf(path)?.let { Remotes.share(it)?.name.orEmpty() }
+            ?: getString(R.string.root_device)
+
+    /**
+     * Opens the device's start folder instead of [dir], whose share has not answered, saying
+     * so when [say], and goes on asking the share ([keepTrying]).
+     */
+    private fun startOnDevice(dir: RemoteFile, attempt: Deferred<Result<List<RemoteFile>>>, say: Boolean) {
+        val device = deviceStart()
+        if (say) {
+            val gaveUp = getString(R.string.network_wait_gave_up, locationName(dir.absolutePath), locationName(device.absolutePath))
+            // Before the screen first shows (a share failing at once): said once it does. After, never over
+            // the reader the startup offer opened, which may be reading from that share.
+            if (!resumedOnce) lifecycleScope.launch { withResumed { toast(gaveUp) } }
+            else if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) toast(gaveUp)
+        }
+        loadDirectory(device)
+        val fallback = currentDir?.absolutePath ?: return
+        keepTrying(StartupWait.Behind(dir, attempt, fallback, SHARE_RETRY_MS).also { startupWait.behind = it })
+    }
+
+    /** The startup share given up on that this screen asks ([keepTrying]); a startup that gave up before [startUp] ended already does. */
+    private var tryingBehind: StartupWait.Behind? = null
+
+    /** Goes on asking the startup share given up on before a recreate ([keepTrying]) while the folder opened instead still shows. */
+    private fun keepTryingBehind() {
+        val behind = startupWait.behind ?: return
+        if (currentDir?.absolutePath == behind.fallback) keepTrying(behind) else startupWait.behind = null
+    }
+
+    /**
+     * Waits for [behind]'s first listing, then asks its share again while it cannot be reached,
+     * twice as late each time up to [SHARE_RETRY_MAX_MS], only while the screen is shown and
+     * its fallback is the folder browsed. Then offers to open its folder, or says why it cannot
+     * be. A refused sign-in is never tried again unasked: repeated ones can lock an account.
+     */
+    private fun keepTrying(behind: StartupWait.Behind) {
+        if (tryingBehind === behind) return
+        tryingBehind = behind
+        val dir = behind.dir
+        lifecycleScope.launch {
+            val first = behind.attempt.await()
+            if (behind.answer == null) behind.answer = first
+            fun waiting() = currentDir?.absolutePath == behind.fallback
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                while (waiting() && reasonOf(behind.answer!!) == RemoteException.Reason.UNREACHABLE) {
+                    delay(behind.wait)
+                    behind.wait = (behind.wait * 2).coerceAtMost(SHARE_RETRY_MAX_MS)
+                    Remotes.idOf(dir.absolutePath)?.let { Remotes.retry(it) }
+                    behind.answer = withContext(AppDispatchers.io) { listShare(dir) }
+                }
+                if (startupWait.behind === behind) startupWait.behind = null
+                if (waiting() && mode == TAB_BROWSE) shareAnswered(dir, behind.answer!!)
+                this@launch.cancel()
+            }
+        }
+    }
+
+    /** Offers to open [dir] once its share answered ([answer]), or says why it cannot be: a refused sign-in, no such share. */
+    private fun shareAnswered(dir: RemoteFile, answer: Result<List<RemoteFile>>) {
+        val name = locationName(dir.absolutePath)
+        val refused = when (reasonOf(answer)) {
+            RemoteException.Reason.DENIED -> R.string.share_denied_named
+            RemoteException.Reason.NO_SHARE -> R.string.share_missing_named
+            RemoteException.Reason.UNKNOWN_SHARE -> return
+            else -> null
+        }
+        if (refused != null) {
+            Snackbar.make(recycler, getString(refused, name), Snackbar.LENGTH_LONG).show()
+            return
+        }
+        // A start folder gone is said by browsing it.
+        Snackbar.make(recycler, getString(R.string.share_answering, name), Snackbar.LENGTH_LONG)
+            .setAction(R.string.share_open) { loadDirectory(dir, prelisted = answer.getOrNull()) }
+            .show()
+    }
+
+    // ------------------------------------------------------------------ tabs
+
+    private fun selectTab(index: Int) {
+        if (tabs.selectedTabPosition != index) tabs.getTabAt(index)?.select()
+    }
+
+    /** The settings name of tab [index]. */
+    private fun tabName(index: Int = mode): String = when (index) {
+        TAB_FAVORITES -> Prefs.TAB_FAVORITES
+        TAB_HISTORY -> Prefs.TAB_HISTORY
+        TAB_BOOKMARKS -> Prefs.TAB_BOOKMARKS
+        else -> Prefs.TAB_BROWSE
+    }
+
+    private fun rowOptions() =
+        RowOptions(
+            density = view.density, shape = prefs.coverShape, title = prefs.titleDisplay, detail = view.detail,
+            spacing = prefs.coverSpacing
+        )
+
+    /** The current tab's view settings. */
+    private val view: TabView get() = prefs.view(tabName())
+
+    /**
+     * Lays the list out as the current tab's view says. What did not change stays: rows
+     * rebind only for a new look, the layout is swapped only between grid and list.
+     */
+    private fun applyView() {
+        val v = view
+        val tabChanged = shownTab != mode
+        adapter.grid = v.grid
+        adapter.options = rowOptions()
+        applyLayoutManager()
+        updateCellSize()
+        updateFab()
+        // A new tab has other menu items; a new view only other view items, changed in place to keep a search open.
+        if (tabChanged) invalidateOptionsMenu() else if (shownView?.grid != v.grid) menu?.let { updateViewItems(it) }
+        shownTab = mode
+        shownView = v
+    }
+
+    private fun listingNow() = Listing(mode, prefs.showHidden, mode == TAB_BROWSE && prefs.shortenPrefixes)
+
+    private fun sortingNow() =
+        Sorting(mode, prefs.sort(tabName()), prefs.filter(tabName()), mode == TAB_FAVORITES && prefs.groupFavorites, prefs.detectDirection)
+
+    /**
+     * Lists or orders the rows again when they were listed or ordered by other settings than the
+     * stored ones; cheap when they were not. A tab still being listed is left to its listing.
+     */
+    private fun showCurrentContent() {
+        val listed = listedWith ?: return
+        if (listed.mode != mode) return
+        if (listed != listingNow()) {
+            // Out of sight, Browse lists again on resume anyway; the other tabs are told to.
+            if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) refreshCurrent()
+            else if (mode != TAB_BROWSE) relistOnResume = true
+            return
+        }
+        val sorted = sortedWith ?: return
+        val now = sortingNow()
+        if (sorted.mode != mode || sorted == now) return
+        applyFilterAndSort()
+        if (now.grouped && !sorted.grouped) classifyPending(allEntries.toList())
+    }
+
+    /** A sort or filter popup wrote a change: the rows show it at once. */
+    override fun onTabSettingsChanged() {
+        checkFeed()
+        showCurrentContent()
+    }
+
+    /** True in debuggable builds, the only ones that check the settings feed ([checkFeed]). */
+    private val debuggable by lazy { applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0 }
+
+    /**
+     * Debuggable builds log when the settings feed differs from the stored settings: the list then
+     * shows a change only through its checks against the screen ([showCurrentView], [showCurrentContent]).
+     */
+    private fun checkFeed() {
+        if (!debuggable) return
+        val feed = settings.list.value
+        val stored = ListSettings.from(prefs).copy(thrift = feed.thrift)
+        if (feed != stored) Log.w(TAG, "Settings feed behind the stored settings: $feed, stored $stored", Throwable())
+    }
+
+    /** Applies the current tab's view when the list shows anything else; cheap when it does not. */
+    private fun showCurrentView() {
+        checkFeed()
+        if (shownTab != mode || shownView != view || adapter.options != rowOptions()) applyView()
+    }
+
+    private fun onTabChanged(index: Int) {
+        if (index == mode) return
+        when (index) {
+            TAB_FAVORITES -> showFavorites()
+            TAB_HISTORY -> showHistory()
+            TAB_BOOKMARKS -> showBookmarks()
+            else -> {
+                val dir = currentDir
+                if (dir != null) loadDirectory(dir) else openStartDirectory()
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------ listing
+
+    /** [path] when it is a folder, else its nearest existing parent within its root; null when none is left. */
+    private fun nearestFolder(path: String): String? =
+        MissingFolder.nearest(path, roots) { Remotes.file(it, askNetwork = false).isDirectory }
+
+    /**
+     * Browses [dir], or when it no longer exists its nearest existing parent (the device's
+     * storage when none is left), saying so (unless [noted] already) and dropping the
+     * forward crumbs through it. A folder on a share is found gone only by listing it; one
+     * listed just before ([prelisted]) is not listed again.
+     */
+    private fun loadDirectory(dir: File, highlight: String? = null, noted: Boolean = false, prelisted: List<File>? = null) {
+        if (!dir.isDirectory) {
+            val missing = dir.absolutePath
+            if (!noted) toast(R.string.folder_gone)
+            trail = MissingFolder.trailAfter(trail, missing)
+            val instead = nearestFolder(missing)?.let { Remotes.file(it) } ?: Environment.getExternalStorageDirectory()
+            if (instead.absolutePath != missing && instead.isDirectory) return loadDirectory(instead, noted = true)
+        }
+        switchingTo(TAB_BROWSE, dir)
+        val entering = Remotes.idOf(dir.absolutePath)?.takeIf { it != currentDir?.absolutePath?.let(Remotes::idOf) }
+        mode = TAB_BROWSE
+        applyView()
+        currentDir = dir
+        trail = ForwardCrumbs.next(trail, dir.absolutePath)
+        deepJob?.cancel()
+        deepResults = null
+        prefs.lastPath = dir.absolutePath
+        adapter.highlightPath = highlight
+        selectTab(TAB_BROWSE)
+
+        val atRoot = roots.any { it.path == dir.absolutePath }
+        supportActionBar?.title = if (atRoot || dir.name.isBlank()) getString(R.string.app_name) else dir.name
+        showCrumbs(dir)
+        pathbar.visibility = if (prefs.listPathView) View.VISIBLE else View.GONE
+        invalidateOptionsMenu()
+
+        showProgress(true)
+        Timing.mark("browse start, share=${dir is RemoteFile}")
+        launchListing {
+            val remote = dir as? RemoteFile
+            // A share's folder listed before shows at once as it was, while it is listed again.
+            val kept = if (remote != null && prelisted == null) withContext(AppDispatchers.io) { runCatching { keptListing(remote) }.getOrNull() } else null
+            if (kept != null) {
+                showListed(kept.first, highlight)
+                Timing.mark("browse shown as kept")
+            }
+            val listed = withContext(AppDispatchers.io) { runCatching { listedOf(dir, buildDirectoryEntries(dir, prelisted)) } }
+            val failure = listed.exceptionOrNull()?.let {
+                // Anything that stops a share's listing shows as that share failing, with Retry.
+                if (it is RemoteException || dir !is RemoteFile) it
+                else RemoteException(RemoteException.Reason.UNREACHABLE, it.message, it)
+            }
+            if (failure != null) {
+                if (failure !is RemoteException) throw failure
+                if (failure.reason == RemoteException.Reason.MISSING) {
+                    shareFolderGone(dir, noted)
+                    return@launchListing
+                }
+                // A password restored from another device's backup is asked for, unless a share form is open already.
+                val share = Remotes.idOf(dir.absolutePath)?.let(Remotes::share)
+                if (failure.reason == RemoteException.Reason.DENIED && share?.passwordLost == true && ShareDialog.find(this@ListActivity) == null) {
+                    ShareDialog.show(this@ListActivity, share.id)
+                }
+                // What was kept stays shown while the share cannot be asked, saying so.
+                if (kept != null) {
+                    keptNote = Snackbar.make(recycler, unreachableText(failure), Snackbar.LENGTH_INDEFINITE)
+                        .setAction(R.string.retry) { retryListing() }
+                        .also { it.show() }
+                    return@launchListing
+                }
+                progress.visibility = View.GONE
+                listError = failure
+                setPrefix = null
+                displayEntries(emptyList())
+                return@launchListing
+            }
+            var latest = listed.getOrThrow()
+            Timing.mark("browse listed ${latest.entries.size}")
+            if (entering != null) checkSpace(entering)
+            if (latest != kept?.first) {
+                showListed(latest, highlight.takeIf { kept == null })
+                Timing.mark("browse shown")
+            }
+            if (remote != null && refreshSubfolders(latest.entries, kept?.second.orEmpty())) {
+                val counted = withContext(AppDispatchers.io) { runCatching { listedOf(dir, buildDirectoryEntries(dir, kept = true)) }.getOrNull() }
+                if (counted != null && counted != latest) {
+                    latest = counted
+                    showListed(counted, null)
+                }
+                Timing.mark("browse subfolders listed")
+            }
+            val (_, prefix, kind) = latest
+            // A folder its listing does not settle is looked into after it shows.
+            if (prefix != null && kind == null) {
+                val found = withContext(AppDispatchers.io) {
+                    val time = dir.lastModified()
+                    FavoriteClassifier.classify(dir, isRoot = atRoot).also { folderKinds.put(dir.absolutePath, time to it) }
+                }
+                if (found == FavoriteKind.SET) {
+                    setPrefix = prefix
+                    applyFilterAndSort()
+                }
+            }
+            findIds()
+        }
+    }
+
+    /**
+     * Finds the Book IDs of the books listed that the index does not know, [ID_READS] at a
+     * time, and shows what is kept for any of them: books moved, renamed or copied outside
+     * the app. Notes where those are seen now ([Library.seenAll]). Like covers, never on a
+     * share set not to make them, nor on any share while covers are off: reading wakes a drive.
+     */
+    private suspend fun findIds() {
+        val listed = listing
+        // Loose images get theirs as they are opened or marked.
+        val unknown = allEntries.filter { !it.isDir && it.type != EntryType.IMAGE && it.id == null && Formats.isOpenable(it.name) && findsIdsAt(it.path) }
+        if (unknown.isEmpty()) return
+        val ids = idsOf(unknown.map { it.file })
+        val found = unknown.mapNotNull { e -> ids[e.file]?.let { e.path to it } }.toMap()
+        if (listing != listed || found.isEmpty()) return
+        val snap = withContext(AppDispatchers.io) { snapshot() }
+        var kept = false
+        allEntries.replaceAll { e ->
+            val id = found[e.path] ?: return@replaceAll e
+            if (snap.keeps(id)) kept = true
+            snap.withId(e, id)
+        }
+        val seen = snap.sightings()
+        if (seen.isNotEmpty()) withContext(AppDispatchers.io) { library.seenAll(seen) }
+        if (kept) applyFilterAndSort(resort = false)
+    }
+
+    /** The Book IDs of [files], [ID_READS] read at a time; ones that cannot be read are left out. */
+    private suspend fun idsOf(files: List<File>): Map<File, BookId> {
+        val gate = Semaphore(ID_READS)
+        return coroutineScope {
+            files.map { f -> async(AppDispatchers.io) { gate.withPermit { BookIds.find(f)?.let { f to it } } } }.awaitAll()
+        }.filterNotNull().toMap()
+    }
+
+    /** False for [path] on a share whose covers are not made; books there get their IDs as they are opened or marked. */
+    private fun findsIdsAt(path: String) = !Remotes.isRemote(path) || (prefs.thumbnails && Remotes.thumbnails(path))
+
+    /** Reads the free space of share [id], just opened, for the location picker ([LocationSpace]). */
+    private fun checkSpace(id: String) {
+        val app = applicationContext
+        lifecycleScope.launch(AppDispatchers.io) {
+            runCatching { Remotes.space(id) }.getOrNull()?.let { (free, total) -> LocationSpace(app).put(Remotes.rootOf(id), free, total) }
+        }
+    }
+
+    /** A folder's rows, the series name their titles share, and the folder's kind when its rows settle it. */
+    private data class Listed(val entries: List<BookEntry>, val prefix: String?, val kind: FavoriteKind?)
+
+    private fun listedOf(dir: File, entries: List<BookEntry>): Listed {
+        val prefix = sharedPrefixOf(entries)
+        return Listed(entries, prefix, if (prefix == null) null else knownKindOf(dir, entries))
+    }
+
+    /** Shows [listed], scrolled to [highlight] when given. */
+    private fun showListed(listed: Listed, highlight: String?) {
+        setPrefix = listed.prefix.takeIf { listed.kind == FavoriteKind.SET }
+        progress.visibility = View.GONE
+        displayEntries(listed.entries)
+        if (highlight != null) scrollToHighlight(highlight)
+    }
+
+    /**
+     * Share folder [dir] as last listed ([Remotes.cachedList]), with the stats its entries
+     * had then, by path; null when it never was. Blocking, never asking the network.
+     */
+    private fun keptListing(dir: RemoteFile): Pair<Listed, Map<String, RemoteStat?>>? {
+        val files = Remotes.cachedList(dir.absolutePath) ?: return null
+        val stats = files.associate { it.absolutePath to it.stat() }
+        return listedOf(dir, buildDirectoryEntries(dir, files)) to stats
+    }
+
+    /**
+     * Lists again, [SUBFOLDER_LISTS] at a time, the subfolders among share [entries] whose
+     * kept listing may be out of date, so their counts show: none is kept, their stat
+     * differs from the one kept with their parent's listing ([before]), or the share tells
+     * no time. One that fails stays as kept. True when any was listed.
+     */
+    private suspend fun refreshSubfolders(entries: List<BookEntry>, before: Map<String, RemoteStat?>): Boolean = withContext(AppDispatchers.io) {
+        val stale = entries.filter { e ->
+            val file = e.file as? RemoteFile ?: return@filter false
+            if (!e.isDir) return@filter false
+            val now = file.stat()
+            now == null || now.modified <= 0 || now != before[e.path] || !Remotes.isListed(e.path)
+        }
+        if (stale.isEmpty()) return@withContext false
+        val gate = Semaphore(SUBFOLDER_LISTS)
+        stale.map { e -> async { gate.withPermit { runCatching { Remotes.list(e.path) } } } }.awaitAll()
+        true
+    }
+
+    /** Goes to the nearest parent of [dir], a share's folder its listing found gone, saying so unless [noted]. */
+    private fun shareFolderGone(dir: File, noted: Boolean) {
+        if (!noted) toast(R.string.folder_gone)
+        val missing = dir.absolutePath
+        trail = MissingFolder.trailAfter(trail, missing)
+        val parent = dir.parent?.takeIf { Remotes.isRemote(it) }
+        loadDirectory(parent?.let { Remotes.file(it) } ?: Environment.getExternalStorageDirectory(), noted = true)
+    }
+
+    /**
+     * The series name every item of a folder listed as [entries] starts with, to
+     * leave out of their titles inside a Set, when the setting asks for it. Loose
+     * images are left out.
+     */
+    private fun sharedPrefixOf(entries: List<BookEntry>): String? {
+        if (!prefs.shortenPrefixes) return null
+        return TitlePrefix.common(entries.filter { it.type != EntryType.IMAGE }.map { it.name })
+    }
+
+    /** The kind of [dir] listed as [entries] when known without looking into its subfolders. */
+    private fun knownKindOf(dir: File, entries: List<BookEntry>): FavoriteKind? {
+        val path = dir.absolutePath
+        folderKinds.get(path)?.let { (time, kind) -> if (time == dir.lastModified()) return kind }
+        val visible = entries.filter { !it.name.startsWith(".") }
+        return FavoriteClassifier.quickKind(
+            books = visible.count { it.type == EntryType.ARCHIVE || it.type == EntryType.PDF },
+            images = visible.count { it.type == EntryType.IMAGE },
+            folders = visible.count { it.isDir },
+            isRoot = roots.any { it.path == path }
+        )
+    }
+
+    /**
+     * Before showing tab [tab] (Browse at [dir]): covers still loading for another tab or
+     * folder are dropped, so those of the view about to show come first, and the selection ends.
+     */
+    private fun switchingTo(tab: Int, dir: File? = null) {
+        if (mode != tab || (tab == TAB_BROWSE && currentDir?.absolutePath != dir?.absolutePath)) {
+            adapter.cancelCovers()
+            endSelection()
+            switchBack = null
+        }
+    }
+
+    /** Runs [load] as the only listing: an older one, and favorites still being classified, stop. */
+    private fun launchListing(load: suspend CoroutineScope.() -> Unit) {
+        if (peek.isShowing) peek.hide()
+        listError = null
+        keptNote?.dismiss()
+        keptNote = null
+        listJob?.cancel()
+        classifyJob?.cancel()
+        factsJob?.cancel()
+        presenceJob?.cancel()
+        listedWith = listingNow()
+        listJob = lifecycleScope.launch(block = load)
+    }
+
+    private fun snapshot() = LibrarySnapshot.load(library, prefs)
+
+    /** A folder as subtitles show it, e.g. "Comics/Series" or "SD card/Comics"; empty for the device's root. */
+    private fun relativePath(dir: File): String = StorageRoot.describe(dir.absolutePath, roots)
+
+    /**
+     * The rows of [dir], from its listing made just before ([prelisted]), else, on a share
+     * with [kept], from its last listing ([Remotes.cachedList]), else from listing it now;
+     * throws [RemoteException] when its share cannot be reached. Folders on a share are
+     * counted from their kept listings, never listed here.
+     */
+    private fun buildDirectoryEntries(dir: File, prelisted: List<File>? = null, kept: Boolean = false): List<BookEntry> {
+        var files = prelisted?.toTypedArray() ?: when {
+            dir is RemoteFile && kept -> Remotes.cachedList(dir.absolutePath)?.toTypedArray<File>()
+            dir is RemoteFile -> dir.entries().toTypedArray<File>()
+            else -> dir.listFiles()
+        } ?: return emptyList()
+        // What copies and moves stopped part way left here is put right, then listed again.
+        val path = dir.absolutePath
+        if (!kept && files.any { Transfer.isSideName(it.name) } && Transfer.sweep(FileSpaces.of(path), path, files.map { it.name })) {
+            files = (if (dir is RemoteFile) dir.entries().toTypedArray<File>() else dir.listFiles()) ?: return emptyList()
+        }
+        val showHidden = prefs.showHidden
+        val snap = snapshot()
+        val out = ArrayList<BookEntry>(files.size)
+        for (f in files) {
+            if (!showHidden && f.name.startsWith(".")) continue
+            val isDir = f.isDirectory
+            if (!isDir && Formats.typeOf(f.name) == EntryType.OTHER) continue
+            out.add(if (f is RemoteFile) shareEntry(f, isDir, snap) else entryFor(f, snap))
+        }
+        // Books seen elsewhere before show where they are now in the library's lists.
+        library.seenAll(snap.sightings())
+        return out
+    }
+
+    /** The row of [file] on a share; a folder counted from its kept listing, never asking the network. */
+    private fun shareEntry(file: RemoteFile, isDir: Boolean, snap: LibrarySnapshot): BookEntry {
+        val children = if (isDir) Remotes.cachedList(file.absolutePath)?.let { LibrarySnapshot.visibleOf(it, prefs.showHidden) } else null
+        return snap.entry(file, children)
+    }
+
+    private fun entryFor(file: File, snap: LibrarySnapshot): BookEntry = snap.entry(file, prefs.showHidden)
+
+    private fun showFavorites() {
+        switchingTo(TAB_FAVORITES)
+        mode = TAB_FAVORITES
+        applyView()
+        adapter.highlightPath = null
+        selectTab(TAB_FAVORITES)
+        supportActionBar?.title = getString(R.string.menu_favorites)
+        pathbar.visibility = View.GONE
+        invalidateOptionsMenu()
+        showProgress(true)
+        launchListing {
+            val found = Lookups()
+            val (list, kinds) = withContext(AppDispatchers.io) { favoriteEntries(found) }
+            progress.visibility = View.GONE
+            favoriteKinds = kinds
+            displayEntries(list, found)
+            classifyPending(list)
+        }
+    }
+
+    /**
+     * The favorites with their labels, and the sections already known for them; whether each
+     * is there goes in [found]. A folder not there keeps its icon and the section it had.
+     */
+    private fun favoriteEntries(found: Lookups): Pair<List<BookEntry>, Map<String, FavoriteKind>> {
+        val snap = snapshot()
+        val items = library.favoriteItems()
+        val paths = items.map { it.path }
+        val labels = FavoriteLabels.of(paths, roots)
+        val kinds = HashMap<String, FavoriteKind>()
+        val list = items.map { (path, id) ->
+            val label = labels[path]
+            val presence = quickPresence(path, found)
+            // Favorites on shares show from what is known, without waiting for the network.
+            val entry = entryFor(Remotes.file(path, askNetwork = false), snap)
+                .let { if (id != null) snap.withId(it, id) else it }
+                .let { if (id == null && !it.isDir) it.copy(isDir = true, type = EntryType.FOLDER, favorite = true) else it }
+                .let { if (label != null) it.copy(name = label.name, label = label) else it }
+                .copy(presence = presence)
+            val kind = when {
+                !entry.isDir -> FavoriteKind.COMIC
+                Remotes.isRemote(path) -> kindCache.peek(path)
+                // Nothing there to look into: the section it was in, else Sets.
+                presence != Presence.PRESENT -> kindCache.peek(path) ?: FavoriteKind.SET
+                else -> kindCache.get(path, entry.lastModified)
+            }
+            if (kind != null) kinds[path] = kind
+            entry
+        }
+        kindCache.retain(paths)
+        return list to kinds
+    }
+
+    /**
+     * Classifies the favorites not classified yet when they are grouped, moving them
+     * into their sections as they are found, at most every [CLASSIFY_PUBLISH_MS].
+     */
+    private fun classifyPending(list: List<BookEntry>) {
+        if (!prefs.groupFavorites) return
+        // Folders on shares are checked too: their kind is shown as cached until their time is known.
+        val pending = list.filter { it.path !in favoriteKinds || (it.isDir && it.file is RemoteFile) }
+        if (pending.isEmpty()) return
+        classifyJob?.cancel()
+        classifyJob = lifecycleScope.launch {
+            val found = HashMap<String, FavoriteKind>()
+            var shownAt = SystemClock.uptimeMillis()
+            for ((i, e) in pending.withIndex()) {
+                // Leaving the tab or listing again stops here, between favorites.
+                val kind = withContext(AppDispatchers.io) { classify(e) }
+                if (kind != null) found[e.path] = kind
+                val now = SystemClock.uptimeMillis()
+                if (i < pending.lastIndex && now - shownAt < CLASSIFY_PUBLISH_MS) continue
+                favoriteKinds = favoriteKinds + found
+                found.clear()
+                shownAt = now
+                // Sections fill in without re-sorting rows by values found since.
+                if (mode == TAB_FAVORITES) applyFilterAndSort(resort = false)
+            }
+        }
+    }
+
+    /**
+     * The kind of favorite [e], kept with its modification time; a folder on a share
+     * is looked into only when its time changed since, and is left as it is (null)
+     * while the share cannot be reached.
+     */
+    private fun classify(e: BookEntry): FavoriteKind? {
+        val isRoot = roots.any { it.path == e.path }
+        val file = e.file
+        if (file !is RemoteFile) {
+            return FavoriteClassifier.classify(file, isRoot).also { kindCache.put(e.path, e.lastModified, it) }
+        }
+        val time = if (isRoot) 0L else runCatching { file.fresh() }.getOrNull()?.modified ?: return null
+        kindCache.get(e.path, time)?.let { return it }
+        val kind = runCatching { FavoriteClassifier.classify(Remotes.file(e.path), isRoot) }.getOrNull() ?: return null
+        kindCache.put(e.path, time, kind)
+        return kind
+    }
+
+    private fun toggleSection(kind: FavoriteKind) {
+        val collapsed = prefs.collapsedSections
+        prefs.collapsedSections = if (kind in collapsed) collapsed - kind else collapsed + kind
+        applyFilterAndSort()
+    }
+
+    private fun sectionTitle(kind: FavoriteKind): String = getString(
+        when (kind) {
+            FavoriteKind.LIBRARY -> R.string.section_libraries
+            FavoriteKind.SET -> R.string.section_sets
+            FavoriteKind.COMIC -> R.string.section_comics
+        }
+    )
+
+    private fun showHistory() {
+        switchingTo(TAB_HISTORY)
+        mode = TAB_HISTORY
+        applyView()
+        adapter.highlightPath = null
+        selectTab(TAB_HISTORY)
+        supportActionBar?.title = getString(R.string.menu_history)
+        pathbar.visibility = View.GONE
+        invalidateOptionsMenu()
+        showProgress(true)
+        launchListing {
+            val found = Lookups()
+            val list = withContext(AppDispatchers.io) {
+                val snap = snapshot()
+                library.history().map { entryForHistory(it, snap, found) }
+            }
+            progress.visibility = View.GONE
+            displayEntries(list, found)
+        }
+    }
+
+    private fun showBookmarks() {
+        switchingTo(TAB_BOOKMARKS)
+        mode = TAB_BOOKMARKS
+        applyView()
+        adapter.highlightPath = null
+        selectTab(TAB_BOOKMARKS)
+        supportActionBar?.title = getString(R.string.menu_bookmarks)
+        pathbar.visibility = View.GONE
+        invalidateOptionsMenu()
+        showProgress(true)
+        launchListing {
+            val found = Lookups()
+            val list = withContext(AppDispatchers.io) {
+                val snap = snapshot()
+                library.bookmarks().map { entryForBookmark(it, snap, found) }
+            }
+            progress.visibility = View.GONE
+            displayEntries(list, found)
+        }
+    }
+
+    /** What [quickPresence] found for one list's items, by path, and what it looked up on the way. */
+    private class Lookups : HashMap<String, PresenceCheck.Found>() {
+        val seen = PresenceCheck.Seen()
+    }
+
+    /** Whether the item at [path] is there, as found now without the network, noted in [found]. */
+    private fun quickPresence(path: String, found: Lookups): Presence =
+        found.getOrPut(path) { presenceCheck.quick(path, found.seen) }.presence
+
+    private fun entryForHistory(item: HistoryItem, snap: LibrarySnapshot, found: Lookups): BookEntry {
+        val file = Remotes.file(item.path, askNetwork = false)
+        val presence = quickPresence(item.path, found)
+        val stat = if (presence == Presence.PRESENT) FileStat.of(file) else null
+        // Chapters are usually just "Chapter 12.cbz", so the folder below the name is
+        // what tells two chapters from different comics apart.
+        val where = file.parentFile?.let { relativePath(it) }
+        return BookEntry(
+            file = file,
+            name = item.name,
+            isDir = false,
+            type = Formats.typeOf(item.name),
+            size = stat?.size ?: 0,
+            lastModified = item.time,
+            pages = item.total,
+            progressPage = item.page,
+            favorite = item.id in snap.favoriteBooks,
+            read = item.id in snap.read,
+            begun = true,
+            added = stat?.created ?: 0,
+            accessed = snap.accessById[item.id] ?: item.time,
+            id = item.id,
+            year = Years.fromName(item.name),
+            direction = snap.directionOf(item.path, isDir = false),
+            directionSet = snap.isDirectionSet(item.path, isDir = false),
+            subtitle = where?.ifEmpty { null },
+            presence = presence
+        )
+    }
+
+    private fun entryForBookmark(bookmark: Bookmark, snap: LibrarySnapshot, found: Lookups): BookEntry {
+        val file = Remotes.file(bookmark.path, askNetwork = false)
+        val presence = quickPresence(bookmark.path, found)
+        val stat = if (presence == Presence.PRESENT) FileStat.of(file) else null
+        return BookEntry(
+            file = file,
+            name = file.name.ifEmpty { bookmark.name },
+            isDir = false,
+            type = Formats.typeOf(file.name),
+            size = stat?.size ?: 0,
+            lastModified = bookmark.time,
+            pages = snap.history[bookmark.id]?.total ?: -1,
+            progressPage = bookmark.page,
+            bookmarkPage = bookmark.page,
+            favorite = bookmark.id in snap.favoriteBooks,
+            read = bookmark.id in snap.read,
+            begun = bookmark.id in snap.history,
+            added = stat?.created ?: 0,
+            // A bookmark counts as accessed when added, or later when its book was read.
+            accessed = maxOf(bookmark.time, snap.history[bookmark.id]?.time ?: 0),
+            id = bookmark.id,
+            year = Years.fromName(file.name),
+            direction = snap.directionOf(bookmark.path, isDir = false),
+            directionSet = snap.isDirectionSet(bookmark.path, isDir = false),
+            subtitle = getString(R.string.page_number, bookmark.page + 1),
+            presence = presence
+        )
+    }
+
+    /** Shows [list], whose items are there as [found] says (Favorites, History, Bookmarks), then asks shares what that left open. */
+    private fun displayEntries(list: List<BookEntry>, found: Map<String, PresenceCheck.Found> = emptyMap()) {
+        listing++
+        present.clear()
+        presences.clear()
+        presences.putAll(found)
+        allEntries.clear()
+        allEntries.addAll(list)
+        applyFilterAndSort()
+        if (query.isNotBlank()) scheduleDeepSearch()
+        updateClearItems()
+        checkPresence()
+    }
+
+    /**
+     * Asks shares, [PresenceCheck.LANES] at a time, whether the items listed whose presence
+     * could not be settled without the network are there, those nearest the rows in view
+     * first; rows change as answers come, at most every [PRESENCE_PUBLISH_MS]. Like
+     * [scheduleFacts], it waits while the library is out of sight or battery saver pauses
+     * scans; a new listing stops it.
+     */
+    private fun checkPresence() {
+        presenceJob?.cancel()
+        val open = presences.filter { (path, f) -> presenceCheck.asks(path, f) }.keys
+        if (mode == TAB_BROWSE || open.isEmpty()) return
+        val rows = HashMap<String, Int>()
+        for (p in 0 until adapter.itemCount) adapter.entryAt(p)?.let { rows.putIfAbsent(it.path, p) }
+        val lm = recycler.layoutManager as? LinearLayoutManager
+        val middle = lm?.let { NearestFirst.middle(it.findFirstVisibleItemPosition(), it.findLastVisibleItemPosition()) } ?: 0
+        val asking = NearestFirst.order(open, middle) { rows[it] }
+        val check = presenceCheck
+        presenceJob = lifecycleScope.launch {
+            val answers = HashMap<String, PresenceCheck.Found>()
+            var shownAt = SystemClock.uptimeMillis()
+            val batches = asking.chunked(PresenceCheck.LANES)
+            for ((i, batch) in batches.withIndex()) {
+                withStarted {}
+                awaitScans()
+                withContext(AppDispatchers.io) {
+                    batch.map { path -> async { path to check.stat(path) } }.awaitAll()
+                }.toMap(answers)
+                val now = SystemClock.uptimeMillis()
+                if (i < batches.lastIndex && now - shownAt < PRESENCE_PUBLISH_MS) continue
+                shownAt = now
+                showPresence(answers)
+                answers.clear()
+            }
+        }
+    }
+
+    /** Shows what was [found] for the items listed, in place. */
+    private fun showPresence(found: Map<String, PresenceCheck.Found>) {
+        presences.putAll(found)
+        var changed = false
+        for ((i, e) in allEntries.withIndex()) {
+            val presence = found[e.path]?.presence ?: continue
+            if (e.presence == presence) continue
+            allEntries[i] = e.copy(presence = presence)
+            changed = true
+        }
+        if (changed) applyFilterAndSort(resort = false)
+        updateClearItems()
+    }
+
+    /** The items listed that are missing for sure: what "Clear missing" takes. */
+    private fun missingEntries(): List<BookEntry> =
+        if (mode == TAB_BROWSE) emptyList() else allEntries.filter { presences[it.path]?.missing == true }
+
+    /** Sort and filter values as found so far: folder totals and what books' contents told. */
+    private fun values(hidden: Map<BookId, Int>) =
+        EntryValues(folderSizes, prefs.detectDirection, { e -> idOf(e)?.let { hidden[it] } ?: 0 }) { e -> if (e.isDir) null else factsCache.get(idOf(e)) }
+
+    /** The Book ID of file [e]: as listed, else as found since ([BookIds.known]); null while unknown. */
+    private fun idOf(e: BookEntry): BookId? = e.id ?: if (e.isDir) null else BookIds.known(e.path, e.size, e.lastModified)
+
+    /**
+     * Shows the entries matching the search in the tab's order. Unless [resort], the
+     * order uses the values the list was last sorted by, so values found since fill
+     * in without moving rows.
+     */
+    private fun applyFilterAndSort(resort: Boolean = true) {
+        val deep = deepResults
+        val searched = when {
+            query.isBlank() -> allEntries
+            deep != null -> deep
+            else -> allEntries.filter { it.name.contains(query, ignoreCase = true) }
+        }
+
+        val sorting = sortingNow()
+        sortedWith = sorting
+        val sort = sorting.sort
+        val filter = sorting.filter
+        val hidden = library.hiddenCounts()
+        val live = values(hidden)
+        val order = sortValues.takeIf { !resort } ?: live.frozen(searched, sort.keys).also { sortValues = it }
+        val browsing = mode == TAB_BROWSE
+        val passing = if (filter.isActive) searched.filter { filter.accepts(it, live, browsing) } else searched
+
+        shown.clear()
+        shown.addAll(passing.sortedWith(LibrarySort.comparator(sort, order)).map { withFacts(it, hidden) })
+        // What is still listed stays selected, as listed now.
+        val selecting = selection.active
+        selection.retain(shown)
+        filterChip.visibility = if (filter.isActive) View.VISIBLE else View.GONE
+        if (resort) scheduleFacts(sort.keys + filter.keys)
+        adapter.titlePrefix = setPrefix.takeIf { mode == TAB_BROWSE && query.isBlank() }
+        if (sorting.grouped) {
+            val groups = FavoriteSections.arrange(shown) { favoriteKinds[it.path] }
+            val collapsed = prefs.collapsedSections
+            sectionItems = groups.map { if (it.kind in collapsed) 0 else it.entries.size }
+            adapter.submit(FavoriteSections.rows(groups, collapsed) { sectionTitle(it) })
+        } else {
+            sectionItems = emptyList()
+            adapter.submit(shown)
+        }
+        updateRecentHeader()
+        updateEmptyState()
+        if (selecting || selection.active) updateSelection() else updateFab()
+    }
+
+    /**
+     * [entry] with the page count read from its book when it has none of its own, less
+     * the pages it hides ([hidden] counts by path), and the direction detected in it when
+     * its folder has none set.
+     */
+    private fun withFacts(entry: BookEntry, hidden: Map<BookId, Int>): BookEntry {
+        if (entry.isDir) return entry
+        val id = idOf(entry) ?: return entry
+        val facts = factsCache.get(id) ?: return entry
+        var out = entry
+        if (entry.pages <= 0 && facts.pages > 0) out = out.copy(pages = facts.shownPages(hidden[id] ?: 0))
+        return out.withDetectedDirection(facts, prefs.detectDirection)
+    }
+
+    /**
+     * Finds the values [keys] need that are not known yet, in the background: page
+     * counts, ComicInfo years and detected directions of books, and folder totals. Books fill in as they
+     * are read, at most every [FACTS_PUBLISH_MS], without moving rows; folder totals
+     * reorder the list once all are in. Work already running for the same listing
+     * goes on undisturbed. It waits while the library is out of sight, as while a book
+     * is read, so it never competes with the reader for the share or the battery, and
+     * while battery saver pauses background scans. Books and folders on shares are skipped
+     * while background reads are held back there, on a metered connection or a slow share
+     * ([NetPolicy]), to be read on a later listing; a note says so.
+     */
+    private fun scheduleFacts(keys: Set<SortKey>) {
+        val needFacts = SortKey.LENGTH in keys || SortKey.YEAR in keys || (SortKey.DIRECTION in keys && prefs.detectDirection)
+        val needSizes = SortKey.SIZE in keys
+        if (!needFacts && !needSizes) return
+        val work = FactsWork(listing, needFacts, needSizes)
+        if (factsJob?.isActive == true && factsWork?.covers(work) == true) return
+        val entries = allEntries.toList()
+        fun unknown(e: BookEntry) = factsCache.get(idOf(e)) == null && factsFailed[e.path] != e.size
+        val candidates = if (!needFacts) emptyList() else entries.filter {
+            !it.isDir && it.type != EntryType.IMAGE && it.size > 0 && (!factsCache.isLoaded || unknown(it))
+        }
+        val folders = if (!needSizes) emptyList() else entries.filter { it.isDir && it.path !in folderSizes }
+        if (candidates.isEmpty() && folders.isEmpty()) return
+        factsJob?.cancel()
+        factsWork = work
+        factsJob = lifecycleScope.launch {
+            if (!factsCache.isLoaded) withContext(AppDispatchers.io) { factsCache.load() }
+            val books = candidates.filter { unknown(it) }
+            val charset = prefs.charset
+            var shownAt = SystemClock.uptimeMillis()
+            // Why share books were held back: metered wins over slow.
+            var held: NetPolicy.Why? = null
+            for ((i, e) in books.withIndex()) {
+                awaitStartedForFacts()
+                awaitScans()
+                val why = if (Remotes.isRemote(e.path)) withContext(AppDispatchers.io) { NetPolicy.whyNotAt(NetWork.OTHER, e.path) } else null
+                if (why != null) {
+                    if (held != NetPolicy.Why.METERED) held = why
+                    continue
+                }
+                val read = withContext(AppDispatchers.io) {
+                    runCatching {
+                        // The ID first: on a share, its reads of the book's ends start the facts' reads too.
+                        val id = BookIds.of(e.file)
+                        factsCache.put(id, Timing.span("facts") { BookFactsReader.read(e.file, charset, cacheDir) })
+                    }.isSuccess
+                }
+                if (!read) factsFailed[e.path] = e.size
+                val now = SystemClock.uptimeMillis()
+                if (i < books.lastIndex && now - shownAt < FACTS_PUBLISH_MS) continue
+                shownAt = now
+                applyFilterAndSort(resort = false)
+            }
+            // Facts read before the books skipped last show too.
+            if (held != null) applyFilterAndSort(resort = false)
+            for (f in folders) {
+                awaitStartedForFacts()
+                awaitScans()
+                val why = if (Remotes.isRemote(f.path)) withContext(AppDispatchers.io) { NetPolicy.whyNotAt(NetWork.OTHER, f.path) } else null
+                if (why != null) {
+                    if (held != NetPolicy.Why.METERED) held = why
+                    continue
+                }
+                folderSizes[f.path] = withContext(AppDispatchers.io) { FolderSize.total(f.file) { isActive } }
+            }
+            if (folders.isNotEmpty()) applyFilterAndSort()
+            held?.let { showFactsNote(it) }
+        }
+    }
+
+    /**
+     * Waits for the screen to be started, marking the calling job as [factsGated] meanwhile.
+     * Started, it returns at once on the main thread, so the mark shows only while it waits.
+     */
+    private suspend fun awaitStartedForFacts() {
+        val job = currentCoroutineContext().job
+        factsGated = job
+        try {
+            withStarted {}
+        } finally {
+            if (factsGated === job) factsGated = null
+        }
+    }
+
+    /**
+     * Says share books were held back from [scheduleFacts] for [why], unless that note already
+     * shows or waits to: a share folder listed again, as once its subfolders are counted, ends in it again.
+     */
+    private fun showFactsNote(why: NetPolicy.Why) {
+        factsNote?.let { (said, note) -> if (said == why && note.isShownOrQueued) return }
+        val note = Snackbar.make(recycler, if (why == NetPolicy.Why.METERED) R.string.facts_metered else R.string.facts_slow, Snackbar.LENGTH_LONG)
+        factsNote = why to note
+        note.show()
+    }
+
+    /** Waits while battery saver pauses background scans ([minty.emanata.data.Thrift.pausedScans]). */
+    private suspend fun awaitScans() {
+        settings.list.first { !it.thrift.pausedScans }
+    }
+
+    /**
+     * Keeps a "Recent" row at the top of the browse list, pointing at the folder of
+     * the last chapter that was read. Chapters are almost always just numbered, so
+     * the folder name is what identifies the series — and tapping the row jumps
+     * straight back to it.
+     */
+    private fun updateRecentHeader() {
+        val show = mode == TAB_BROWSE && query.isBlank()
+        val dir = if (show) RecentRow.folderOf(library.history()) else null
+        adapter.header = dir?.let {
+            BookAdapter.Header(
+                title = getString(R.string.recent),
+                subtitle = RecentRow.subtitle(it, roots) { id -> Remotes.share(id)?.name },
+                iconRes = R.drawable.ic_history,
+                onClick = { loadDirectory(Remotes.file(it)) }
+            )
+        }
+        // Grid rows share the height the header and section headers leave.
+        if (view.grid && view.rows > 0) updateCellSize()
+    }
+
+    private fun updateEmptyState() {
+        val visible = shown.isEmpty()
+        emptyView.visibility = if (visible) View.VISIBLE else View.GONE
+        val error = listError?.takeIf { mode == TAB_BROWSE }
+        retryButton.visibility = if (error != null) View.VISIBLE else View.GONE
+        if (!visible) return
+
+        val (icon, title, sub) = when {
+            error != null -> Triple(R.drawable.ic_cloud_off, unreachableText(error), null)
+            query.isNotBlank() -> Triple(R.drawable.ic_search, getString(R.string.empty_search), null)
+            prefs.filter(tabName()).isActive && allEntries.isNotEmpty() ->
+                Triple(R.drawable.ic_filter_list, getString(R.string.empty_filtered), null)
+            mode == TAB_FAVORITES -> Triple(
+                R.drawable.ic_star_border, getString(R.string.no_favorites),
+                getString(R.string.menu_add_favorite)
+            )
+            mode == TAB_HISTORY -> Triple(R.drawable.ic_history, getString(R.string.no_history), null)
+            mode == TAB_BOOKMARKS -> Triple(
+                R.drawable.ic_bookmark_border, getString(R.string.no_bookmarks),
+                getString(R.string.menu_bookmark_add)
+            )
+            else -> Triple(R.drawable.ic_folder_open, getString(R.string.empty_folder), null)
+        }
+        emptyIcon.setImageResource(icon)
+        emptyText.text = title
+        emptySubtitle.text = sub.orEmpty()
+        emptySubtitle.visibility = if (sub == null) View.GONE else View.VISIBLE
+    }
+
+    /** What stopped the share browsed from listing, by its name. */
+    private fun unreachableText(error: RemoteException): String {
+        val name = currentDir?.let { locationName(it.absolutePath) }.orEmpty()
+        return getString(
+            when (error.reason) {
+                RemoteException.Reason.DENIED -> R.string.share_denied_named
+                RemoteException.Reason.NO_SHARE -> R.string.share_missing_named
+                else -> R.string.share_unreachable_named
+            },
+            name
+        )
+    }
+
+    /** Lists the share browsed again, asking the network at once. */
+    private fun retryListing() {
+        val dir = currentDir ?: return
+        Remotes.idOf(dir.absolutePath)?.let { Remotes.retry(it) }
+        loadDirectory(dir)
+    }
+
+    private fun scrollToHighlight(path: String) {
+        val position = adapter.positionOf(path)
+        if (position >= 0) recycler.scrollToPosition(position)
+    }
+
+    private fun showProgress(visible: Boolean) {
+        progress.visibility = if (visible) View.VISIBLE else View.GONE
+        if (visible) emptyView.visibility = View.GONE
+    }
+
+    // ------------------------------------------------------------------ actions
+
+    /** Opens [entry]: a folder is browsed, a book read where the reader picks up ([ResumeMode]), a bookmark at its page. */
+    private fun openEntry(entry: BookEntry) {
+        when {
+            mode != TAB_BROWSE && entry.presence == Presence.MISSING -> showMissing(entry)
+            // Storage not mounted: nothing to try.
+            mode != TAB_BROWSE && entry.presence == Presence.UNREACHABLE && !Remotes.isRemote(entry.path) -> toast(R.string.share_unreachable)
+            entry.isDir -> loadDirectory(entry.file)
+            mode == TAB_HISTORY -> {
+                // The reader decides where to start (ResumeMode.start).
+                if (entry.file.exists()) openViewer(entry.file, -1) else toast(R.string.open_location_failed)
+            }
+            mode == TAB_BOOKMARKS -> {
+                if (entry.file.exists()) openViewer(entry.file, entry.progressPage.coerceAtLeast(0))
+                else toast(R.string.open_location_failed)
+            }
+            Formats.isOpenable(entry.name) -> {
+                // The reader decides where to start (ResumeMode.start).
+                openViewer(entry.file, -1)
+            }
+            else -> toast(R.string.error_open)
+        }
+    }
+
+    // ------------------------------------------------------------------ selection
+
+    /** A tap opens [entry]; while selecting, it selects it or lets it go. */
+    private fun onEntryClick(entry: BookEntry) {
+        if (selection.active) toggleSelected(entry) else openEntry(entry)
+    }
+
+    /** A long press selects [entry], starting selection; while selecting, it does as a tap. */
+    private fun onEntryLongClick(entry: BookEntry) = toggleSelected(entry)
+
+    private fun toggleSelected(entry: BookEntry) {
+        selection.toggle(entry)
+        if (!selection.active) hideMore()
+        adapter.selectionChanged()
+        updateSelection()
+    }
+
+    /** Lets go of everything selected, leaving selection. */
+    private fun endSelection() {
+        hideMore()
+        rebuildWalk?.cancel()
+        if (!selection.active) return
+        selection.clear()
+        adapter.selectionChanged()
+        updateSelection()
+    }
+
+    /**
+     * The floating button's fixed place: low, beside the selection's centered bar; in a
+     * window too narrow for both, above the bar (its margin and height, and a gap), the
+     * stack above the button alike. Set once: a window resized is made anew.
+     */
+    private fun placeButton() {
+        val bar = selectionActions
+        val unspecified = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+        bar.measure(unspecified, unspecified)
+        fab.measure(unspecified, unspecified)
+        val gap = resources.getDimensionPixelSize(R.dimen.op_bubble_gap)
+        val fabLp = fab.layoutParams as CoordinatorLayout.LayoutParams
+        val window = resources.configuration.screenWidthDp * resources.displayMetrics.density
+        if ((window - bar.measuredWidth) / 2 >= fabLp.marginEnd + fab.measuredWidth + gap) return
+        val raise = (bar.layoutParams as CoordinatorLayout.LayoutParams).bottomMargin + bar.measuredHeight + gap - fabLp.bottomMargin
+        for (v in listOf<View>(fab, findViewById(R.id.operation_stack))) {
+            val lp = v.layoutParams as CoordinatorLayout.LayoutParams
+            lp.bottomMargin += raise
+            v.layoutParams = lp
+        }
+    }
+
+    /** The selection bar's X and Select all, and the floating bar's buttons in their fixed order. */
+    private fun setUpSelection() {
+        selectionBar.setNavigationOnClickListener { endSelection() }
+        selectionBar.menu.add(Menu.NONE, R.id.menu_select_all, 0, R.string.select_all)
+            .setIcon(R.drawable.ic_select_all)
+            .setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
+        selectionBar.setOnMenuItemClickListener {
+            selection.selectAll(adapter.entries())
+            adapter.selectionChanged()
+            updateSelection()
+            true
+        }
+        val row = selectionActions
+        // A card drawn in code: a MaterialCardView here runs an animation as the list starts.
+        row.background = MaterialShapeDrawable().apply {
+            fillColor = ColorStateList.valueOf(MaterialColors.getColor(row, com.google.android.material.R.attr.colorSurfaceContainerHigh))
+            setCornerSize(resources.getDimension(R.dimen.selection_bar_corner))
+        }
+        val primary = MaterialColors.getColor(row, androidx.appcompat.R.attr.colorPrimary)
+        for (bar in SelectionActions.Bar.entries) {
+            val view = layoutInflater.inflate(R.layout.item_bar_action, row, false)
+            view.id = barIdOf(bar)
+            view.findViewById<ImageView>(R.id.bar_action_icon).imageTintList = ColorStateList.valueOf(primary)
+            view.setOnClickListener { onBarAction(bar) }
+            row.addView(view)
+            barViews[bar] = view
+        }
+        labelBar(unfavorite = false)
+    }
+
+    /** Sets each bar button's icon and name; Favorite says whether it adds or removes, Delete in Bookmarks removes bookmarks. */
+    private fun labelBar(unfavorite: Boolean) {
+        for ((bar, view) in barViews) {
+            val (icon, label) = when (bar) {
+                SelectionActions.Bar.MOVE -> R.drawable.ic_drive_file_move to R.string.file_op_move
+                SelectionActions.Bar.COPY -> R.drawable.ic_content_copy to R.string.file_op_copy
+                SelectionActions.Bar.DELETE -> R.drawable.ic_delete to if (mode == TAB_BOOKMARKS) R.string.selection_remove else R.string.delete
+                SelectionActions.Bar.SHARE -> R.drawable.ic_share to R.string.file_op_share
+                SelectionActions.Bar.RENAME -> R.drawable.ic_edit to R.string.menu_rename
+                SelectionActions.Bar.FAVORITE ->
+                    if (unfavorite) R.drawable.ic_star to R.string.selection_unfavorite else R.drawable.ic_star_border to R.string.toolbar_button_favorite
+                SelectionActions.Bar.MORE -> R.drawable.ic_more_vert to R.string.file_op_more
+            }
+            view.findViewById<ImageView>(R.id.bar_action_icon).setImageResource(icon)
+            view.findViewById<TextView>(R.id.bar_action_label).setText(label)
+            view.contentDescription = getString(label)
+        }
+    }
+
+    private fun barIdOf(bar: SelectionActions.Bar): Int = when (bar) {
+        SelectionActions.Bar.MOVE -> R.id.selection_move
+        SelectionActions.Bar.COPY -> R.id.selection_copy
+        SelectionActions.Bar.DELETE -> R.id.selection_delete
+        SelectionActions.Bar.SHARE -> R.id.selection_share
+        SelectionActions.Bar.RENAME -> R.id.selection_rename
+        SelectionActions.Bar.FAVORITE -> R.id.selection_favorite
+        SelectionActions.Bar.MORE -> R.id.selection_more
+    }
+
+    /** The bar as it applies to the selection in this tab. */
+    private fun barState(): SelectionActions.BarState = SelectionActions.bar(
+        bookmarks = mode == TAB_BOOKMARKS,
+        entries = selection.entries,
+        changeable = ::canChangeFiles,
+        shareable = ::canShare,
+        more = moreItems()
+    )
+
+    /** The ⋮ menu's items for the selection, in the order Settings gives. */
+    private fun moreItems(): List<MoreAction> = SelectionActions.more(
+        selection.entries,
+        prefs.moreActions.visible,
+        SelectionActions.MoreFacts(
+            prefs.keepSimple, ::isBrowsedHere, { NameCharsetDialog.applies(it.name) }, ::canPeek, ::canRebuild,
+            packable = ::canPack, inHistory = mode == TAB_HISTORY, inBookmarks = mode == TAB_BOOKMARKS
+        )
+    )
+
+    /** While anything is selected: the selection bar instead of the toolbar, the floating bar, and the button for it. */
+    private fun updateSelection() {
+        val active = selection.active
+        val state = if (active) barState() else null
+        toolbar.visibility = if (active) View.GONE else View.VISIBLE
+        selectionBar.visibility = if (active) View.VISIBLE else View.GONE
+        selectionActions.visibility = if (active) View.VISIBLE else View.GONE
+        if (active) {
+            val n = selection.size
+            selectionBar.title = resources.getQuantityString(R.plurals.selected_count, n, n)
+            selectionBar.subtitle = selection.totalSize { folderSizes[it.path] }?.let { FileUtils.formatSize(this, it) }
+            labelBar(state!!.unfavorite)
+            for ((bar, view) in barViews) {
+                view.visibility = if (bar in state.shown) View.VISIBLE else View.GONE
+                val on = bar in state.enabled
+                view.isEnabled = on
+                view.alpha = if (on) 1f else DISABLED_ALPHA
+            }
+        }
+        updateFab(state)
+    }
+
+    /**
+     * Shows what the floating button does now ([SelectionActions.fab]): the list/grid toggle
+     * with nothing selected, else what Settings picks for one or several, each in its own
+     * colors ([FabLook]); hidden when it does nothing.
+     */
+    private fun updateFab(state: SelectionActions.BarState? = null) {
+        val bar = state ?: SelectionActions.BarState(emptySet(), emptySet(), false)
+        // Shown in an empty folder too: the button never comes and goes with the list.
+        val shows = SelectionActions.fab(selection.size, prefs.listQuickFab, prefs.fabOne, prefs.fabMany, bar)
+        fabShows = shows
+        if (shows != SelectionActions.Fab.GRID_LIST) viewRing.close()
+        // Only the grid/list toggle opens the view ring; TalkBack names what its long press does.
+        val ring = shows == SelectionActions.Fab.GRID_LIST
+        fab.isLongClickable = ring
+        if (ring) ViewCompat.replaceAccessibilityAction(fab, AccessibilityActionCompat.ACTION_LONG_CLICK, getString(R.string.view_ring_open), null)
+        else ViewCompat.removeAccessibilityAction(fab, AccessibilityActionCompat.ACTION_LONG_CLICK.id)
+        if (shows == null) {
+            fab.visibility = View.GONE
+            return
+        }
+        val tap = ViewRing.tapAction(tabName(), prefs.fabTap)
+        if (shows == SelectionActions.Fab.GRID_LIST && tap != RingOption.LAYOUT) paintTap(tap) else paint(fab, FabLook.of(shows, view.grid, bar.unfavorite))
+        fab.visibility = View.VISIBLE
+    }
+
+    /**
+     * Gives the grid/list button the look of its tap action [tap] (Settings): the ring
+     * button's icon, grayed where the action is at its end (and TalkBack told so), and a name
+     * saying what a tap does.
+     */
+    private fun paintTap(tap: RingOption) {
+        val item = ringLabels.item(tap, prefs, tabName(), view, columnCount())
+        paint(fab, FabLook.of(SelectionActions.Fab.GRID_LIST, view.grid, false).copy(icon = item.icon))
+        if (!item.enabled) {
+            fab.imageAlpha = (255 * DISABLED_ALPHA).toInt()
+            ViewCompat.setStateDescription(fab, getString(R.string.view_ring_at_end))
+        }
+        val next = item.spoken.next
+        fab.contentDescription = if (next == null) getString(R.string.view_ring_item, item.name, item.spoken.current)
+        else getString(R.string.view_ring_item_next, item.name, item.spoken.current, next)
+    }
+
+    // ------------------------------------------------------------------ view ring
+
+    /** Opens the view ring around the grid/list button; true when it did. */
+    private fun openViewRing(): Boolean {
+        if (fabShows != SelectionActions.Fab.GRID_LIST || viewRing.isOpen) return false
+        viewRing.open(fab, ringItems())
+        // A finger still down may drag to a button; the button itself lets go of it.
+        fabFinger?.let { (x, y) ->
+            ringFollows = true
+            viewRing.follow(x, y)
+            val now = SystemClock.uptimeMillis()
+            MotionEvent.obtain(now, now, MotionEvent.ACTION_CANCEL, 0f, 0f, 0).also { fab.onTouchEvent(it) }.recycle()
+        }
+        return true
+    }
+
+    /** Notes where the finger on [v] is; once the ring follows it, its moves go to the ring until it lifts. */
+    @SuppressLint("ClickableViewAccessibility")
+    private fun onFabTouch(v: View, e: MotionEvent): Boolean {
+        v.getLocationInWindow(fabAt)
+        val x = fabAt[0] + e.getX(0)
+        val y = fabAt[1] + e.getY(0)
+        val end = e.actionMasked == MotionEvent.ACTION_UP || e.actionMasked == MotionEvent.ACTION_CANCEL
+        if (e.actionMasked == MotionEvent.ACTION_DOWN) ringFollows = false
+        fabFinger = if (end) null else x to y
+        if (!ringFollows) return false
+        if (end) ringFollows = false
+        when (e.actionMasked) {
+            MotionEvent.ACTION_MOVE, MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> viewRing.drag(e.actionMasked, x, y)
+        }
+        return true
+    }
+
+    /** The ring's buttons for the current tab, as Settings choose them, each with what a tap does. */
+    private fun ringItems(): List<ViewRingOverlay.Item> = ringLabels.items(prefs, tabName(), view, columnCount())
+
+    /** Writes what ring button [option] changes, shows it at once, and the ring shows the new values. */
+    private fun onRingTap(option: RingOption) {
+        runRing(option)
+        viewRing.refresh(ringItems())
+    }
+
+    /** Writes what ring action [option] changes and shows it at once; at its end, Smaller or Larger does nothing. */
+    private fun runRing(option: RingOption) {
+        val tab = tabName()
+        val v = view
+        when (option) {
+            RingOption.LAYOUT -> prefs.setGrid(tab, !v.grid)
+            RingOption.SMALLER -> ViewRing.smaller(v, columnCount())?.let { setView(tab, it) }
+            RingOption.LARGER -> ViewRing.larger(v, columnCount())?.let { setView(tab, it) }
+            RingOption.DETAIL -> prefs.setDetail(tab, ViewRing.nextDetail(v.detail))
+            RingOption.SORT -> prefs.sort(tab).let { prefs.setSort(tab, it.copy(by = it.by.flip())) }
+            RingOption.TITLE_LINES -> prefs.titleDisplay = ViewRing.nextTitle(prefs.titleDisplay)
+            RingOption.FOLDERS_FIRST -> prefs.sort(tab).let { prefs.setSort(tab, it.copy(foldersFirst = !it.foldersFirst)) }
+            RingOption.SECTIONS -> prefs.groupFavorites = !prefs.groupFavorites
+        }
+        when (option) {
+            RingOption.SORT, RingOption.FOLDERS_FIRST, RingOption.SECTIONS -> onTabSettingsChanged()
+            else -> showCurrentView()
+        }
+        updateFab()
+    }
+
+    /** Writes a grid size or list density stepped by the ring. */
+    private fun setView(tab: String, v: TabView) {
+        if (v.grid) prefs.setGridSize(tab, v.columns, v.rows) else prefs.setDensity(tab, v.density)
+    }
+
+    /** A long press on the ring's Sort opens the whole Sort popup instead. */
+    private fun onRingLongTap(option: RingOption) {
+        if (option != RingOption.SORT) return
+        viewRing.close()
+        showSortDialog()
+    }
+
+    /** Gives [button] the icon, name and colors of [look]. */
+    private fun paint(button: FloatingActionButton, look: FabLook) {
+        button.setImageResource(look.icon)
+        button.imageAlpha = 255
+        button.contentDescription = getString(look.label)
+        ViewCompat.setStateDescription(button, null)
+        button.backgroundTintList = ColorStateList.valueOf(MaterialColors.getColor(button, look.background))
+        button.imageTintList = ColorStateList.valueOf(MaterialColors.getColor(button, look.foreground))
+    }
+
+    private fun onFabClick() {
+        when (fabShows) {
+            null, SelectionActions.Fab.GRID_LIST -> ViewRing.tapAction(tabName(), prefs.fabTap).let { if (it == RingOption.LAYOUT) toggleGrid() else runRing(it) }
+            SelectionActions.Fab.OPEN -> selection.entries.singleOrNull()?.let {
+                endSelection()
+                openEntry(it)
+            }
+            SelectionActions.Fab.MOVE -> onBarAction(SelectionActions.Bar.MOVE)
+            SelectionActions.Fab.COPY -> onBarAction(SelectionActions.Bar.COPY)
+            SelectionActions.Fab.DELETE -> onBarAction(SelectionActions.Bar.DELETE)
+            SelectionActions.Fab.SHARE -> onBarAction(SelectionActions.Bar.SHARE)
+            SelectionActions.Fab.FAVORITE -> onBarAction(SelectionActions.Bar.FAVORITE)
+        }
+    }
+
+    private fun itemsOf(entries: List<BookEntry>) = entries.map { FileClipboard.Item(it.path, it.isDir) }
+
+    /**
+     * Runs bar button [bar] on the selection. Move and Copy pick it all up at once, Delete
+     * asks once for all (in Bookmarks it removes the bookmarks), Share is one share action;
+     * the selection ends as each goes ahead.
+     */
+    private fun onBarAction(bar: SelectionActions.Bar) {
+        val entries = selection.entries
+        if (entries.isEmpty()) return
+        when (bar) {
+            SelectionActions.Bar.MOVE, SelectionActions.Bar.COPY -> {
+                endSelection()
+                pickUp(entries, move = bar == SelectionActions.Bar.MOVE)
+            }
+            SelectionActions.Bar.DELETE ->
+                if (mode == TAB_BOOKMARKS) removeBookmarks(entries) else fileActions.delete(itemsOf(entries)) { endSelection() }
+            SelectionActions.Bar.SHARE -> bookShare.show(entries) { endSelection() }
+            SelectionActions.Bar.RENAME -> {
+                endSelection()
+                fileActions.rename(entries.single().file)
+            }
+            SelectionActions.Bar.FAVORITE -> {
+                val add = !barState().unfavorite
+                endSelection()
+                setFavorites(entries, add)
+            }
+            SelectionActions.Bar.MORE -> showMore()
+        }
+    }
+
+    /** Removes the bookmarks [entries] once confirmed; their books stay. */
+    private fun removeBookmarks(entries: List<BookEntry>) {
+        confirm(
+            this,
+            resources.getQuantityString(R.plurals.remove_bookmarks_title, entries.size, entries.size),
+            getString(R.string.remove_bookmarks_msg),
+            R.string.selection_remove
+        ) {
+            endSelection()
+            removeFromList(entries)
+        }
+    }
+
+    /** Takes the books [entries] out of the history once confirmed; the books stay. */
+    private fun removeHistory(entries: List<BookEntry>) {
+        confirm(
+            this,
+            resources.getQuantityString(R.plurals.remove_history_title, entries.size, entries.size),
+            getString(R.string.remove_history_msg),
+            R.string.selection_remove
+        ) {
+            endSelection()
+            removeFromList(entries)
+        }
+    }
+
+    /** Takes [entries] out of the list shown (Favorites, History or Bookmarks), and lists it again. */
+    private fun removeFromList(entries: List<BookEntry>) {
+        when (mode) {
+            TAB_HISTORY -> library.removeHistory(entries.mapNotNull { it.id })
+            TAB_BOOKMARKS -> library.removeBookmarks(entries.mapNotNull { e -> e.id?.let { it to e.bookmarkPage } })
+            TAB_FAVORITES -> library.removeFavorites(entries.filter { it.isDir && it.id == null }.map { it.path }, entries.mapNotNull { it.id })
+            else -> return
+        }
+        refreshCurrent()
+    }
+
+    /**
+     * The sheet of [entry], missing from where it was last seen: Remove from this list, Show
+     * in folder (what is left of it), Forget missing books (the scan that also finds books moved).
+     */
+    private fun showMissing(entry: BookEntry) {
+        missingSheet?.dismiss()
+        val sheet = BottomSheetDialog(this)
+        val content = layoutInflater.inflate(R.layout.sheet_missing, null)
+        content.findViewById<TextView>(R.id.missing_title).text = entry.name
+        val where = entry.file.parent?.let { relativePath(Remotes.file(it, askNetwork = false)).ifEmpty { locationName(it) } }.orEmpty()
+        content.findViewById<TextView>(R.id.missing_where).apply {
+            text = getString(R.string.missing_item_where, where)
+            visibility = if (where.isEmpty()) View.GONE else View.VISIBLE
+        }
+        val rows = content.findViewById<LinearLayout>(R.id.missing_actions)
+        val primary = ColorStateList.valueOf(MaterialColors.getColor(rows, androidx.appcompat.R.attr.colorPrimary))
+        fun row(id: Int, icon: Int, label: Int, action: () -> Unit) {
+            val item = layoutInflater.inflate(R.layout.item_more_action, rows, false)
+            item.id = id
+            item.findViewById<ImageView>(R.id.more_action_icon).apply {
+                setImageResource(icon)
+                imageTintList = primary
+            }
+            item.findViewById<TextView>(R.id.more_action_label).setText(label)
+            item.setOnClickListener {
+                sheet.dismiss()
+                action()
+            }
+            rows.addView(item)
+        }
+        row(R.id.missing_remove, R.drawable.ic_playlist_remove, R.string.missing_item_remove) { removeFromList(listOf(entry)) }
+        row(R.id.missing_show, R.drawable.ic_folder_open, R.string.menu_open_location) { openLocation(entry.file) }
+        row(R.id.missing_forget, R.drawable.ic_search, R.string.missing_item_forget) { forgetMissing() }
+        sheet.setContentView(content)
+        // Opens whole: in landscape the collapsed height cut the rows off.
+        sheet.behavior.state = BottomSheetBehavior.STATE_EXPANDED
+        sheet.behavior.skipCollapsed = true
+        SheetExit.passTouchesWhileLeaving(sheet)
+        sheet.setOnDismissListener { if (missingSheet === sheet) missingSheet = null }
+        sheet.show()
+        missingSheet = sheet
+    }
+
+    /** Opens "Forget missing books", which also finds books moved; the tab lists again on return. */
+    private fun forgetMissing() {
+        relistOnResume = true
+        startActivity(Intent(this, MissingBooksActivity::class.java))
+    }
+
+    /** The Book IDs of the books among [entries], as listed or found now; those that cannot be read are left out. */
+    private suspend fun refsOf(entries: List<BookEntry>): List<BookRef> {
+        val books = entries.filter { !it.isDir }
+        val unknown = books.filter { idOf(it) == null }
+        val found = if (unknown.isEmpty()) emptyMap() else idsOf(unknown.map { it.file })
+        return books.mapNotNull { e -> (idOf(e) ?: found[e.file])?.let { BookRef(it, e.path) } }
+    }
+
+    /** Adds [entries] (folders and books) to the favorites, or removes them, and says which, and how many of all when not each could be. */
+    private fun setFavorites(entries: List<BookEntry>, add: Boolean) {
+        lifecycleScope.launch {
+            val folders = entries.filter { it.isDir }.map { it.path }
+            val books = refsOf(entries)
+            withContext(AppDispatchers.io) {
+                for (path in folders) if (library.isFavoriteFolder(path) != add) library.toggleFavoriteFolder(path)
+                for (book in books) library.setFavorite(book, add)
+            }
+            tellDone(if (add) R.string.favorite_added else R.string.favorite_removed, folders.size + books.size, entries.size)
+            refreshCurrent()
+        }
+    }
+
+    /** Marks the books among [entries] read or unread. */
+    private fun markBooks(entries: List<BookEntry>, read: Boolean) {
+        lifecycleScope.launch {
+            val books = refsOf(entries)
+            if (books.isNotEmpty()) withContext(AppDispatchers.io) {
+                library.setReadMany(books, read)
+                FolderReads.updateFor(library, books)
+            }
+            tellDone(if (read) R.string.marked_read else R.string.marked_unread, books.size, entries.count { !it.isDir })
+            refreshCurrent()
+        }
+    }
+
+    /** Says [what] was done to [done] of [count] items: plainly for all, with the count for some, that it failed for none. */
+    private fun tellDone(what: Int, done: Int, count: Int) = when {
+        done == 0 -> toast(R.string.error_open)
+        done < count -> toast(getString(R.string.done_part, getString(what), done, count))
+        else -> toast(what)
+    }
+
+    /**
+     * The selection's ⋮ menu: an icon and a name for each item that applies, above the ⋮
+     * button. Two or more of the items that write a new book (Pack, Pack compacted, Compact,
+     * Make compatible, Repack as CBZ) go together under "Convert ›", a submenu shown in its
+     * place; a lone one shows as itself. Pack and Pack compacted stay off until every
+     * folder selected is found to hold images only ([PackFolders]), else say why; the
+     * rebuilds turn off, saying why, where no book can be written or each one's mark says
+     * it had that done already ([OutputMarks]).
+     */
+    private fun showMore() {
+        hideMore()
+        val anchor = barViews[SelectionActions.Bar.MORE] ?: return
+        val actions = moreItems()
+        if (actions.isEmpty()) return
+        val primary = ColorStateList.valueOf(MaterialColors.getColor(anchor, androidx.appcompat.R.attr.colorPrimary))
+        val pad = resources.getDimensionPixelSize(R.dimen.space_2)
+        fun list(id: Int) = LinearLayout(this).apply {
+            this.id = id
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, pad, 0, pad)
+        }
+        val main = list(R.id.more_menu)
+        val sub = list(R.id.more_submenu).apply { visibility = View.GONE }
+        val box = FrameLayout(this).apply {
+            addView(main)
+            addView(sub)
+        }
+        val gap = resources.getDimensionPixelSize(R.dimen.space_2)
+        lateinit var popup: PopupWindow
+        // A list shown makes the menu another size: it still ends above the button.
+        fun refit() {
+            box.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
+            if (popup.isShowing) popup.update(anchor, (anchor.width - box.measuredWidth) / 2, -(anchor.height + box.measuredHeight + gap), box.measuredWidth, box.measuredHeight)
+        }
+        fun row(into: ViewGroup, tag: Any, icon: Int, label: String, onTap: () -> Unit) {
+            val item = layoutInflater.inflate(R.layout.item_more_action, into, false)
+            item.tag = tag
+            item.findViewById<ImageView>(R.id.more_action_icon).apply {
+                setImageResource(icon)
+                imageTintList = primary
+            }
+            item.findViewById<TextView>(R.id.more_action_label).text = label
+            item.setOnClickListener { if (it.isEnabled) onTap() }
+            into.addView(item)
+        }
+        fun swap(toSub: Boolean) {
+            main.visibility = if (toSub) View.GONE else View.VISIBLE
+            sub.visibility = if (toSub) View.VISIBLE else View.GONE
+            refit()
+        }
+        val group = actions.filter { it in MoreAction.CONVERT_GROUP }.takeIf { it.size >= 2 }.orEmpty()
+        for (action in actions) {
+            if (action in group) {
+                if (action != group.first()) continue
+                row(main, MORE_CONVERT_TAG, R.drawable.ic_archive, getString(R.string.more_convert_group)) { swap(toSub = true) }
+                row(sub, MORE_BACK_TAG, R.drawable.ic_chevron_left, getString(R.string.more_convert_back)) { swap(toSub = false) }
+                for (inner in group) {
+                    row(sub, inner, MoreActionsDialog.iconOf(inner), getString(MoreActionsDialog.labelOf(inner))) {
+                        hideMore()
+                        onMoreAction(inner)
+                    }
+                }
+                continue
+            }
+            row(main, action, MoreActionsDialog.iconOf(action), getString(MoreActionsDialog.labelOf(action))) {
+                hideMore()
+                onMoreAction(action)
+            }
+        }
+        moreMain = main
+        moreSub = sub
+        val packs = actions.filter { it == MoreAction.PACK || it == MoreAction.PACK_COMPACTED }
+        for (action in packs) offMore(action, "")
+        box.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
+        popup = PopupWindow(box, ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, true)
+        val elevation = resources.displayMetrics.density * MORE_ELEVATION_DP
+        popup.setBackgroundDrawable(
+            MaterialShapeDrawable().apply {
+                fillColor = ColorStateList.valueOf(MaterialColors.getColor(anchor, com.google.android.material.R.attr.colorSurfaceContainerHigh))
+                setCornerSize(resources.getDimension(R.dimen.space_3))
+            }
+        )
+        popup.elevation = elevation
+        popup.isOutsideTouchable = true
+        popup.setOnDismissListener { if (morePopup === popup) morePopup = null }
+        popup.showAsDropDown(anchor, (anchor.width - box.measuredWidth) / 2, -(anchor.height + box.measuredHeight + gap))
+        morePopup = popup
+        val rebuilds = actions.filter { it in MoreAction.REBUILDS }
+        if (packs.isEmpty() && rebuilds.isEmpty()) return
+        val entries = selection.entries
+        val books = entries.any { !it.isDir }
+        val folders = entries.filter { it.isDir }.map { it.file }
+        val hash = BookIds.xxh3
+        moreLook = lifecycleScope.launch {
+            val reasons = HashMap<MoreAction, String?>()
+            if (packs.isNotEmpty()) {
+                val blocked = if (books) null else withContext(AppDispatchers.io) { PackFolders.firstBlocked(folders) }
+                val why = if (books) getString(R.string.pack_why_books) else blocked?.let { (dir, why) ->
+                    val text = getString(packWhy(why))
+                    if (folders.size > 1) getString(R.string.pack_why_named, dir.name, text) else text
+                }
+                for (action in packs) reasons[action] = why
+            }
+            if (rebuilds.isNotEmpty()) {
+                // What each takes, told here: the checks of what is there keep to the main thread.
+                val taken = rebuilds.associateWith { action -> entries.filter { canRebuild(it) && (action != MoreAction.REPACK_CBZ || it.isDir || SelectionActions.repackable(it.name)) } }
+                val alone = entries.none { it.isDir }
+                val found = withContext(AppDispatchers.io) { rebuildBlocks(taken, alone, hash) }
+                for (action in rebuilds) reasons[action] = found[action]
+            }
+            if (morePopup !== popup) return@launch
+            for ((action, why) in reasons) offMore(action, why)
+            // Every item under "Convert ›" off for one reason: the row itself, so no submenu opens with nothing to tap.
+            val inside = group.map { reasons[it] }
+            if (inside.isNotEmpty() && inside.all { it != null } && inside.distinct().size == 1) offMore(MORE_CONVERT_TAG, inside.first())
+            refit()
+        }
+    }
+
+    /**
+     * Why each rebuild (Compact, Make compatible, Repack as CBZ) cannot run on the items it
+     * [taken], or null where it can: none of them can be written where it is ("read-only");
+     * or, books [alone] selected, each one's mark says it had that done already. Blocking I/O.
+     */
+    private fun rebuildBlocks(taken: Map<MoreAction, List<BookEntry>>, alone: Boolean, hash: Xxh3): Map<MoreAction, String?> {
+        val marks = HashMap<String, OutputMarks.Done>()
+        // Marks are read for books alone, a few at most: each costs a read of the file's tail.
+        fun done(items: List<BookEntry>): List<OutputMarks.Done>? =
+            if (!alone || items.isEmpty() || items.size > MARK_CHECKS) null else items.map { marks.getOrPut(it.path) { OutputMarks.verified(it.file, hash) } }
+        return taken.mapValues { (action, items) ->
+            when {
+                items.isNotEmpty() && items.none { writable(it) } -> getString(R.string.rebuild_why_read_only)
+                action == MoreAction.COMPACT -> done(items)?.takeIf { d -> d.all { it.compactedBy != null } }?.let { getString(R.string.rebuild_why_compacted, it.first().compactedBy) }
+                action == MoreAction.MAKE_COMPATIBLE -> done(items)?.takeIf { d -> d.all { it.compatible } }?.let { getString(R.string.rebuild_why_compatible) }
+                else -> null
+            }
+        }
+    }
+
+    /** True when the new file of [entry]'s rebuild can be written where it goes: in the folder itself, or beside the book. Blocking. */
+    private fun writable(entry: BookEntry): Boolean = (if (entry.isDir) entry.file else entry.file.parentFile)?.let(canWrite) == true
+
+    /** Turns ⋮ menu item [tag] (a [MoreAction] or [MORE_CONVERT_TAG]) off saying [why] (nothing while it is not known), or on again when null; in the menu or its submenu. */
+    private fun offMore(tag: Any, why: String?) {
+        val item = listOfNotNull(moreMain, moreSub).flatMap { list -> (0 until list.childCount).map { list.getChildAt(it) } }.firstOrNull { it.tag == tag } ?: return
+        item.isEnabled = why == null
+        item.alpha = if (why == null) 1f else DISABLED_ALPHA
+        item.findViewById<TextView>(R.id.more_action_reason).apply {
+            text = why.orEmpty()
+            visibility = if (why.isNullOrEmpty()) View.GONE else View.VISIBLE
+        }
+    }
+
+    /** What [why] says of a folder Pack cannot take. */
+    private fun packWhy(why: PackFolders.Why): Int = when (why) {
+        PackFolders.Why.SUBFOLDERS -> R.string.pack_why_subfolders
+        PackFolders.Why.OTHER_FILES -> R.string.pack_why_other_files
+        PackFolders.Why.NO_IMAGES -> R.string.pack_why_no_images
+        PackFolders.Why.UNREADABLE -> R.string.pack_why_unreadable
+    }
+
+    private fun hideMore() {
+        moreLook?.cancel()
+        moreLook = null
+        moreMain = null
+        moreSub = null
+        val popup = morePopup ?: return
+        morePopup = null
+        popup.dismiss()
+    }
+
+    /** The ⋮ menu's items shown while it shows, its own or its submenu's; for tests. */
+    internal val moreMenu: ViewGroup? get() = if (morePopup == null) null else listOfNotNull(moreMain, moreSub).firstOrNull { it.visibility == View.VISIBLE }
+
+    /** Runs ⋮ menu item [action] on the selection, which ends; for one that asks first, once confirmed. */
+    private fun onMoreAction(action: MoreAction) {
+        val entries = selection.entries
+        val one = entries.singleOrNull()
+        val asks = action in MoreAction.CONVERT_GROUP ||
+            action == MoreAction.REMOVE_FROM_HISTORY || action == MoreAction.REMOVE_BOOKMARK
+        if (!asks) endSelection()
+        when (action) {
+            MoreAction.CONTINUE_READING -> one?.let { continueReading(it.file) }
+            MoreAction.MARK_READ -> markBooks(entries, read = true)
+            MoreAction.MARK_UNREAD -> markBooks(entries, read = false)
+            MoreAction.MARK_ALL_READ -> markFolders(entries.filter { it.isDir }.map { it.file }, read = true)
+            MoreAction.MARK_ALL_UNREAD -> markFolders(entries.filter { it.isDir }.map { it.file }, read = false)
+            MoreAction.SET_STARTUP -> one?.let {
+                prefs.setStartupFolder(it.path)
+                toast(R.string.startup_folder_set)
+            }
+            MoreAction.SHOW_IN_FOLDER -> one?.let { openLocation(it.file) }
+            MoreAction.BOOK_INFO -> one?.let { showBookInfo(it) }
+            MoreAction.NAME_CHARSET -> one?.let { pickCharset(it) }
+            MoreAction.PEEK -> one?.let { peekFromMenu(it) }
+            MoreAction.COMPACT -> rebuild(entries.filter(::canRebuild), FileJobs.Rebuild.COMPACT)
+            MoreAction.MAKE_COMPATIBLE -> rebuild(entries.filter(::canRebuild), FileJobs.Rebuild.COMPATIBLE)
+            MoreAction.REPACK_CBZ -> rebuild(entries.filter { canRebuild(it) && (it.isDir || SelectionActions.repackable(it.name)) }, FileJobs.Rebuild.REPACK)
+            MoreAction.PACK, MoreAction.PACK_COMPACTED ->
+                fileActions.pack(entries.filter(::canPack).map { it.file }, compacted = action == MoreAction.PACK_COMPACTED) { endSelection() }
+            MoreAction.REMOVE_FROM_HISTORY -> removeHistory(entries)
+            MoreAction.REMOVE_BOOKMARK -> removeBookmarks(entries)
+        }
+    }
+
+    /**
+     * True when [entry] is what Compact and Make compatible take, on the device and changeable:
+     * an archive, or a folder, which gives every book inside it.
+     */
+    private fun canRebuild(entry: BookEntry): Boolean =
+        (entry.isDir || Formats.isArchiveName(entry.name)) && !Remotes.isRemote(entry.path) && canChangeFiles(entry)
+
+    /** True when [entry] is a folder Pack may take: on the device and changeable. */
+    private fun canPack(entry: BookEntry): Boolean = entry.isDir && !Remotes.isRemote(entry.path) && canChangeFiles(entry)
+
+    /**
+     * Rebuilds as [how] says the books among [entries] and every book inside the folders
+     * among them (for Repack, those that are not ZIP), once asked; the spinner shows while
+     * folders are searched.
+     */
+    private fun rebuild(entries: List<BookEntry>, how: FileJobs.Rebuild) {
+        if (rebuildWalk?.isActive == true) return
+        rebuildWalk = lifecycleScope.launch {
+            val books = entries.filter { !it.isDir }.map { it.file }
+            val folders = entries.filter { it.isDir }.map { it.file }
+            val paths = if (folders.isEmpty()) {
+                books.map { it.absolutePath }
+            } else {
+                // Left to a listing that shows it already.
+                val spin = progress.visibility != View.VISIBLE
+                if (spin) progress.visibility = View.VISIBLE
+                try {
+                    withContext(AppDispatchers.io) { RebuildTargets.of(books, folders) { !isActive } }
+                        .filter { how != FileJobs.Rebuild.REPACK || SelectionActions.repackable(it) }
+                } finally {
+                    if (spin) progress.visibility = View.GONE
+                }
+            }
+            if (paths.isEmpty()) return@launch toast(R.string.rebuild_no_books)
+            fileActions.rebuild(paths, how) { endSelection() }
+        }
+    }
+
+    /** Book info of [entry] without opening it ([LibraryBookInfo]). */
+    private fun showBookInfo(entry: BookEntry) {
+        val where = entry.file.parentFile?.let { dir -> relativePath(dir).ifEmpty { locationName(dir.absolutePath) } }.orEmpty()
+        LibraryBookInfo.show(this, entry, prefs, factsCache, where) { pickCharset(entry) }
+    }
+
+    /** Asks which charset the file names of book [entry] are read in; an advanced setting. */
+    private fun pickCharset(entry: BookEntry) {
+        NameCharsetDialog.builder(this, library, idOf(entry), prefs.charset) { picked ->
+            lifecycleScope.launch {
+                withContext(AppDispatchers.io) { NameCharsetDialog.switch(library, factsCache, entry.file, prefs.charset, picked, cacheDir) }
+                adapter.notifyDataSetChanged()
+            }
+        }.show()
+    }
+
+    /** True when [entry] can be shared: a file or folder that can be changed, or in Bookmarks a book still there. */
+    private fun canShare(entry: BookEntry): Boolean {
+        if (entry.presence == Presence.MISSING) return false
+        if (mode != TAB_BOOKMARKS) return canChangeFiles(entry)
+        if (Remotes.isRemote(entry.path)) return !Remotes.isOrphan(entry.path)
+        return isThere(entry)
+    }
+
+    /**
+     * True when device item [entry] is there: listed from its folder in Browse, else as first
+     * checked since it was listed ([present]), so taps while selecting touch no storage;
+     * each action checks again as it runs.
+     */
+    private fun isThere(entry: BookEntry): Boolean = mode == TAB_BROWSE || present.getOrPut(entry.path) { entry.file.exists() }
+
+    /**
+     * True when [entry] can be renamed, deleted, moved and copied: a file or folder on the
+     * device or a share, listed in Browse, Favorites or History, never a location itself.
+     */
+    private fun canChangeFiles(entry: BookEntry): Boolean {
+        if (mode == TAB_BOOKMARKS || entry.presence == Presence.MISSING) return false
+        val path = entry.path
+        if (roots.any { it.path == path }) return false
+        if (Remotes.isRemote(path)) return Remotes.relOf(path).isNotEmpty() && !Remotes.isOrphan(path)
+        return isThere(entry)
+    }
+
+    /** Picks [entries] up together for a Paste bubble, saying how Paste works. */
+    private fun pickUp(entries: List<BookEntry>, move: Boolean) {
+        val clip = fileActions.pickUp(itemsOf(entries), move) ?: return
+        if (mode == TAB_BROWSE && currentDir != null) stack.hint(clip.id) else toast(R.string.paste_hint_browse)
+    }
+
+    /** Pastes pick [id] into the folder Browse shows; elsewhere says where to paste. */
+    private fun pasteInto(id: Long) {
+        val dir = currentDir
+        if (mode != TAB_BROWSE || dir == null) return toast(R.string.paste_hint_browse)
+        fileActions.paste(dir, id)
+    }
+
+    /** The name of the folder at [path] as its crumb shows it: a location's own name at its root. */
+    private fun folderName(path: String): String =
+        roots.firstOrNull { it.path == path }?.name
+            ?: locationName(path).takeIf { Remotes.isRemote(path) && Remotes.relOf(path).isEmpty() }
+            ?: File(path).name
+
+    /** Lists again after a file operation, showing the item it ended on where it is listed. */
+    private fun fileWorkDone(outcome: FileWork.Outcome) {
+        val path = (outcome as? FileWork.Outcome.Done)?.path
+        // Forward crumbs never lead into what is gone, even after a canceled or failed operation.
+        outcome.gone.forEach { trail = MissingFolder.trailAfter(trail, it) }
+        val dir = currentDir
+        if (mode == TAB_BROWSE && dir != null) {
+            loadDirectory(dir, highlight = path?.takeIf { Transfer.parentOf(it) == dir.absolutePath })
+        } else {
+            refreshCurrent()
+        }
+    }
+
+    /** True when [entry] is listed in the folder Browse shows: "Show in folder" would lead nowhere new. */
+    private fun isBrowsedHere(entry: BookEntry): Boolean =
+        mode == TAB_BROWSE && currentDir?.absolutePath?.let { it == entry.file.parent } == true
+
+    // ------------------------------------------------------------------ peek
+
+    /**
+     * Spreading two fingers on a comic grows a grid of its pages out of it, on a folder
+     * a grid of the covers inside ([PinchPeek]).
+     */
+    private fun setUpPeek() {
+        pinch = PinchPeek(this, recycler, { applied.pinchPeek }, ::peekTarget, ::peekEntries) { entry, page ->
+            if (entry.isDir) loadDirectory(entry.file) else openViewer(entry.file, page)
+        }
+        peek = pinch.overlay
+    }
+
+    /**
+     * What [dir] lists when browsed: the browse filter applied, in the browse order, with
+     * the facts found in its books ([withFacts]), so covers match the list's.
+     */
+    private suspend fun peekEntries(dir: File): List<BookEntry> {
+        val entries = withContext(AppDispatchers.io) { buildDirectoryEntries(dir) }
+        val sort = prefs.sort(Prefs.TAB_BROWSE)
+        val filter = prefs.filter(Prefs.TAB_BROWSE)
+        val hidden = library.hiddenCounts()
+        val live = values(hidden)
+        val passing = if (filter.isActive) entries.filter { filter.accepts(it, live, true) } else entries
+        return passing.sortedWith(LibrarySort.comparator(sort, live.frozen(passing, sort.keys))).map { withFacts(it, hidden) }
+    }
+
+    /** The comic or folder under list point ([x], [y]) and the view its cover is drawn in, or null. */
+    private fun peekTarget(x: Float, y: Float): Pair<BookEntry, View>? {
+        val child = recycler.findChildViewUnder(x, y) ?: return null
+        val entry = adapter.entryAt(recycler.getChildAdapterPosition(child)) ?: return null
+        if (!canPeek(entry)) return null
+        return entry to (child.findViewById<View>(R.id.box) ?: child)
+    }
+
+    private fun canPeek(entry: BookEntry) =
+        if (entry.isDir) entry.file.isDirectory else Formats.isOpenable(entry.name) && entry.file.isFile
+
+    /** Peeks into [entry] from the selection's ⋮ menu: the grid grows out of its tile and stays open. */
+    private fun peekFromMenu(entry: BookEntry) {
+        val position = adapter.positionOf(entry.path)
+        val tile = recycler.findViewHolderForAdapterPosition(position)?.itemView?.let { it.findViewById<View>(R.id.box) ?: it }
+        pinch.open(entry, tile)
+    }
+
+    /** Writes the setting and shows it at once, without waiting for the settings feed. */
+    private fun toggleGrid() {
+        prefs.setGrid(tabName(), !view.grid)
+        showCurrentView()
+    }
+
+    private fun applyLayoutManager() {
+        val grid = view.grid
+        val current = recycler.layoutManager
+        if (grid && current is GridLayoutManager) {
+            current.spanCount = columnCount()
+            return
+        }
+        if (!grid && current != null && current !is GridLayoutManager) return
+        // Keep the reader's place switching between list and grid: the place left in the other layout, else the
+        // first row shown, as far scrolled into.
+        val left = (current as? LinearLayoutManager)?.let { placeOf(it) }
+        val back = switchBack?.takeIf { it.position < adapter.itemCount }
+        val target = back ?: left
+        switchBack = left
+        val next = if (grid) {
+            GridLayoutManager(this, columnCount()).apply {
+                // The "Recent" row and section headers are not grid cells: they span the whole width.
+                spanSizeLookup = object : GridLayoutManager.SpanSizeLookup() {
+                    override fun getSpanSize(position: Int): Int =
+                        if (adapter.isFullWidth(position)) spanCount else 1
+                }
+            }
+        } else {
+            LinearLayoutManager(this)
+        }
+        recycler.layoutManager = next
+        if (target == null) return
+        if (target === back || target.offset >= 0) {
+            next.scrollToPositionWithOffset(target.position, target.offset)
+            return
+        }
+        // Rows differ in height between grid and list: the same share of the row stays above the top, never all of it.
+        next.scrollToPositionWithOffset(target.position, 0)
+        placing = true
+        recycler.doOnPreDraw {
+            val v = next.findViewByPosition(target.position)
+            if (recycler.layoutManager === next && v != null) {
+                val height = outerHeight(next, v)
+                val offset = (target.offset.toLong() * height / target.height).toInt().coerceAtLeast(1 - height)
+                recycler.scrollBy(0, outerTop(next, v) - offset)
+            }
+            placing = false
+        }
+    }
+
+    /** The row [lm] shows first: its first item and how far above the list's top the row starts, out of its height. */
+    private fun placeOf(lm: LinearLayoutManager): Place? {
+        val first = lm.findFirstVisibleItemPosition()
+        val v = lm.findViewByPosition(first) ?: return null
+        return Place(first, outerTop(lm, v), outerHeight(lm, v).coerceAtLeast(1))
+    }
+
+    /** Where [v]'s row starts below the list's top padding, its margin included. */
+    private fun outerTop(lm: RecyclerView.LayoutManager, v: View): Int =
+        lm.getDecoratedTop(v) - (v.layoutParams as ViewGroup.MarginLayoutParams).topMargin - recycler.paddingTop
+
+    /** [v]'s row height, margins included. */
+    private fun outerHeight(lm: RecyclerView.LayoutManager, v: View): Int =
+        (v.layoutParams as ViewGroup.MarginLayoutParams).let { lm.getDecoratedMeasuredHeight(v) + it.topMargin + it.bottomMargin }
+
+    private fun columnCount(): Int {
+        val widthDp = resources.displayMetrics.widthPixels / resources.displayMetrics.density
+        return GridSizing.columns(view.columns, widthDp)
+    }
+
+    private fun keyboardVisible(): Boolean =
+        ViewCompat.getRootWindowInsets(recycler)?.isVisible(WindowInsetsCompat.Type.ime()) == true
+
+    /** Sizes grid cells: one column's width, and a height that fits the chosen rows on screen. */
+    private fun updateCellSize() {
+        val view = view
+        if (!view.grid) {
+            adapter.setCellSize(0, 0)
+            return
+        }
+        val inner = recycler.width - recycler.paddingLeft - recycler.paddingRight
+        val width = inner.coerceAtLeast(0) / columnCount()
+        val rows = view.rows
+        val header = if (rows > 0) headerHeight(inner) + sectionHeadersHeight(inner, rows) else 0
+        val available = GridSizing.rowSpace(recycler.height, recycler.paddingTop, recycler.paddingBottom, header)
+        val minPx = (MIN_CELL_DP * resources.displayMetrics.density).toInt()
+        adapter.setCellSize(width, GridSizing.cellHeight(available, rows, minPx))
+    }
+
+    /** Height of the "Recent" row with its margins at list width [width], measured from its layout; 0 without one. */
+    private fun headerHeight(width: Int): Int {
+        val h = adapter.header ?: return 0
+        if (width <= 0) return 0
+        val view = headerProbe ?: layoutInflater.inflate(R.layout.item_book_header, recycler, false).also { headerProbe = it }
+        view.findViewById<TextView>(R.id.title).text = h.title
+        view.findViewById<TextView>(R.id.subtitle).apply {
+            text = h.subtitle
+            visibility = if (h.subtitle.isEmpty()) View.GONE else View.VISIBLE
+        }
+        return measuredHeight(view, width)
+    }
+
+    /** Height of the section headers shown with the first [rows] grid rows at list width [width]. */
+    private fun sectionHeadersHeight(width: Int, rows: Int): Int {
+        val count = GridSizing.headersWithin(rows, sectionItems, columnCount())
+        if (count == 0 || width <= 0) return 0
+        val view = sectionProbe ?: layoutInflater.inflate(R.layout.item_section, recycler, false).also { sectionProbe = it }
+        view.findViewById<TextView>(R.id.title).text = sectionTitle(FavoriteKind.LIBRARY)
+        return count * measuredHeight(view, width)
+    }
+
+    /** Height of [view] with its margins at width [width]. */
+    private fun measuredHeight(view: View, width: Int): Int {
+        view.measure(
+            View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+        )
+        val margins = view.layoutParams as? ViewGroup.MarginLayoutParams
+        return view.measuredHeight + (margins?.topMargin ?: 0) + (margins?.bottomMargin ?: 0)
+    }
+
+    /** Adds folder [path] to the favorites, or removes it, and says which. */
+    private fun toggleFavoriteFolder(path: String?) {
+        if (path == null) return
+        val added = library.toggleFavoriteFolder(path)
+        toast(if (added) R.string.menu_add_favorite else R.string.menu_remove_favorite)
+        refreshCurrent()
+    }
+
+    /** Adds [entry], a folder or book, to the favorites, or removes it, as its star showed, and says which. */
+    private fun toggleFavorite(entry: BookEntry) {
+        if (entry.isDir) return toggleFavoriteFolder(entry.path)
+        val add = !entry.favorite
+        withBook(entry) { book ->
+            library.setFavorite(book, add)
+            toast(if (add) R.string.menu_add_favorite else R.string.menu_remove_favorite)
+            refreshCurrent()
+        }
+    }
+
+    /**
+     * Runs [action] on book [entry] as the library keeps it: by its ID as listed or known,
+     * else found first off the main thread; says so when it cannot be read.
+     */
+    private fun withBook(entry: BookEntry, action: (BookRef) -> Unit) {
+        idOf(entry)?.let { return action(BookRef(it, entry.path)) }
+        lifecycleScope.launch {
+            val id = withContext(AppDispatchers.io) { BookIds.find(entry.file) }
+            if (id == null) toast(R.string.error_open) else action(BookRef(id, entry.path))
+        }
+    }
+
+    /** Browses the folder holding [file], highlighting it; [loadDirectory] climbs out of a folder that is gone. */
+    private fun openLocation(file: File) {
+        val dir = file.parentFile
+        if (dir == null) {
+            toast(R.string.open_location_failed)
+            return
+        }
+        val found = dir.isDirectory
+        loadDirectory(dir, highlight = file.absolutePath)
+        if (found) toast(R.string.menu_open_location)
+    }
+
+    private fun newFolder() {
+        val dir = currentDir ?: return
+        val input = EditText(this).apply { inputType = InputType.TYPE_CLASS_TEXT; hint = getString(R.string.new_folder_hint) }
+        val container = LinearLayout(this).apply {
+            setPadding(48, 24, 48, 0)
+            addView(input, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.menu_new_folder)
+            .setView(container)
+            .setPositiveButton(R.string.ok) { _, _ ->
+                val name = input.text.toString().trim()
+                if (name.isEmpty()) return@setPositiveButton
+                if (!FileUtils.isSafeName(name)) {
+                    toast(R.string.invalid_name)
+                    return@setPositiveButton
+                }
+                val path = dir.absolutePath
+                lifecycleScope.launch {
+                    val created = withContext(AppDispatchers.io) {
+                        runCatching { FileSpaces.of(path).mkdir(Transfer.child(path, name)) }.isSuccess
+                    }
+                    toast(if (created) R.string.folder_created else R.string.error_open)
+                    refreshCurrent()
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun refreshCurrent() {
+        when (mode) {
+            TAB_FAVORITES -> showFavorites()
+            TAB_HISTORY -> showHistory()
+            TAB_BOOKMARKS -> showBookmarks()
+            else -> currentDir?.let { loadDirectory(it) } ?: openStartDirectory()
+        }
+    }
+
+    /** Opens [file] at [page] in the reader; a large book on a share over a metered connection asks first ([LargeBookWarning]). */
+    private fun openViewer(file: File, page: Int) = LargeBookWarning.check(this, file, page)
+
+    override fun openConfirmed(path: String, page: Int) {
+        val intent = Intent(this, ViewerActivity::class.java)
+        intent.putExtra(ViewerActivity.EXTRA_PATH, path)
+        intent.putExtra(ViewerActivity.EXTRA_PAGE, page)
+        startActivity(intent)
+    }
+
+    /**
+     * Opens a book at [file] where its history says, as from the library; returns a folder
+     * there for the caller to browse. Both by canonical path.
+     */
+    private fun handleIncomingFile(file: File): File? {
+        val real = runCatching { file.canonicalFile }.getOrNull() ?: return null
+        if (!isUnderStorage(real.path)) return null
+        if (real.isFile && Formats.isOpenable(real.name)) openViewer(real, -1)
+        return real.takeIf { it.isDirectory }
+    }
+
+    /** Only shared storage may be opened by path: never the app's own or other private folders. */
+    private fun isUnderStorage(canonical: String): Boolean =
+        StorageRoot.of(canonical, roots) != null || canonical.startsWith("/storage/")
+
+    /** Opens a book handed in by another app; returns a folder handed in for the caller to browse. */
+    private fun handleIncoming(intent: Intent): File? {
+        val uri = intent.data ?: return null
+        when (uri.scheme) {
+            "file" -> return uri.path?.let { handleIncomingFile(File(it)) }
+            "content" -> {
+                // A book this app shared, handed back: opened where it is, as a path would be;
+                // a URI of ours it never issued opens nothing.
+                if (uri.authority == BookUris.authority(packageName)) {
+                    BookUris.pathOf(this, uri)?.let { return handleOwnBook(it) }
+                    toast(R.string.error_open)
+                    return null
+                }
+                openSharedContent(uri)
+            }
+        }
+        return null
+    }
+
+    /**
+     * Opens the book at [path], from a book URI this app issued: never read through its
+     * own provider, whose descriptors this process serves. Paths on the device follow the
+     * rules of a file:// path; a share's book opens if it can be read.
+     */
+    private fun handleOwnBook(path: String): File? {
+        if (!Remotes.isRemote(path)) return handleIncomingFile(File(path))
+        if (!Remotes.isOrphan(path) && Formats.isOpenable(path)) openViewer(Remotes.file(path), -1) else toast(R.string.error_open)
+        return null
+    }
+
+    /**
+     * Another app handed us a content:// URI: copy it into the cache and open the copy where
+     * its book's history says (the copy has the book's ID).
+     */
+    private fun openSharedContent(uri: Uri) {
+        showProgress(true)
+        lifecycleScope.launch {
+            val copy = withContext(AppDispatchers.io) { copyToCache(uri) }
+            progress.visibility = View.GONE
+            if (copy != null) openViewer(copy, -1) else toast(R.string.error_open)
+        }
+    }
+
+    private fun copyToCache(uri: Uri): File? {
+        val name = runCatching {
+            contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+                if (it.moveToFirst()) it.getString(0) else null
+            }
+        }.getOrNull() ?: uri.lastPathSegment
+        val safe = name?.let { File(it).name }
+        if (safe == null || !FileUtils.isSafeName(safe) || !Formats.isOpenable(safe)) return null
+
+        val dir = File(cacheDir, INCOMING_DIR)
+        FileUtils.deleteTree(dir) // keep only the file being read
+        if (!dir.mkdirs()) return null
+        val out = File(dir, safe)
+        return try {
+            val input = contentResolver.openInputStream(uri) ?: return null
+            input.use { source ->
+                out.outputStream().use { sink ->
+                    val buffer = ByteArray(64 * 1024)
+                    var total = 0L
+                    while (true) {
+                        val n = source.read(buffer)
+                        if (n < 0) break
+                        total += n
+                        if (total > MAX_INCOMING_BYTES) throw java.io.IOException("File is too large")
+                        sink.write(buffer, 0, n)
+                    }
+                }
+            }
+            out
+        } catch (e: java.io.IOException) {
+            out.delete()
+            null
+        }
+    }
+
+    // ------------------------------------------------------------------ continue / mark
+
+    private fun continueReading(dir: File) {
+        lifecycleScope.launch {
+            val target = withContext(AppDispatchers.io) { pickContinue(dir) }
+            if (target == null) toast(R.string.continue_none) else openViewer(target.first, target.second)
+        }
+    }
+
+    /**
+     * What to read next in [dir]: the most recently read book if it is unfinished, else the
+     * first unread book after it, else the first unread book.
+     */
+    private fun pickContinue(dir: File): Pair<File, Int>? {
+        val books = dir.listFiles()
+            ?.filter { it.isFile && !it.name.startsWith(".") && Formats.isOpenable(it.name) }
+            ?.sortedWith(compareBy(NaturalOrder) { it.name })
+            ?: return null
+        if (books.isEmpty()) return null
+        val history = library.historyMap()
+        val read = library.readSet()
+        // Books never seen have no history and no read mark.
+        val ids = books.associateWith { BookIds.known(it) }
+        fun isRead(f: File) = ids[f]?.let { it in read } == true
+        val last = books.filter { ids[it] in history }
+            .maxByOrNull { history.getValue(ids.getValue(it)!!).time }
+        if (last != null) {
+            val page = history.getValue(ids.getValue(last)!!).page
+            if (page > 0 && !isRead(last)) return last to page
+            books.drop(books.indexOf(last) + 1).firstOrNull { !isRead(it) }
+                ?.let { return it to 0 }
+        }
+        return books.firstOrNull { !isRead(it) }?.let { it to 0 }
+    }
+
+    /** Marks the books directly in [dir] read or unread once confirmed; either replaces their read marks. */
+    private fun markFolder(dir: File, read: Boolean) {
+        val message = android.text.TextUtils.expandTemplate(
+            getText(if (read) R.string.confirm_mark_read_msg else R.string.confirm_mark_unread_msg),
+            FolderPicker.describe(this, dir.absolutePath)
+        )
+        confirm(
+            this,
+            if (read) R.string.confirm_mark_read_title else R.string.confirm_mark_unread_title,
+            message,
+            if (read) R.string.menu_mark_all_read else R.string.menu_mark_all_unread
+        ) {
+            markFolderNow(dir, read)
+        }
+    }
+
+    /** Marks the books directly in [dirs] read or unread once confirmed, asking once for all of them. */
+    private fun markFolders(dirs: List<File>, read: Boolean) {
+        if (dirs.size == 1) return markFolder(dirs[0], read)
+        confirm(
+            this,
+            getString(if (read) R.string.confirm_mark_read_title else R.string.confirm_mark_unread_title),
+            resources.getQuantityString(if (read) R.plurals.confirm_mark_read_many else R.plurals.confirm_mark_unread_many, dirs.size, dirs.size),
+            if (read) R.string.menu_mark_all_read else R.string.menu_mark_all_unread
+        ) {
+            markFolderNow(dirs, read)
+        }
+    }
+
+    private fun markFolderNow(dir: File, read: Boolean) = markFolderNow(listOf(dir), read)
+
+    /** The last marking of folders read or unread ([markFolderNow]); tests wait for it. */
+    internal var markJob: Job? = null
+        private set
+
+    private fun markFolderNow(dirs: List<File>, read: Boolean) {
+        markJob = lifecycleScope.launch {
+            val files = withContext(AppDispatchers.io) { dirs.flatMap { dir -> dir.listFiles()?.filter { it.isFile && Formats.isOpenable(it.name) }.orEmpty() } }
+            // Books never seen are read for their IDs, several at once.
+            val books = idsOf(files).map { (f, id) -> BookRef(id, f.absolutePath) }
+            withContext(AppDispatchers.io) {
+                library.setReadMany(books, read)
+                for (dir in dirs) FolderReads.update(library, dir)
+            }
+            toast(if (read) R.string.marked_read else R.string.marked_unread)
+            refreshCurrent()
+        }
+    }
+
+    private fun showStats() {
+        val st = library.stats()
+        AlertDialog.Builder(this)
+            .setTitle(R.string.menu_stats)
+            .setMessage(statsText(st))
+            .setPositiveButton(R.string.ok, null)
+            .setNeutralButton(R.string.clear) { _, _ ->
+                confirm(this, R.string.confirm_clear_stats_title, R.string.confirm_clear_stats_msg, R.string.clear) {
+                    library.clearStats()
+                }
+            }
+            .show()
+    }
+
+    private fun openCleanup(cleanupMode: String) {
+        val root = currentDir ?: Environment.getExternalStorageDirectory()
+        startActivity(
+            Intent(this, CleanupActivity::class.java)
+                .putExtra(CleanupActivity.EXTRA_MODE, cleanupMode)
+                .putExtra(CleanupActivity.EXTRA_ROOT, root.absolutePath)
+        )
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIncoming(intent)?.let { loadDirectory(it) }
+    }
+
+    // ------------------------------------------------------------------ menu
+
+    override fun onCreateOptionsMenu(menu: Menu): Boolean {
+        menuInflater.inflate(R.menu.menu_list, menu)
+        this.menu = menu
+        searching = false
+        for ((order, button) in prefs.toolbarButtons.visible.withIndex()) addToolbarButton(menu, button, order)
+        return true
+    }
+
+    /** Adds [button] to the toolbar at [order] among the buttons. */
+    private fun addToolbarButton(menu: Menu, button: ToolbarButton, order: Int) {
+        val (id, icon) = when (button) {
+            ToolbarButton.SORT -> R.id.menu_bar_sort to R.drawable.ic_sort
+            ToolbarButton.FILTER -> R.id.menu_bar_filter to R.drawable.ic_filter_list
+            ToolbarButton.FAVORITE -> R.id.menu_bar_favorite to R.drawable.ic_star_border
+            ToolbarButton.SEARCH -> R.id.menu_search to R.drawable.ic_search
+        }
+        val item = menu.add(Menu.NONE, id, order, ToolbarButtonsDialog.label(this, button)).setIcon(icon)
+        if (button != ToolbarButton.SEARCH) {
+            item.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
+            return
+        }
+        item.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS or MenuItem.SHOW_AS_ACTION_COLLAPSE_ACTION_VIEW)
+        val searchView = SearchView(toolbar.context)
+        item.actionView = searchView
+        // The other buttons make room for the search field while it is open.
+        item.setOnActionExpandListener(object : MenuItem.OnActionExpandListener {
+            override fun onMenuItemActionExpand(item: MenuItem): Boolean {
+                searching = true
+                updateToolbarButtons()
+                return true
+            }
+
+            override fun onMenuItemActionCollapse(item: MenuItem): Boolean {
+                searching = false
+                updateToolbarButtons()
+                return true
+            }
+        })
+        searchView.queryHint = getString(R.string.search_hint)
+        searchView.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
+            override fun onQueryTextSubmit(q: String?): Boolean {
+                applyQuery(q)
+                searchView.clearFocus() // collapse the keyboard once the search is committed
+                return true
+            }
+
+            override fun onQueryTextChange(q: String?): Boolean = applyQuery(q)
+        })
+    }
+
+    /** Shows the toolbar buttons that apply here, hidden while searching; the star tells whether the folder is a favorite. */
+    private fun updateToolbarButtons() {
+        val menu = menu ?: return
+        menu.findItem(R.id.menu_bar_sort)?.isVisible = !searching
+        menu.findItem(R.id.menu_bar_filter)?.isVisible = !searching
+        menu.findItem(R.id.menu_bar_favorite)?.apply {
+            val dir = currentDir
+            val favorite = dir != null && library.isFavoriteFolder(dir.absolutePath)
+            isVisible = !searching && mode == TAB_BROWSE && dir != null
+            setIcon(if (favorite) R.drawable.ic_star else R.drawable.ic_star_border)
+            title = getString(if (favorite) R.string.menu_remove_favorite else R.string.menu_add_favorite)
+        }
+    }
+
+    /** Filters and re-sorts the list for [q], live as the user types and on submit. */
+    private fun applyQuery(q: String?): Boolean {
+        query = q.orEmpty()
+        deepJob?.cancel()
+        deepResults = null
+        applyFilterAndSort()
+        scheduleDeepSearch()
+        return true
+    }
+
+    /** With "search subfolders" on, looks below the current folder once typing pauses. */
+    private fun scheduleDeepSearch() {
+        val dir = currentDir
+        val text = query.trim()
+        if (!prefs.deepSearch || mode != TAB_BROWSE || dir == null || text.length < 2) return
+        deepJob?.cancel()
+        deepJob = lifecycleScope.launch {
+            delay(DEEP_SEARCH_DELAY_MS)
+            val found = withContext(AppDispatchers.io) { deepSearch(dir, text) { isActive } }
+            deepResults = found
+            applyFilterAndSort()
+        }
+    }
+
+    private fun deepSearch(root: File, text: String, alive: () -> Boolean): List<BookEntry> {
+        val showHidden = prefs.showHidden
+        val snap = snapshot()
+        val rootPath = root.absolutePath
+        return root.walkTopDown()
+            .maxDepth(DEEP_SEARCH_DEPTH)
+            .onEnter { showHidden || !it.name.startsWith(".") }
+            .takeWhile { alive() }
+            .filter { it != root && it.name.contains(text, ignoreCase = true) }
+            .filter { it.isDirectory || Formats.isOpenable(it.name) }
+            .take(DEEP_SEARCH_LIMIT)
+            .map { f ->
+                val where = f.parentFile?.absolutePath?.removePrefix(rootPath)?.trimStart('/').orEmpty()
+                entryFor(f, snap).copy(subtitle = where.ifEmpty { f.parentFile?.name.orEmpty() })
+            }
+            .toList()
+    }
+
+    override fun onPrepareOptionsMenu(menu: Menu): Boolean {
+        val browsing = mode == TAB_BROWSE
+        updateViewItems(menu)
+        menu.findItem(R.id.menu_show_hidden)?.apply {
+            isChecked = prefs.showHidden
+            title = getString(if (prefs.showHidden) R.string.menu_hide_hidden else R.string.menu_show_hidden)
+        }
+        val buttons = prefs.toolbarButtons.visible
+        // The menu keeps what the toolbar does not show.
+        menu.findItem(R.id.menu_sort)?.isVisible = ToolbarButton.SORT !in buttons
+        menu.findItem(R.id.menu_filter)?.isVisible = ToolbarButton.FILTER !in buttons
+        menu.findItem(R.id.menu_add_favorite)?.isVisible = browsing && ToolbarButton.FAVORITE !in buttons
+        menu.findItem(R.id.menu_add_favorite)?.title =
+            getString(
+                if (currentDir?.let { library.isFavoriteFolder(it.absolutePath) } == true)
+                    R.string.menu_remove_favorite else R.string.menu_add_favorite
+            )
+        // Shares are slow to search for duplicates: only when the settings ask, never for the largest files.
+        val local = currentDir !is RemoteFile
+        val dupesHere = local || (prefs.similarShares && currentDir?.let { !Remotes.isOrphan(it.absolutePath) } == true)
+        menu.findItem(R.id.menu_new_folder)?.isVisible = browsing
+        menu.findItem(R.id.menu_continue)?.isVisible = browsing
+        menu.findItem(R.id.menu_mark_all_read)?.isVisible = browsing
+        menu.findItem(R.id.menu_mark_all_unread)?.isVisible = browsing
+        updateClearItems(menu)
+        menu.findItem(R.id.menu_dupes)?.isVisible = browsing && dupesHere
+        menu.findItem(R.id.menu_large)?.isVisible = browsing && local
+        menu.findItem(R.id.menu_search_deep)?.apply {
+            isVisible = browsing
+            isChecked = prefs.deepSearch
+        }
+        updateToolbarButtons()
+        return super.onPrepareOptionsMenu(menu)
+    }
+
+    /** The menu's grid/list item, and Grid dimensions or List density, as the tab's view is. */
+    private fun updateViewItems(menu: Menu) {
+        val grid = view.grid
+        menu.findItem(R.id.menu_grid)?.title = getString(if (grid) R.string.menu_list_view else R.string.menu_grid)
+        menu.findItem(R.id.menu_grid_size)?.isVisible = grid
+        menu.findItem(R.id.menu_density)?.isVisible = !grid
+    }
+
+    /**
+     * The toolbar menu's Clear all and Clear missing, titled for the tab; Clear missing only
+     * while something is missing for sure. Changed in place: rebuilding the menu would close
+     * an open search.
+     */
+    private fun updateClearItems(menu: Menu? = this.menu) {
+        if (menu == null) return
+        val lists = mode != TAB_BROWSE
+        menu.findItem(R.id.menu_clear_all)?.apply {
+            isVisible = lists
+            isEnabled = allEntries.isNotEmpty()
+            title = getString(
+                when (mode) {
+                    TAB_HISTORY -> R.string.menu_clear_all_history
+                    TAB_BOOKMARKS -> R.string.menu_clear_all_bookmarks
+                    else -> R.string.menu_clear_all_favorites
+                }
+            )
+        }
+        menu.findItem(R.id.menu_clear_missing)?.apply {
+            isVisible = missingEntries().isNotEmpty()
+            title = getString(
+                when (mode) {
+                    TAB_HISTORY -> R.string.menu_clear_missing_history
+                    TAB_BOOKMARKS -> R.string.menu_clear_missing_bookmarks
+                    else -> R.string.menu_clear_missing_favorites
+                }
+            )
+        }
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        when (item.itemId) {
+            R.id.menu_grid -> toggleGrid()
+            R.id.menu_sort, R.id.menu_bar_sort -> showSortDialog()
+            R.id.menu_filter, R.id.menu_bar_filter -> TabDialogFragment.show(this, TabDialogFragment.Kind.FILTER, tabName())
+            R.id.menu_grid_size -> TabViewDialogs.showGridSize(this, prefs, tabName(), ::showCurrentView)
+            R.id.menu_density -> TabViewDialogs.showDensity(this, prefs, tabName(), ::showCurrentView)
+            R.id.menu_detail -> TabViewDialogs.showDetail(this, prefs, tabName(), ::showCurrentView)
+            R.id.menu_show_hidden -> {
+                prefs.showHidden = !prefs.showHidden
+                invalidateOptionsMenu()
+                checkFeed()
+                showCurrentContent()
+            }
+            R.id.menu_new_folder -> newFolder()
+            R.id.menu_continue -> currentDir?.let { continueReading(it) }
+            R.id.menu_mark_all_read -> currentDir?.let { markFolder(it, true) }
+            R.id.menu_mark_all_unread -> currentDir?.let { markFolder(it, false) }
+            R.id.menu_search_deep -> {
+                prefs.deepSearch = !prefs.deepSearch
+                deepJob?.cancel()
+                deepResults = null
+                invalidateOptionsMenu()
+                applyFilterAndSort()
+                scheduleDeepSearch()
+            }
+            R.id.menu_stats -> showStats()
+            R.id.menu_clear_all -> clearAll()
+            R.id.menu_clear_missing -> clearMissing()
+            R.id.menu_dupes -> openCleanup(CleanupActivity.MODE_DUPES)
+            R.id.menu_large -> openCleanup(CleanupActivity.MODE_LARGE)
+            R.id.menu_add_favorite, R.id.menu_bar_favorite -> toggleFavoriteFolder(currentDir?.absolutePath)
+            R.id.menu_refresh -> refreshCurrent()
+            R.id.menu_settings -> startActivity(Intent(this, SettingsActivity::class.java))
+            R.id.menu_about -> startActivity(Intent(this, AboutActivity::class.java))
+            R.id.menu_exit -> finish()
+            else -> return super.onOptionsItemSelected(item)
+        }
+        return true
+    }
+
+    private fun showSortDialog() {
+        TabDialogFragment.show(this, TabDialogFragment.Kind.SORT, tabName())
+    }
+
+    /** Empties the list shown (Favorites, History or Bookmarks) once confirmed. */
+    private fun clearAll() {
+        val (title, message, clear) = when (mode) {
+            TAB_HISTORY -> Triple(R.string.confirm_clear_history_title, R.string.confirm_clear_history_msg, library::clearHistory)
+            TAB_BOOKMARKS -> Triple(R.string.confirm_clear_bookmarks_title, R.string.confirm_clear_bookmarks_msg, library::clearBookmarks)
+            TAB_FAVORITES -> Triple(R.string.confirm_clear_favorites_title, R.string.confirm_clear_favorites_msg, library::clearFavorites)
+            else -> return
+        }
+        confirm(this, title, message, R.string.clear) {
+            clear()
+            refreshCurrent()
+        }
+    }
+
+    /**
+     * Takes the items missing for sure out of the list shown once confirmed; those that cannot
+     * be reached now stay. The question says books moved outside the app look missing, and
+     * offers to look for them first ("Forget missing books").
+     */
+    private fun clearMissing() {
+        val missing = missingEntries()
+        if (missing.isEmpty()) return
+        val (title, plural) = when (mode) {
+            TAB_HISTORY -> R.string.confirm_clear_missing_history_title to R.plurals.confirm_clear_missing_history_msg
+            TAB_BOOKMARKS -> R.string.confirm_clear_missing_bookmarks_title to R.plurals.confirm_clear_missing_bookmarks_msg
+            else -> R.string.confirm_clear_missing_favorites_title to R.plurals.confirm_clear_missing_favorites_msg
+        }
+        val message = resources.getQuantityString(plural, missing.size, missing.size) + "\n\n" + getString(R.string.confirm_clear_missing_note)
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setMessage(message)
+            .setPositiveButton(R.string.clear) { _, _ -> removeFromList(missing) }
+            .setNeutralButton(R.string.find_moved_first) { _, _ -> forgetMissing() }
+            .setNegativeButton(R.string.cancel, null)
+            .showKeepingFullscreen()
+    }
+
+
+    // ------------------------------------------------------------------ back
+
+    /** Returns true when the back press was handled by navigating somewhere. */
+    private fun navigateUp(): Boolean {
+        if (mode != TAB_BROWSE) {
+            val dir = currentDir
+            if (dir != null) loadDirectory(dir) else selectTab(TAB_BROWSE)
+            return true
+        }
+        val dir = currentDir ?: return false
+        val parent = parentWithinBounds(dir) ?: return false
+        loadDirectory(parent)
+        return true
+    }
+
+    /**
+     * The parent directory, unless that would climb above the [StorageRoot.bound] of
+     * [dir] (`/storage/emulated/0`, an SD card's top). Browsing must never leave the
+     * user's files.
+     */
+    private fun parentWithinBounds(dir: File): File? {
+        val path = dir.absolutePath
+        val root = StorageRoot.bound(path, roots) ?: return null
+        return if (path == root.path) null else dir.parentFile
+    }
+
+    /** Opens a crumb's folder; [loadDirectory] climbs out of one that is gone. */
+    private fun openCrumb(crumb: Crumb) = loadDirectory(Remotes.file(crumb.path))
+
+    /** The crumbs of [dir], with the forward crumbs browsed past it. */
+    private fun showCrumbs(dir: File) {
+        val (crumbs, current) = ForwardCrumbs.crumbs(dir.absolutePath, trail, roots)
+        pathbar.show(crumbs, current = current)
+    }
+
+    /** Opens the location picker with the drive plugged in last highlighted, if it is still mounted. */
+    private fun showPluggedDrive() {
+        val path = pluggedDrive ?: return
+        val drive = roots.firstOrNull { it.path == path }
+        if (drive == null || LocationSheet.show(this, drive)) pluggedDrive = null
+    }
+
+    /** Opens the location picker from the app icon crumb; picking a root opens its top folder ([onLocationPicked]). */
+    private fun showRootChooser() {
+        LocationSheet.show(this, currentDir?.let { StorageRoot.of(it.absolutePath, roots) })
+    }
+
+    override val locationRoots: List<StorageRoot> get() = roots
+
+    /** Opens [root] at its start folder ([Prefs.locationStart]); [loadDirectory] climbs out of one that is gone. */
+    override fun onLocationPicked(root: StorageRoot) {
+        Remotes.idOf(root.path)?.let { Remotes.retry(it) }
+        loadDirectory(Remotes.file(prefs.locationStart(root.path)))
+    }
+
+    override fun onSharesChanged() {
+        refreshRoots()
+        // Covers follow a share's "Load thumbnails".
+        adapter.notifyDataSetChanged()
+    }
+
+    /** The open location picker; for tests. */
+    internal val locations: LocationSheet? get() = LocationSheet.find(this)
+
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        if (viewRing.isOpen) {
+            viewRing.close()
+            return
+        }
+        if (peek.isShowing) {
+            peek.close()
+            return
+        }
+        if (selection.active) {
+            endSelection()
+            return
+        }
+        if (!navigateUp()) {
+            @Suppress("DEPRECATION")
+            super.onBackPressed()
+        }
+    }
+
+    private fun toast(res: Int) = Toast.makeText(this, res, Toast.LENGTH_SHORT).show()
+
+    private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+
+    companion object {
+        /** Lists share folder [dir]. Blocking; holds no screen, so a wait kept across a recreate ([StartupWait]) leaks none. */
+        private fun listShare(dir: RemoteFile): Result<List<RemoteFile>> = runCatching { dir.entries() }
+
+        private const val TAG = "ListActivity"
+        private const val TAB_BROWSE = 0
+        private const val TAB_FAVORITES = 1
+        private const val TAB_HISTORY = 2
+        private const val TAB_BOOKMARKS = 3
+        private const val STATE_MODE = "mode"
+        private const val STATE_DIR = "dir"
+        private const val STATE_TRAIL = "trail"
+        private const val STATE_OFFER = "resume_offer"
+        private const val STATE_SELECTED = "selected"
+
+        /** How faint a button or ⋮ menu item the selection cannot use now shows. */
+        private const val DISABLED_ALPHA = 0.38f
+
+        /** How far the selection's ⋮ menu floats above the list. */
+        private const val MORE_ELEVATION_DP = 8f
+
+        /** Tags of the ⋮ menu's "Convert ›" row and of its submenu's way back. */
+        const val MORE_CONVERT_TAG = "convert"
+        const val MORE_BACK_TAG = "back"
+
+        /** Books selected beyond this are not read for their marks as the ⋮ menu opens; their rebuild still leaves alone those done. */
+        private const val MARK_CHECKS = 50
+        private const val INCOMING_DIR = "incoming"
+        private const val MAX_INCOMING_BYTES = 2L * 1024 * 1024 * 1024
+        private const val DEEP_SEARCH_DELAY_MS = 300L
+
+
+        /** How long the startup folder's share goes unanswered before the user is asked to wait on or open the device. */
+        const val SHARE_DIALOG_MS = 2_000L
+
+        /** How often that dialog, held back, checks whether it may show. */
+        private const val SHARE_DIALOG_CHECK_MS = 250L
+
+        /**
+         * Debug builds: a folder to start in instead of the startup location ([EXTRA_START_PATH],
+         * a string extra), and how long its share takes before it is asked ([EXTRA_SLOW_SHARE_MS],
+         * a long extra, in milliseconds); for trying the wait from adb without touching settings:
+         * `adb shell am start -n <package>/minty.emanata.ui.ListActivity --es start_path /net/<id> --el slow_share_ms 8000`
+         */
+        const val EXTRA_START_PATH = "start_path"
+        const val EXTRA_SLOW_SHARE_MS = "slow_share_ms"
+
+        /** Then the share is asked again this much later, twice as late each time up to the most. */
+        const val SHARE_RETRY_MS = 10_000L
+        const val SHARE_RETRY_MAX_MS = 300_000L
+        private const val CLASSIFY_PUBLISH_MS = 250L
+        private const val FACTS_PUBLISH_MS = 250L
+
+        /** How often rows change as shares tell whether the items listed are there. */
+        private const val PRESENCE_PUBLISH_MS = 250L
+
+        /** Subfolders of a share listed at once, to count their items. */
+        private const val SUBFOLDER_LISTS = 4
+
+        /** Books read at once for their IDs ([findIds]): a share answers them in one round trip each. */
+        private const val ID_READS = 4
+        private const val DEEP_SEARCH_DEPTH = 8
+        private const val DEEP_SEARCH_LIMIT = 500
+
+        /** Room for the name and details below a cover that is still recognizable. */
+        private const val MIN_CELL_DP = 120
+    }
+}

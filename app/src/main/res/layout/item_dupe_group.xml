@@ -2,7 +2,7 @@
 <!-- Bit-identical copies of one book: its cover once, then where each copy is. -->
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    style="@style/Widget.ComicReader.Card"
+    style="@style/Widget.Emanata.Card"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_marginHorizontal="@dimen/list_side_padding"
@@ -26,7 +26,7 @@
                 android:layout_height="match_parent"
                 android:contentDescription="@null"
                 android:scaleType="center"
-                app:shapeAppearanceOverlay="@style/Shape.ComicReader.Thumb" />
+                app:shapeAppearanceOverlay="@style/Shape.Emanata.Thumb" />
 
             <ImageView
                 android:id="@+id/placeholder"

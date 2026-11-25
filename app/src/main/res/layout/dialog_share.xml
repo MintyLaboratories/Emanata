@@ -20,19 +20,19 @@
 
         <com.google.android.material.button.MaterialButtonToggleGroup
             android:id="@+id/share_kind"
-            style="@style/Widget.ComicReader.SheetSegments"
+            style="@style/Widget.Emanata.SheetSegments"
             android:layout_marginTop="0dp"
             android:layout_marginBottom="@dimen/space_2"
             app:checkedButton="@+id/share_kind_smb">
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/share_kind_smb"
-                style="@style/Widget.ComicReader.SheetSegment"
+                style="@style/Widget.Emanata.SheetSegment"
                 android:text="@string/share_kind_smb" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/share_kind_webdav"
-                style="@style/Widget.ComicReader.SheetSegment"
+                style="@style/Widget.Emanata.SheetSegment"
                 android:text="@string/share_kind_webdav" />
         </com.google.android.material.button.MaterialButtonToggleGroup>
 
@@ -138,22 +138,22 @@
 
         <com.google.android.material.button.MaterialButtonToggleGroup
             android:id="@+id/share_speed"
-            style="@style/Widget.ComicReader.SheetSegments"
+            style="@style/Widget.Emanata.SheetSegments"
             app:checkedButton="@+id/share_speed_auto">
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/share_speed_auto"
-                style="@style/Widget.ComicReader.SheetSegment"
+                style="@style/Widget.Emanata.SheetSegment"
                 android:text="@string/share_speed_auto" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/share_speed_fast"
-                style="@style/Widget.ComicReader.SheetSegment"
+                style="@style/Widget.Emanata.SheetSegment"
                 android:text="@string/share_speed_fast" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/share_speed_slow"
-                style="@style/Widget.ComicReader.SheetSegment"
+                style="@style/Widget.Emanata.SheetSegment"
                 android:text="@string/share_speed_slow" />
         </com.google.android.material.button.MaterialButtonToggleGroup>
 

@@ -2,7 +2,7 @@
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
-    style="@style/Widget.ComicReader.Card"
+    style="@style/Widget.Emanata.Card"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_marginHorizontal="@dimen/list_side_padding"
@@ -18,7 +18,7 @@
         android:orientation="horizontal"
         android:padding="8dp">
 
-        <com.infinity.comicreader.ui.CoverBox
+        <minty.emanata.ui.CoverBox
             android:id="@+id/box"
             android:layout_width="@dimen/list_thumb_w"
             android:layout_height="@dimen/list_thumb_h"
@@ -30,7 +30,7 @@
                 android:layout_height="match_parent"
                 android:contentDescription="@null"
                 android:scaleType="center"
-                app:shapeAppearanceOverlay="@style/Shape.ComicReader.Thumb" />
+                app:shapeAppearanceOverlay="@style/Shape.Emanata.Thumb" />
 
             <ImageView
                 android:id="@+id/placeholder"
@@ -54,7 +54,7 @@
                 android:visibility="gone"
                 tools:text="12/40"
                 tools:visibility="visible" />
-        </com.infinity.comicreader.ui.CoverBox>
+        </minty.emanata.ui.CoverBox>
 
         <LinearLayout
             android:layout_width="0dp"
@@ -63,11 +63,11 @@
             android:layout_weight="1"
             android:orientation="vertical">
 
-            <com.infinity.comicreader.ui.TitleView
+            <minty.emanata.ui.TitleView
                 android:id="@+id/title"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:textAppearance="@style/TextAppearance.ComicReader.ItemTitle" />
+                android:textAppearance="@style/TextAppearance.Emanata.ItemTitle" />
 
             <TextView
                 android:id="@+id/subtitle"
@@ -76,7 +76,7 @@
                 android:layout_marginTop="2dp"
                 android:ellipsize="end"
                 android:maxLines="1"
-                android:textAppearance="@style/TextAppearance.ComicReader.ItemSubtitle"
+                android:textAppearance="@style/TextAppearance.Emanata.ItemSubtitle"
                 tools:text="42.1 MB · 24 pages" />
         </LinearLayout>
 

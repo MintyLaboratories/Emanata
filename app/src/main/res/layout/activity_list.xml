@@ -15,7 +15,7 @@
 
         <com.google.android.material.appbar.MaterialToolbar
             android:id="@+id/toolbar"
-            style="@style/Widget.ComicReader.Toolbar"
+            style="@style/Widget.Emanata.Toolbar"
             android:layout_width="match_parent"
             android:layout_height="?attr/actionBarSize"
             app:title="@string/app_name" />
@@ -23,7 +23,7 @@
         <!-- In the toolbar's place while items are selected: X, "n selected" with their size, Select all. -->
         <com.google.android.material.appbar.MaterialToolbar
             android:id="@+id/selection_bar"
-            style="@style/Widget.ComicReader.Toolbar"
+            style="@style/Widget.Emanata.Toolbar"
             android:layout_width="match_parent"
             android:layout_height="?attr/actionBarSize"
             android:visibility="gone"
@@ -31,7 +31,7 @@
             app:navigationIcon="@drawable/ic_close"
             app:subtitleTextAppearance="?attr/textAppearanceBodySmall" />
 
-        <com.infinity.comicreader.ui.FitTabLayout
+        <minty.emanata.ui.FitTabLayout
             android:id="@+id/tabs"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -60,9 +60,9 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/tab_bookmarks" />
-        </com.infinity.comicreader.ui.FitTabLayout>
+        </minty.emanata.ui.FitTabLayout>
 
-        <com.infinity.comicreader.ui.CrumbBar
+        <minty.emanata.ui.CrumbBar
             android:id="@+id/pathbar"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -168,7 +168,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/space_4"
             android:text="@string/empty_folder"
-            android:textAppearance="@style/TextAppearance.ComicReader.Empty"
+            android:textAppearance="@style/TextAppearance.Emanata.Empty"
             android:textSize="16sp" />
 
         <TextView
@@ -177,7 +177,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/space_1"
             android:gravity="center"
-            android:textAppearance="@style/TextAppearance.ComicReader.ItemSubtitle"
+            android:textAppearance="@style/TextAppearance.Emanata.ItemSubtitle"
             android:visibility="gone" />
 
         <!-- Lists a share that could not be reached again. -->
@@ -203,7 +203,7 @@
         android:contentDescription="@string/menu_grid"
         android:src="@drawable/ic_grid_view"
         app:backgroundTint="?attr/colorPrimaryContainer"
-        app:layout_behavior="com.infinity.comicreader.ui.FixedBehavior"
+        app:layout_behavior="minty.emanata.ui.FixedBehavior"
         app:tint="?attr/colorOnPrimaryContainer" />
 
     <!-- Paste bubbles and operations under way or waiting, above the floating button's place, newest nearest it; filled in code ([OperationStack]). -->

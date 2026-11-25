@@ -14,7 +14,7 @@
         android:textAppearance="?attr/textAppearanceTitleSmall"
         tools:text="Clean art with gradients" />
 
-    <com.infinity.comicreader.ui.ButtonRow
+    <minty.emanata.ui.ButtonRow
         android:id="@+id/import_preview_pair"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -63,5 +63,5 @@
                 android:adjustViewBounds="true"
                 android:scaleType="fitCenter" />
         </LinearLayout>
-    </com.infinity.comicreader.ui.ButtonRow>
+    </minty.emanata.ui.ButtonRow>
 </LinearLayout>

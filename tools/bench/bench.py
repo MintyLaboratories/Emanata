@@ -75,7 +75,7 @@ import zipfile
 from pathlib import Path
 
 PACKAGE = "minty.emanata.debug"
-BENCH = f"{PACKAGE}/com.infinity.comicreader.debug.BenchActivity"
+BENCH = f"{PACKAGE}/minty.emanata.debug.BenchActivity"
 # Where `push` and `fixtures --push` put files, and where relative plan paths point (--device-dir).
 DEVICE_DIR = "/storage/emulated/0/Download/emanata-bench"
 TRACE_DIR = "/data/misc/perfetto-traces"
@@ -725,7 +725,7 @@ def calibrate(out: Path | None = None, variant: str = "", timeout_s: int = 300) 
     its log lines to [out]/calibration.jsonl. A build without calibration is left as it is.
     """
     adb("logcat", "-c")
-    started = subprocess.run([ADB, "shell", "am", "start", "-n", f"{PACKAGE}/com.infinity.comicreader.debug.CalibrationActivity",
+    started = subprocess.run([ADB, "shell", "am", "start", "-n", f"{PACKAGE}/minty.emanata.debug.CalibrationActivity",
                               "--es", "do", "recalibrate"], capture_output=True, text=True)
     if "Error" in started.stdout + started.stderr:
         print("no calibration in this build", flush=True)

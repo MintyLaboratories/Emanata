@@ -16,7 +16,7 @@
         android:textAppearance="?attr/textAppearanceBodySmall"
         android:textColor="?android:attr/textColorSecondary" />
 
-    <com.infinity.comicreader.ui.AiLoadBar
+    <minty.emanata.ui.AiLoadBar
         android:id="@+id/ai_load_bar"
         android:layout_width="0dp"
         android:layout_height="wrap_content"

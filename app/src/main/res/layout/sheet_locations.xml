@@ -13,7 +13,7 @@
         android:paddingTop="@dimen/space_6"
         android:paddingBottom="@dimen/space_3"
         android:text="@string/choose_root"
-        android:textAppearance="@style/TextAppearance.ComicReader.AppTitle" />
+        android:textAppearance="@style/TextAppearance.Emanata.AppTitle" />
 
     <LinearLayout
         android:id="@+id/locations_list"

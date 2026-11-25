@@ -45,7 +45,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="@string/ai_import_steps_keep"
-            android:textAppearance="@style/TextAppearance.ComicReader.ItemSubtitle" />
+            android:textAppearance="@style/TextAppearance.Emanata.ItemSubtitle" />
 
         <TextView
             android:id="@+id/import_heavy"

@@ -20,13 +20,13 @@
         android:layout_height="wrap_content"
         android:ellipsize="end"
         android:maxLines="2"
-        android:textAppearance="@style/TextAppearance.ComicReader.ItemTitle"
+        android:textAppearance="@style/TextAppearance.Emanata.ItemTitle"
         tools:text="Part 2" />
 
     <TextView
         android:id="@+id/chapter_pages"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:textAppearance="@style/TextAppearance.ComicReader.ItemSubtitle"
+        android:textAppearance="@style/TextAppearance.Emanata.ItemSubtitle"
         tools:text="Pages 13–24" />
 </LinearLayout>

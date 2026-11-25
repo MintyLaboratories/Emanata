@@ -280,7 +280,7 @@ JNIEXPORT jint JNI_OnLoad(JavaVM*, void*) {
  * 32-bit words need no device feature), so FP16_PACKED is always set.
  */
 JNIEXPORT jstring JNICALL
-Java_com_infinity_comicreader_ai_LibNcnn_nGpu(JNIEnv* env, jclass) {
+Java_minty_emanata_ai_LibNcnn_nGpu(JNIEnv* env, jclass) {
     if (!gpu_acquire()) return nullptr;
     std::string s;
     {
@@ -312,7 +312,7 @@ Java_com_infinity_comicreader_ai_LibNcnn_nGpu(JNIEnv* env, jclass) {
  * seams. 0 when the files do not load.
  */
 JNIEXPORT jlong JNICALL
-Java_com_infinity_comicreader_ai_LibNcnn_nOpen(JNIEnv* env, jclass, jstring param, jstring bin, jboolean gpu, jint threads,
+Java_minty_emanata_ai_LibNcnn_nOpen(JNIEnv* env, jclass, jstring param, jstring bin, jboolean gpu, jint threads,
                                                jint fp16) {
     auto* m = new Model();
     if (gpu && gpu_acquire()) {
@@ -353,7 +353,7 @@ Java_com_infinity_comicreader_ai_LibNcnn_nOpen(JNIEnv* env, jclass, jstring para
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_infinity_comicreader_ai_LibNcnn_nOnGpu(JNIEnv*, jclass, jlong handle) {
+Java_minty_emanata_ai_LibNcnn_nOnGpu(JNIEnv*, jclass, jlong handle) {
     return reinterpret_cast<Model*>(handle)->gpu;
 }
 
@@ -364,7 +364,7 @@ Java_com_infinity_comicreader_ai_LibNcnn_nOnGpu(JNIEnv*, jclass, jlong handle) {
  * ([dx], [dy]). 0 on success, else a negative code.
  */
 JNIEXPORT jint JNICALL
-Java_com_infinity_comicreader_ai_LibNcnn_nRun(JNIEnv* env, jclass, jlong handle, jobject src, jint ix, jint iy, jint iw,
+Java_minty_emanata_ai_LibNcnn_nRun(JNIEnv* env, jclass, jlong handle, jobject src, jint ix, jint iy, jint iw,
                                               jint ih, jfloat inScale, jobject dst, jint cx, jint cy, jint cw, jint ch,
                                               jint dx, jint dy, jfloat outScale, jintArray size) {
     auto* m = reinterpret_cast<Model*>(handle);
@@ -437,7 +437,7 @@ Java_com_infinity_comicreader_ai_LibNcnn_nRun(JNIEnv* env, jclass, jlong handle,
  * writes its size to [size]; null on failure.
  */
 JNIEXPORT jfloatArray JNICALL
-Java_com_infinity_comicreader_ai_LibNcnn_nMap(JNIEnv* env, jclass, jlong handle, jobject src, jfloatArray mean,
+Java_minty_emanata_ai_LibNcnn_nMap(JNIEnv* env, jclass, jlong handle, jobject src, jfloatArray mean,
                                               jfloatArray norm, jboolean bgr, jintArray size) {
     auto* m = reinterpret_cast<Model*>(handle);
     float mv[3], nv[3];
@@ -489,7 +489,7 @@ Java_com_infinity_comicreader_ai_LibNcnn_nMap(JNIEnv* env, jclass, jlong handle,
  * since the last call; counting starts again from what it holds now.
  */
 JNIEXPORT jlong JNICALL
-Java_com_infinity_comicreader_ai_LibNcnn_nPeak(JNIEnv*, jclass, jlong handle) {
+Java_minty_emanata_ai_LibNcnn_nPeak(JNIEnv*, jclass, jlong handle) {
     return (jlong) reinterpret_cast<Model*>(handle)->usage.take();
 }
 
@@ -498,18 +498,18 @@ Java_com_infinity_comicreader_ai_LibNcnn_nPeak(JNIEnv*, jclass, jlong handle) {
  * transforms them for its kernels) and, on the GPU, its memory heaps' growth.
  */
 JNIEXPORT jlong JNICALL
-Java_com_infinity_comicreader_ai_LibNcnn_nWeights(JNIEnv*, jclass, jlong handle) {
+Java_minty_emanata_ai_LibNcnn_nWeights(JNIEnv*, jclass, jlong handle) {
     return (jlong) reinterpret_cast<Model*>(handle)->weights;
 }
 
 /** Frees the buffers a model keeps between runs; its weights stay. */
 JNIEXPORT void JNICALL
-Java_com_infinity_comicreader_ai_LibNcnn_nTrim(JNIEnv*, jclass, jlong handle) {
+Java_minty_emanata_ai_LibNcnn_nTrim(JNIEnv*, jclass, jlong handle) {
     reinterpret_cast<Model*>(handle)->trim();
 }
 
 JNIEXPORT void JNICALL
-Java_com_infinity_comicreader_ai_LibNcnn_nClose(JNIEnv*, jclass, jlong handle) {
+Java_minty_emanata_ai_LibNcnn_nClose(JNIEnv*, jclass, jlong handle) {
     delete reinterpret_cast<Model*>(handle);
 }
 

@@ -1,4 +1,4 @@
-// JNI binding over libjxl for com.infinity.comicreader.compact.LibJxl: lossless JPEG
+// JNI binding over libjxl for minty.emanata.compact.LibJxl: lossless JPEG
 // transcoding and the JPEG's reconstruction, lossless encoding of pixels, decoding,
 // rectangles of an image decoded into a bitmap, and what a file's header tells. libjxl
 // is not built here: jxl-coder ships it whole (libjxl.so, exporting the public C API),
@@ -160,7 +160,7 @@ static int isSrgb(const JxlColorEncoding * c)
 }
 
 // libjxl's version as major * 1000000 + minor * 1000 + patch; 0 when libjxl.so is missing.
-EXPORT jint JNICALL Java_com_infinity_comicreader_compact_LibJxl_nVersion(JNIEnv * env, jclass clazz)
+EXPORT jint JNICALL Java_minty_emanata_compact_LibJxl_nVersion(JNIEnv * env, jclass clazz)
 {
     (void)env;
     (void)clazz;
@@ -168,7 +168,7 @@ EXPORT jint JNICALL Java_com_infinity_comicreader_compact_LibJxl_nVersion(JNIEnv
 }
 
 // The JPEG `jpeg` as a JPEG XL holding what rebuilds it byte for byte; null when it cannot be.
-EXPORT jbyteArray JNICALL Java_com_infinity_comicreader_compact_LibJxl_nTranscode(JNIEnv * env, jclass clazz, jbyteArray jpeg, jint effort)
+EXPORT jbyteArray JNICALL Java_minty_emanata_compact_LibJxl_nTranscode(JNIEnv * env, jclass clazz, jbyteArray jpeg, jint effort)
 {
     (void)clazz;
     if (!ready()) {
@@ -197,7 +197,7 @@ EXPORT jbyteArray JNICALL Java_com_infinity_comicreader_compact_LibJxl_nTranscod
 }
 
 // The JPEG a JPEG XL `jxl` was transcoded from, byte for byte; null when it holds none or fails.
-EXPORT jbyteArray JNICALL Java_com_infinity_comicreader_compact_LibJxl_nReconstruct(JNIEnv * env, jclass clazz, jbyteArray jxl)
+EXPORT jbyteArray JNICALL Java_minty_emanata_compact_LibJxl_nReconstruct(JNIEnv * env, jclass clazz, jbyteArray jxl)
 {
     (void)clazz;
     if (!ready()) {
@@ -277,7 +277,7 @@ static JxlDecoder * decoder(Input * in, int events)
 }
 
 // What `jxl`'s header tells (see JxlInfo); null when it is no JPEG XL.
-EXPORT jintArray JNICALL Java_com_infinity_comicreader_compact_LibJxl_nInfo(JNIEnv * env, jclass clazz, jbyteArray jxl)
+EXPORT jintArray JNICALL Java_minty_emanata_compact_LibJxl_nInfo(JNIEnv * env, jclass clazz, jbyteArray jxl)
 {
     (void)clazz;
     if (!ready()) {
@@ -344,7 +344,7 @@ static jbyteArray icc(JNIEnv * env, JxlDecoder * dec, JxlColorProfileTarget targ
 // `jxl`'s color profile as stored: a tag, then the JxlColorEncoding or the ICC
 // profile, for nEncode to give the same to another; with `data`, the ICC profile of
 // the decoded pixels instead, untagged. Null when it fails.
-EXPORT jbyteArray JNICALL Java_com_infinity_comicreader_compact_LibJxl_nProfile(JNIEnv * env, jclass clazz, jbyteArray jxl, jboolean data)
+EXPORT jbyteArray JNICALL Java_minty_emanata_compact_LibJxl_nProfile(JNIEnv * env, jclass clazz, jbyteArray jxl, jboolean data)
 {
     (void)clazz;
     if (!ready()) {
@@ -391,7 +391,7 @@ EXPORT jbyteArray JNICALL Java_com_infinity_comicreader_compact_LibJxl_nProfile(
 
 // The first frame of `jxl` as `channels` interleaved samples of `bits` (8, or 16 little-endian),
 // in its own color profile, or converted to sRGB with `srgb`; null when it fails or cannot convert.
-EXPORT jbyteArray JNICALL Java_com_infinity_comicreader_compact_LibJxl_nDecode(JNIEnv * env, jclass clazz, jbyteArray jxl, jint channels, jint bits, jboolean srgb)
+EXPORT jbyteArray JNICALL Java_minty_emanata_compact_LibJxl_nDecode(JNIEnv * env, jclass clazz, jbyteArray jxl, jint channels, jint bits, jboolean srgb)
 {
     (void)clazz;
     if (!ready() || channels < 1 || channels > 4 || (bits != 8 && bits != 16)) {
@@ -448,7 +448,7 @@ EXPORT jbyteArray JNICALL Java_com_infinity_comicreader_compact_LibJxl_nDecode(J
 
 // `pixels` (`channels` interleaved samples of `bits`, 8 or 16 little-endian; 2 and 4 with
 // alpha last) as a lossless JPEG XL at `effort`, in `profile` (nProfile's), else sRGB; null when it fails.
-EXPORT jbyteArray JNICALL Java_com_infinity_comicreader_compact_LibJxl_nEncode(
+EXPORT jbyteArray JNICALL Java_minty_emanata_compact_LibJxl_nEncode(
     JNIEnv * env, jclass clazz, jbyteArray pixels, jint width, jint height, jint channels, jint bits, jbyteArray profile, jint effort)
 {
     (void)clazz;
@@ -610,7 +610,7 @@ static int stopCall(JNIEnv * env, jobject stop, StopCall * call)
 // returns true. The whole image is decoded; only those pixels are kept. 1 when done,
 // JP_CANCELED once stopped, else 0: it failed, or the image is another size or cannot be
 // given in sRGB.
-EXPORT jint JNICALL Java_com_infinity_comicreader_compact_LibJxl_nRegion(
+EXPORT jint JNICALL Java_minty_emanata_compact_LibJxl_nRegion(
     JNIEnv * env, jclass clazz, jbyteArray jxl, jobject bitmap, jint width, jint height, jint left, jint top, jint right, jint bottom, jint sample,
     jint threads, jlong cores, jobject stop)
 {
@@ -702,7 +702,7 @@ EXPORT jint JNICALL Java_com_infinity_comicreader_compact_LibJxl_nRegion(
 // the image's size as shown, on `threads` threads pinned to `cores` (bit n = core n; 0 =
 // any) at nice `nice` (0 = the caller's); with `stop`, asks its stop() between the decoder's parallel steps and stops once it
 // returns true. A JP_* result (jxl_page.h).
-EXPORT jint JNICALL Java_com_infinity_comicreader_compact_LibJxl_nPage(
+EXPORT jint JNICALL Java_minty_emanata_compact_LibJxl_nPage(
     JNIEnv * env, jclass clazz, jbyteArray jxl, jobject bitmap, jint threads, jlong cores, jint nice, jobject stop)
 {
     (void)clazz;
@@ -728,7 +728,7 @@ EXPORT jint JNICALL Java_com_infinity_comicreader_compact_LibJxl_nPage(
 
 // Moves the calling thread onto `cores` (bit n = core n), or every core for -1 (jr_pin_mask);
 // its old set of the first 64 cores, or 0 when it stays where it was.
-EXPORT jlong JNICALL Java_com_infinity_comicreader_compact_LibJxl_nPin(JNIEnv * env, jclass clazz, jlong cores)
+EXPORT jlong JNICALL Java_minty_emanata_compact_LibJxl_nPin(JNIEnv * env, jclass clazz, jlong cores)
 {
     (void)env;
     (void)clazz;

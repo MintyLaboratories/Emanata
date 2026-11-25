@@ -61,7 +61,7 @@
                     android:textAppearance="?attr/textAppearanceBodySmall"
                     android:textColor="?attr/colorOnSurfaceVariant" />
 
-                <com.infinity.comicreader.ui.StarsView
+                <minty.emanata.ui.StarsView
                     android:id="@+id/ai_model_speed"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content" />

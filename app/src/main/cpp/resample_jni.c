@@ -1,4 +1,4 @@
-// JNI binding of resample.h for com.infinity.comicreader.reader.LibPixels: a job locks the
+// JNI binding of resample.h for minty.emanata.reader.LibPixels: a job locks the
 // pixels of a source and a destination ARGB_8888 bitmap until it ends, takes each axis'
 // taps (checked to stay inside both bitmaps), then filters bands of output rows on the
 // CPU, from several threads at once with a worker index each, or on the GPU. A band may
@@ -52,7 +52,7 @@ static void release(JNIEnv * env, handle * h)
 }
 
 // A job resampling src into dst, both ARGB_8888, on `workers` CPU workers or on the GPU; 0 when the bitmaps will not do.
-EXPORT jlong JNICALL Java_com_infinity_comicreader_reader_LibPixels_nBegin(
+EXPORT jlong JNICALL Java_minty_emanata_reader_LibPixels_nBegin(
     JNIEnv * env, jclass clazz, jobject src, jobject dst, jboolean linear, jint workers, jboolean gpu)
 {
     (void)clazz;
@@ -106,7 +106,7 @@ static int taps_fit(const rs_axis * a, int src_len)
 }
 
 // Takes the taps of the horizontal axis, or the vertical one; false when they do not fit the bitmaps or the GPU is unusable.
-EXPORT jboolean JNICALL Java_com_infinity_comicreader_reader_LibPixels_nAxis(
+EXPORT jboolean JNICALL Java_minty_emanata_reader_LibPixels_nAxis(
     JNIEnv * env, jclass clazz, jlong job, jboolean vertical, jintArray start, jintArray count, jfloatArray weights,
     jint stride, jfloat ring, jintArray ring_lo, jintArray ring_hi)
 {
@@ -188,7 +188,7 @@ static int gpu_band(handle * h, int y0, int y1, uint64_t cores, rs_stop stop, vo
 
 // Moves the calling thread onto `cores` (bit n = core n), or every core for -1, until moved
 // again (jr_pin_mask); the cores it could use before, 0 when it stays where it was.
-EXPORT jlong JNICALL Java_com_infinity_comicreader_reader_LibPixels_nPin(JNIEnv * env, jclass clazz, jlong cores)
+EXPORT jlong JNICALL Java_minty_emanata_reader_LibPixels_nPin(JNIEnv * env, jclass clazz, jlong cores)
 {
     (void)env;
     (void)clazz;
@@ -197,7 +197,7 @@ EXPORT jlong JNICALL Java_com_infinity_comicreader_reader_LibPixels_nPin(JNIEnv 
 
 // Filters output rows y0 until y1 as `worker`, on `cores` (0 = any) while it runs; false
 // on a bad request, out of memory or a GPU error.
-EXPORT jboolean JNICALL Java_com_infinity_comicreader_reader_LibPixels_nBand(
+EXPORT jboolean JNICALL Java_minty_emanata_reader_LibPixels_nBand(
     JNIEnv * env, jclass clazz, jlong job, jint worker, jint y0, jint y1, jlong cores)
 {
     (void)env;
@@ -215,7 +215,7 @@ EXPORT jboolean JNICALL Java_com_infinity_comicreader_reader_LibPixels_nBand(
 }
 
 // Turns on or off one log line per GPU job with the time of each step (rs_gpu_trace).
-EXPORT void JNICALL Java_com_infinity_comicreader_reader_LibPixels_nTrace(JNIEnv * env, jclass clazz, jboolean on)
+EXPORT void JNICALL Java_minty_emanata_reader_LibPixels_nTrace(JNIEnv * env, jclass clazz, jboolean on)
 {
     (void)env;
     (void)clazz;
@@ -225,7 +225,7 @@ EXPORT void JNICALL Java_com_infinity_comicreader_reader_LibPixels_nTrace(JNIEnv
 // Filters output rows y0 until y1 of a GPU job on the calling thread, `cores` as nBand
 // says, asking `stop` (null: never) before each chunk: 1 when done, -2 once stopped
 // (rethrowing what stop() threw), 0 on a bad request or a GPU error.
-EXPORT jint JNICALL Java_com_infinity_comicreader_reader_LibPixels_nGpuBand(
+EXPORT jint JNICALL Java_minty_emanata_reader_LibPixels_nGpuBand(
     JNIEnv * env, jclass clazz, jlong job, jint y0, jint y1, jlong cores, jobject stop)
 {
     (void)clazz;
@@ -247,7 +247,7 @@ EXPORT jint JNICALL Java_com_infinity_comicreader_reader_LibPixels_nGpuBand(
 }
 
 // Frees what the GPU path keeps between jobs, the across programs too with `programs` (rs_gpu_trim).
-EXPORT void JNICALL Java_com_infinity_comicreader_reader_LibPixels_nTrim(JNIEnv * env, jclass clazz, jboolean programs)
+EXPORT void JNICALL Java_minty_emanata_reader_LibPixels_nTrim(JNIEnv * env, jclass clazz, jboolean programs)
 {
     (void)env;
     (void)clazz;
@@ -255,7 +255,7 @@ EXPORT void JNICALL Java_com_infinity_comicreader_reader_LibPixels_nTrim(JNIEnv 
 }
 
 // False once the GPU path is off for the process (rs_gpu_usable).
-EXPORT jboolean JNICALL Java_com_infinity_comicreader_reader_LibPixels_nGpuUsable(JNIEnv * env, jclass clazz)
+EXPORT jboolean JNICALL Java_minty_emanata_reader_LibPixels_nGpuUsable(JNIEnv * env, jclass clazz)
 {
     (void)env;
     (void)clazz;
@@ -263,7 +263,7 @@ EXPORT jboolean JNICALL Java_com_infinity_comicreader_reader_LibPixels_nGpuUsabl
 }
 
 // Opens the core ledger (core_ledger.h), resetting it, or closes it.
-EXPORT void JNICALL Java_com_infinity_comicreader_reader_LibPixels_nLedger(JNIEnv * env, jclass clazz, jboolean open)
+EXPORT void JNICALL Java_minty_emanata_reader_LibPixels_nLedger(JNIEnv * env, jclass clazz, jboolean open)
 {
     (void)env;
     (void)clazz;
@@ -271,7 +271,7 @@ EXPORT void JNICALL Java_com_infinity_comicreader_reader_LibPixels_nLedger(JNIEn
 }
 
 // Moves the ledger's nanoseconds per core into `out`, zeroing them; the count of cores.
-EXPORT jint JNICALL Java_com_infinity_comicreader_reader_LibPixels_nLedgerNs(JNIEnv * env, jclass clazz, jlongArray out)
+EXPORT jint JNICALL Java_minty_emanata_reader_LibPixels_nLedgerNs(JNIEnv * env, jclass clazz, jlongArray out)
 {
     (void)clazz;
     int64_t ns[CL_MAX_CORES];
@@ -283,7 +283,7 @@ EXPORT jint JNICALL Java_com_infinity_comicreader_reader_LibPixels_nLedgerNs(JNI
 
 // Moves the ids of threads that counted in the ledger since the last call into `out`, the
 // nanoseconds each counted into `ns`; their count.
-EXPORT jint JNICALL Java_com_infinity_comicreader_reader_LibPixels_nLedgerThreads(JNIEnv * env, jclass clazz, jintArray out, jlongArray ns)
+EXPORT jint JNICALL Java_minty_emanata_reader_LibPixels_nLedgerThreads(JNIEnv * env, jclass clazz, jintArray out, jlongArray ns)
 {
     (void)clazz;
     int32_t tids[CL_MAX_TIDS];
@@ -298,7 +298,7 @@ EXPORT jint JNICALL Java_com_infinity_comicreader_reader_LibPixels_nLedgerThread
 }
 
 // Ends a job: unlocks both bitmaps and frees everything it holds.
-EXPORT void JNICALL Java_com_infinity_comicreader_reader_LibPixels_nEnd(JNIEnv * env, jclass clazz, jlong job)
+EXPORT void JNICALL Java_minty_emanata_reader_LibPixels_nEnd(JNIEnv * env, jclass clazz, jlong job)
 {
     (void)clazz;
     release(env, (handle *)(intptr_t)job);

@@ -6,7 +6,7 @@
         android:id="@+id/settings_search"
         android:icon="@drawable/ic_search"
         android:title="@string/settings_search"
-        app:actionViewClass="com.infinity.comicreader.ui.SettingsSearchView"
+        app:actionViewClass="minty.emanata.ui.SettingsSearchView"
         app:showAsAction="always|collapseActionView" />
     <item
         android:id="@+id/settings_fold_all"

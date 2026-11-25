@@ -27,7 +27,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginStart="@dimen/space_2"
-        android:textAppearance="@style/TextAppearance.ComicReader.ItemSubtitle"
+        android:textAppearance="@style/TextAppearance.Emanata.ItemSubtitle"
         tools:text="3" />
 
     <ProgressBar

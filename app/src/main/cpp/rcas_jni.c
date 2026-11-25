@@ -1,4 +1,4 @@
-// JNI binding of rcas.h for com.infinity.comicreader.reader.LibPixels: a job locks an
+// JNI binding of rcas.h for minty.emanata.reader.LibPixels: a job locks an
 // ARGB_8888 bitmap, and the strips of pixels past its edges, until it ends; bands of rows
 // are then sharpened in place from several threads at once, each with a worker index and
 // optionally pinned to a set of cores.
@@ -61,7 +61,7 @@ static uint8_t * lock(JNIEnv * env, sharpen * s, int i, jobject bitmap, int w, i
 
 // A job sharpening dst in place by `amount` in `bands` bands on `workers` workers, the given
 // strips (null: none) past its edges; 0 when the bitmaps will not do or memory runs out.
-EXPORT jlong JNICALL Java_com_infinity_comicreader_reader_LibPixels_nSharpenBegin(
+EXPORT jlong JNICALL Java_minty_emanata_reader_LibPixels_nSharpenBegin(
     JNIEnv * env, jclass clazz, jobject dst, jobject top, jobject bottom, jobject left, jobject right, jfloat amount, jint bands,
     jint workers)
 {
@@ -91,7 +91,7 @@ EXPORT jlong JNICALL Java_com_infinity_comicreader_reader_LibPixels_nSharpenBegi
 
 // Sharpens band `band` as `worker`, on `cores` (0 = any) while it runs, counted by the core
 // ledger; false on a bad request.
-EXPORT jboolean JNICALL Java_com_infinity_comicreader_reader_LibPixels_nSharpenBand(
+EXPORT jboolean JNICALL Java_minty_emanata_reader_LibPixels_nSharpenBand(
     JNIEnv * env, jclass clazz, jlong job, jint worker, jint band, jlong cores)
 {
     (void)env;
@@ -108,7 +108,7 @@ EXPORT jboolean JNICALL Java_com_infinity_comicreader_reader_LibPixels_nSharpenB
 }
 
 // Ends a job: unlocks its bitmaps and frees what it holds.
-EXPORT void JNICALL Java_com_infinity_comicreader_reader_LibPixels_nSharpenEnd(JNIEnv * env, jclass clazz, jlong job)
+EXPORT void JNICALL Java_minty_emanata_reader_LibPixels_nSharpenEnd(JNIEnv * env, jclass clazz, jlong job)
 {
     (void)clazz;
     release(env, (sharpen *)(intptr_t)job);

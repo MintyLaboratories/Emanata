@@ -32,7 +32,7 @@
                 android:layout_gravity="center_horizontal"
                 android:contentDescription="@string/app_name"
                 android:src="@mipmap/ic_launcher"
-                app:shapeAppearanceOverlay="@style/Shape.ComicReader.Large" />
+                app:shapeAppearanceOverlay="@style/Shape.Emanata.Large" />
 
             <TextView
                 android:id="@+id/about_name"
@@ -41,7 +41,7 @@
                 android:layout_marginTop="16dp"
                 android:gravity="center"
                 android:text="@string/app_name"
-                android:textAppearance="@style/TextAppearance.ComicReader.AppTitle"
+                android:textAppearance="@style/TextAppearance.Emanata.AppTitle"
                 android:textSize="24sp" />
 
             <TextView
@@ -51,7 +51,7 @@
                 android:layout_marginTop="2dp"
                 android:gravity="center"
                 android:text="@string/about_tagline"
-                android:textAppearance="@style/TextAppearance.ComicReader.ItemSubtitle" />
+                android:textAppearance="@style/TextAppearance.Emanata.ItemSubtitle" />
 
             <TextView
                 android:id="@+id/about_version"
@@ -66,7 +66,7 @@
                 android:textSize="13sp" />
 
             <com.google.android.material.card.MaterialCardView
-                style="@style/Widget.ComicReader.Card"
+                style="@style/Widget.Emanata.Card"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="24dp">
@@ -102,7 +102,7 @@
                 android:textColor="?attr/colorPrimary" />
 
             <com.google.android.material.card.MaterialCardView
-                style="@style/Widget.ComicReader.Card"
+                style="@style/Widget.Emanata.Card"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp">
@@ -125,7 +125,7 @@
                 android:textColor="?attr/colorPrimary" />
 
             <com.google.android.material.card.MaterialCardView
-                style="@style/Widget.ComicReader.Card"
+                style="@style/Widget.Emanata.Card"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp">

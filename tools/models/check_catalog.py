@@ -20,8 +20,8 @@ import sys
 import tempfile
 import urllib.request
 
-CATALOG = pathlib.Path('app/src/main/java/com/infinity/comicreader/ai/ModelCatalog.kt')
-SHADERS = pathlib.Path('app/src/main/java/com/infinity/comicreader/ai/ShaderCatalog.kt')
+CATALOG = pathlib.Path('app/src/main/java/minty/emanata/ai/ModelCatalog.kt')
+SHADERS = pathlib.Path('app/src/main/java/minty/emanata/ai/ShaderCatalog.kt')
 
 
 def sha256(path: pathlib.Path) -> str:

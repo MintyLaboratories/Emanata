@@ -1,4 +1,4 @@
-// JNI binding over libavif for com.infinity.comicreader.reader.LibAvif: parse an
+// JNI binding over libavif for minty.emanata.reader.LibAvif: parse an
 // AVIF file, step through its images (the layers of a layered file one by one
 // when asked), and convert the current one to RGBA_8888 bitmap pixels.
 
@@ -91,7 +91,7 @@ static void destroy(Handle * handle)
 
 // Opens the first [length] bytes of [data] (the whole file when [complete]) and
 // parses its container. Returns 0 when its start holds too little to parse.
-EXPORT jlong JNICALL Java_com_infinity_comicreader_reader_LibAvif_nOpen(JNIEnv * env,
+EXPORT jlong JNICALL Java_minty_emanata_reader_LibAvif_nOpen(JNIEnv * env,
                                                                      jclass type,
                                                                      jbyteArray data,
                                                                      jint length,
@@ -152,7 +152,7 @@ EXPORT jlong JNICALL Java_com_infinity_comicreader_reader_LibAvif_nOpen(JNIEnv *
 }
 
 // What is known of the image: see LibAvif.info for the order.
-EXPORT jintArray JNICALL Java_com_infinity_comicreader_reader_LibAvif_nInfo(JNIEnv * env, jclass type, jlong ptr)
+EXPORT jintArray JNICALL Java_minty_emanata_reader_LibAvif_nInfo(JNIEnv * env, jclass type, jlong ptr)
 {
     (void)type;
     const Handle * handle = (const Handle *)(intptr_t)ptr;
@@ -201,7 +201,7 @@ EXPORT jintArray JNICALL Java_com_infinity_comicreader_reader_LibAvif_nInfo(JNIE
 
 // Decodes the next image (the next layer of a layered file opened with layers).
 // False when the bytes given so far end before it.
-EXPORT jboolean JNICALL Java_com_infinity_comicreader_reader_LibAvif_nNext(JNIEnv * env, jclass type, jlong ptr)
+EXPORT jboolean JNICALL Java_minty_emanata_reader_LibAvif_nNext(JNIEnv * env, jclass type, jlong ptr)
 {
     (void)type;
     Handle * handle = (Handle *)(intptr_t)ptr;
@@ -222,7 +222,7 @@ EXPORT jboolean JNICALL Java_com_infinity_comicreader_reader_LibAvif_nNext(JNIEn
 
 // Writes the current image into [bitmap], an RGBA_8888 bitmap of its size, or of
 // its size divided by [sample] (rounded up), keeping every sample-th pixel.
-EXPORT void JNICALL Java_com_infinity_comicreader_reader_LibAvif_nRender(JNIEnv * env,
+EXPORT void JNICALL Java_minty_emanata_reader_LibAvif_nRender(JNIEnv * env,
                                                                       jclass type,
                                                                       jlong ptr,
                                                                       jobject bitmap,
@@ -304,7 +304,7 @@ EXPORT void JNICALL Java_com_infinity_comicreader_reader_LibAvif_nRender(JNIEnv 
     }
 }
 
-EXPORT void JNICALL Java_com_infinity_comicreader_reader_LibAvif_nClose(JNIEnv * env, jclass type, jlong ptr)
+EXPORT void JNICALL Java_minty_emanata_reader_LibAvif_nClose(JNIEnv * env, jclass type, jlong ptr)
 {
     (void)env;
     (void)type;
